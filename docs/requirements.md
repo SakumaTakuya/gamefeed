@@ -5,6 +5,15 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 
 最初の数行は書き方の例を兼ねる。章ごとに Issue を切る前に埋めていく。
 
+## 5.3 Content-Security-Policy（#21 でパス分けに改訂）
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-5.3-1 | ゲーム配信の全レスポンス（HTML・アセット・404 含む）に CSP `sandbox allow-scripts` が付く | integration | Miniflare で `/p/<id>/`、`/p/<id>/assets/x`、存在しないパスを取得し、ヘッダを検査 | `apps/games/test/integration/csp.spec.ts` | todo |
+| R-5.3-2 | CSP の各ソースは自投稿パス `/p/<post_id>/` と `/lib/` だけを指し、他投稿のパスを含まない | integration + e2e | integration: 投稿 A の CSP に投稿 B のパスが含まれない。e2e: 投稿 A のゲームから `/p/B/assets/` を読むと CSP 違反になる | `apps/games/test/integration/csp.spec.ts`、`apps/web/e2e/sandbox.spec.ts` | todo |
+| R-5.3-3 | ゲーム URL を直接開いても不透明オリジンで動く（`origin === "null"`、`localStorage` が例外） | e2e | Playwright でゲーム URL をトップレベルで開き、`self.origin` と `localStorage` を確かめる | `apps/web/e2e/sandbox.spec.ts` | todo |
+| R-5.3-4 | 配信 Worker はリダイレクトを返さない（CSP のパス照合がリダイレクト後に効かないため） | integration | 末尾スラッシュなし等で 3xx が返らない | `apps/games/test/integration/csp.spec.ts` | todo |
+
 ## 6.1 メッセージプロトコル
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
