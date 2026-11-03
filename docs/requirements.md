@@ -32,6 +32,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | todo |
 | R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | green |
 | R-6.1-4 | `media` は kind ごとに 1 セッション 1 回、サイズ上限（thumb 64KB、video 2MB） | unit + integration | unit: 2 回目拒否と上限超過拒否。integration: 実 iframe から上限超の blob を送り破棄される | `packages/domain/test/session.spec.ts`、`packages/sdk/test/integration/media.spec.ts` | green（unit）/ todo（integration） |
+| R-6.1-5 | spec#6.1 の 10 種を方向別のスキーマで検証する。余計なフィールド・型違い・未知の type・方向違い・`media` の上限超過と MIME 違反を拒否。`ready` の `verb` / `input` / `duration` は静的解析と同じ定数（`VERB_MAX_CHARS`、`ACCEPTED_INPUTS`、`DURATION_MIN/MAX`）、`end.score` は spec#10.4 の上限。検証済み Guest メッセージは `SessionEvent` に 1 対 1 で変換できる | unit | 各型の正例 1 つ、余計なフィールド、型違い、未知の type、境界値（duration 179/180/480/481、verb 0/8/9 文字、score 2^31−1/+1、thumb 64KB/+1、video 2MB/+1）、replay で inputs 欠落 | `packages/sdk/test/messages.spec.ts` | green |
 
 ## 6.3 ミクロゲーム契約
 

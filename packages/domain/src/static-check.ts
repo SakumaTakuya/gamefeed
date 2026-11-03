@@ -155,7 +155,8 @@ function checkDuration(raw: string | undefined, errors: Finding[]): number | und
   return n;
 }
 
-function graphemeCount(s: string): number {
+/** 書記素クラスタ数。gf:verb の長さはこれで数える（SDK のスキーマも同じ関数を使う） */
+export function graphemeCount(s: string): number {
   const seg = new Intl.Segmenter("ja", { granularity: "grapheme" });
   let n = 0;
   for (const _ of seg.segment(s)) n++;
