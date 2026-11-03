@@ -1,0 +1,26 @@
+name: 仕様変更の提案
+description: 実装中に見つけた仕様の穴・矛盾・変更提案。オーナー承認後に仕様書へ反映する
+labels: ["type:spec"]
+body:
+  - type: textarea
+    id: current
+    attributes:
+      label: 現状の記述（章と引用）
+    validations:
+      required: true
+  - type: textarea
+    id: problem
+    attributes:
+      label: 問題
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: 提案
+    validations:
+      required: true
+  - type: input
+    id: impact
+    attributes:
+      label: 影響範囲（章・要件 ID）
