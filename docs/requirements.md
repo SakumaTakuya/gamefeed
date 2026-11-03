@@ -5,6 +5,16 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 
 最初の数行は書き方の例を兼ねる。章ごとに Issue を切る前に埋めていく。
 
+## 4.1 コード規約（静的解析）
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-4.1-1 | `index.html` は 128 KiB 以下（gzip 前、UTF-8 バイト数）。超過は拒否 | unit | ちょうど上限 / +1 バイト / 日本語（バイト数で数える） | `packages/domain/test/static-check.spec.ts` | green |
+| R-4.1-2 | spec#4.1 の禁止 API・時間・乱数の識別子を字句レベルで検出し拒否する。一覧はデータファイル（`forbidden-identifiers.ts`）に持ち、全項目にテスト例がある。コメント・文字列・プロパティ名・識別子の一部は誤検出しない。`<script>` と `on*` 属性を検査する | unit | 全項目の代表例、`location` の代入と参照の区別、誤検出 10 例、行番号 | 同上 | green |
+| R-4.1-3 | `<title>` 必須（空白のみは拒否） | unit | 欠落 / 空白のみ / 前後の空白除去 | 同上 | green |
+| R-4.1-4 | `src` / `href` / `url()` / `@import` は `./assets/<name>` と `/lib/<name>@<version>.min.js` のみ。外部 URL・`data:`・相対パス越えは拒否 | unit | 受理 6 例 / 拒否 10 例 | 同上 | green |
+| R-4.1-5 | DOM イベント直接購読・`onStart` 前の音声再生・画面サイズは警告（拒否しない） | unit | — | 同上 | todo |
+
 ## 5.3 Content-Security-Policy（#21 でパス分けに改訂）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
@@ -27,9 +37,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.3-1 | `gf:duration` は 180〜480。範囲外・欠落は静的解析で拒否 | unit | 179 / 180 / 480 / 481 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | todo |
-| R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | todo |
-| R-6.3-3 | `gf:input` は tap / hold / swipe のいずれか（MVP は tilt 拒否） | unit | 各値と `tilt`、未知の値 | 同上 | todo |
+| R-6.3-1 | `gf:duration` は 180〜480。範囲外・欠落は静的解析で拒否 | unit | 179 / 180 / 480 / 481 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | green |
+| R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | green |
+| R-6.3-3 | `gf:input` は tap / hold / swipe のいずれか（MVP は tilt 拒否） | unit | 各値と `tilt`、未知の値 | 同上 | green |
 | R-6.3-4 | 時間切れ時、SDK は `onTimeout` の戻り値で `end` を自動送信（既定 lose） | contract | 最小 Host で `time_limit` フレーム進め、`end{result}` が 1 回届く | `packages/sdk/test/contract/timeout.spec.ts` | todo |
 | R-6.3-5 | ゲームは `onStart` 直後から操作可能（タイトル画面を置かない） | manual | サンプル 30 本を実機で通し、開始遅延を感じる本を記録 | `docs/manual-tests/microgame-tempo.md` | todo |
 
