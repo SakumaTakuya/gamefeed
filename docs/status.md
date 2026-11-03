@@ -5,7 +5,8 @@
 ## 現在地（2026-11-03）
 - 計画書 W1（11/3〜11/8）。ルール文書（#1）、スキャフォールド（#3）、CI（#11）、セッション状態機械（#6）が済み、`pnpm install && pnpm check` が緑。
 - 仕様書・計画書は 11/3 にミクロゲーム・MCP 一本・趣味前提で改訂済み。
-- Vercel / Supabase / Cloudflare のアカウントとドメインはまだない（#4、オーナー作業）。
+- Supabase は作成済み（Tokyo / ap-northeast-1、Nano、Data API 無効）。Vercel Functions も `vercel.json` で hnd1 に固定（#19）。
+- Vercel / Cloudflare のアカウント、ドメイン、環境変数はまだ（#4、オーナー作業）。
 
 ## 次の一手（順番どおりに）
 1. **#8 domain: 静的解析** — 外部依存ゼロ。`packages/domain/test/static-check.spec.ts` に R-6.3-* の失敗するテストから書く。`GameMeta` / `InputKind` は `session.ts` のものを使う。
