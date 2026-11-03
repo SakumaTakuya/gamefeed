@@ -9,6 +9,7 @@
 - 要件→テスト対応表: `docs/requirements.md`
 - テスト方針: `docs/testing.md`
 - 作業の流れ: `docs/workflow.md`
+- 現在地と次の一手: `docs/status.md`（セッション開始時に最初に読む）
 
 仕様と実装がずれたら、実装を直すか仕様書を直す。黙ってずらさない。
 仕様書は Claude Docs 上にあるので、変更が必要なときは Issue に「仕様変更」ラベルを付けてオーナーに提案し、承認後に反映する。
@@ -44,6 +45,17 @@ docs/          方針文書。仕様そのものは置かない
 - 仕様書に書かれていない振る舞いを「便利だから」で足さない。足したいなら Issue で提案。
 - 動作確認を「目視のみ」と決めた要件は、PR 本文に確認手順と結果を書く。
 
-## 使うコマンド（予定。スキャフォールド後に更新）
-- `pnpm install` / `pnpm -r test` / `pnpm -r typecheck` / `pnpm -r lint`
-- `pnpm --filter @gamefeed/api dev` など
+## 使うコマンド
+- `pnpm install` — 依存を入れる（Node 22、pnpm 10）
+- `pnpm check` — lint（Biome）→ typecheck（tsc）→ test（Vitest）。PR 前に必ず通す
+- `pnpm lint:fix` — 整形と自動修正
+- `pnpm --filter @gamefeed/<pkg> test` — 1 パッケージだけ。`vitest` を `run` なしで呼べば watch
+- `pnpm --filter @gamefeed/api dev` — API を :3000 で起動（`/api/health`）
+- `pnpm --filter @gamefeed/web dev` — SPA を Vite で起動。`/api` は :3000 にプロキシ
+- `gh issue list --milestone W1` — 今週の Issue。`gh pr create` → `gh pr merge --squash --delete-branch`
+
+## セッション開始時の手順
+1. `docs/status.md` を読む（現在地・次の一手・未検証事項）
+2. `gh issue list --milestone <今週>` で残りを見て、`docs/status.md` の順番どおりに 1 つ選ぶ
+3. Issue の要件 ID を `docs/requirements.md` で確認し、失敗するテストから書く
+4. 終わったら PR → マージ → `docs/status.md` を更新するコミットを次の PR に含める

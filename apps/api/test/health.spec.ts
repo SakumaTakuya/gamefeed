@@ -1,0 +1,10 @@
+import { describe, expect, it } from "vitest";
+import { app } from "../src/app.ts";
+
+describe("GET /api/health", () => {
+  it("200 と ok:true を返す", async () => {
+    const res = await app.request("/api/health");
+    expect(res.status).toBe(200);
+    expect(await res.json()).toMatchObject({ ok: true });
+  });
+});
