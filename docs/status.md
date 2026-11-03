@@ -17,7 +17,6 @@
 `gh issue list --milestone W1` で残りを見る。`blocked` ラベルの Issue は本文の依存先が閉じるまで触らない。
 
 ## 未検証（最初に触るときに確かめる）
-- **CI はまだ動いていない。** トークンに workflow スコープがなく、 に置いてある。#11（オーナー）が済んだら  へ移す。それまでは PR 前にローカルで 
 > gamefeed@ check /home/claude/gamefeed
 > pnpm lint && pnpm typecheck && pnpm test
 
