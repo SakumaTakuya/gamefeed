@@ -1,0 +1,50 @@
+name: タスク
+description: 実装・調査・ドキュメントの作業単位（1 PR で閉じる大きさ）
+labels: ["type:task"]
+body:
+  - type: textarea
+    id: purpose
+    attributes:
+      label: 目的
+      description: なぜやるか。1〜2 行
+    validations:
+      required: true
+  - type: input
+    id: refs
+    attributes:
+      label: 参照
+      description: 仕様書・計画書の参照（例 spec#6.3, plan#3）
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: 要件 ID
+      description: docs/requirements.md の ID（例 R-6.3-1, R-6.3-2）。なければ先に表へ追加する
+    validations:
+      required: true
+  - type: textarea
+    id: tests
+    attributes:
+      label: テスト層と確かめること
+      description: 層（unit / integration / contract / e2e / manual / formal）ごとに、何を確かめるか
+      placeholder: |
+        - unit: 遷移表を網羅。タイマー満了後の end が拒否される
+        - manual: iPhone 実機で幕間のテンポ
+    validations:
+      required: true
+  - type: textarea
+    id: done
+    attributes:
+      label: 完了条件
+      description: チェックリスト。テストが緑であること＋目視項目
+      value: |
+        - [ ] 上記テストが赤→緑
+        - [ ] docs/requirements.md の状態を更新
+        - [ ] PR 本文の「保証していないこと」を記入
+    validations:
+      required: true
+  - type: input
+    id: estimate
+    attributes:
+      label: 見積もり（人日）

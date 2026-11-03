@@ -1,0 +1,25 @@
+name: バグ
+description: 期待と違う振る舞い
+labels: ["type:bug"]
+body:
+  - type: textarea
+    id: expected
+    attributes:
+      label: 期待（仕様書の該当箇所）
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: 実際の振る舞いと再現手順
+    validations:
+      required: true
+  - type: input
+    id: requirements
+    attributes:
+      label: 関係する要件 ID
+  - type: textarea
+    id: test
+    attributes:
+      label: 再現するテスト
+      description: 先に失敗するテストを書く。どの層か

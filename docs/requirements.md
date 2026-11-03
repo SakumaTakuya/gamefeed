@@ -1,0 +1,51 @@
+# 要件→テスト対応表
+
+仕様書の要件に ID を振り、設計時点で検証方法を決める。実装前に行を追加し、PR で状態を更新する。
+ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態: `todo` / `red` / `green` / `manual-ok` / `n/a`。
+
+最初の数行は書き方の例を兼ねる。章ごとに Issue を切る前に埋めていく。
+
+## 6.1 メッセージプロトコル
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | todo |
+| R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | todo |
+| R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | todo |
+| R-6.1-4 | `media` は kind ごとに 1 セッション 1 回、サイズ上限（thumb 64KB、video 2MB） | unit + integration | unit: 2 回目拒否と上限超過拒否。integration: 実 iframe から上限超の blob を送り破棄される | `packages/domain/test/session.spec.ts`、`packages/sdk/test/integration/media.spec.ts` | todo |
+
+## 6.3 ミクロゲーム契約
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-6.3-1 | `gf:duration` は 180〜480。範囲外・欠落は静的解析で拒否 | unit | 179 / 180 / 480 / 481 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | todo |
+| R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | todo |
+| R-6.3-3 | `gf:input` は tap / hold / swipe のいずれか（MVP は tilt 拒否） | unit | 各値と `tilt`、未知の値 | 同上 | todo |
+| R-6.3-4 | 時間切れ時、SDK は `onTimeout` の戻り値で `end` を自動送信（既定 lose） | contract | 最小 Host で `time_limit` フレーム進め、`end{result}` が 1 回届く | `packages/sdk/test/contract/timeout.spec.ts` | todo |
+| R-6.3-5 | ゲームは `onStart` 直後から操作可能（タイトル画面を置かない） | manual | サンプル 30 本を実機で通し、開始遅延を感じる本を記録 | `docs/manual-tests/microgame-tempo.md` | todo |
+
+## 6.4 Host 状態機械
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-6.4-1 | 監視タイマー満了で RUNNING/PAUSED → ENDED(lose)。以後同 session の `end` は捨てる | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。formal: spec#13.7 P11, P12 | `packages/domain/test/session.spec.ts`、`spec/tla/Session.tla` | todo |
+| R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | todo |
+| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否 | unit | 遷移表の網羅 | 同上 | todo |
+
+## 8.2 ゲーム間の遷移
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-8.2-1 | RUNNING(play) の Guest は同時に 1 つ | unit + formal + e2e | unit: ラン状態機械。formal: F1。e2e: 10 本完走中に RUNNING が常に 1 | `packages/domain/test/run.spec.ts`、`apps/web/e2e/run.spec.ts` | todo |
+| R-8.2-2 | 幕間の延長は最大 3 秒、超えたら lose 扱いで飛ばす | unit | 手動時計で 3 秒経過、次ゲームが LOADING のまま → 結果 lose、次へ | `packages/domain/test/run.spec.ts` | todo |
+| R-8.2-3 | iframe は最大 3 枚 | integration | Playwright で DOM 上の iframe 数を各遷移で数える | `apps/web/e2e/run.spec.ts` | todo |
+| R-8.2-4 | 幕間 1.0 秒・結果 0.5 秒のテンポ | manual | 実機で自分と大学生が試し、感想を記録（spec#15 (a)） | `docs/manual-tests/run-tempo.md` | todo |
+
+## 9 MCP
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-9-1 | OAuth 2.1 の DCR・PKCE・`.well-known` を提供する | integration | MCP 公式 SDK のクライアントで DCR → 認可 → トークン → `tools/list` まで通す | `apps/api/test/integration/mcp-oauth.spec.ts` | todo |
+| R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC | `docs/manual-tests/muse-connect.md` | todo |
+| R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-9-4 | 新規投稿は 5 件/日まで | integration | 6 件目が拒否される。日付境界は手動時計 | 同上 | todo |
