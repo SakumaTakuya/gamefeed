@@ -11,8 +11,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | --- | --- | --- | --- | --- | --- |
 | R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | todo |
 | R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | todo |
-| R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | todo |
-| R-6.1-4 | `media` は kind ごとに 1 セッション 1 回、サイズ上限（thumb 64KB、video 2MB） | unit + integration | unit: 2 回目拒否と上限超過拒否。integration: 実 iframe から上限超の blob を送り破棄される | `packages/domain/test/session.spec.ts`、`packages/sdk/test/integration/media.spec.ts` | todo |
+| R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | green |
+| R-6.1-4 | `media` は kind ごとに 1 セッション 1 回、サイズ上限（thumb 64KB、video 2MB） | unit + integration | unit: 2 回目拒否と上限超過拒否。integration: 実 iframe から上限超の blob を送り破棄される | `packages/domain/test/session.spec.ts`、`packages/sdk/test/integration/media.spec.ts` | green（unit）/ todo（integration） |
 
 ## 6.3 ミクロゲーム契約
 
@@ -28,9 +28,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.4-1 | 監視タイマー満了で RUNNING/PAUSED → ENDED(lose)。以後同 session の `end` は捨てる | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。formal: spec#13.7 P11, P12 | `packages/domain/test/session.spec.ts`、`spec/tla/Session.tla` | todo |
-| R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | todo |
-| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否 | unit | 遷移表の網羅 | 同上 | todo |
+| R-6.4-1 | 監視タイマー満了で RUNNING/PAUSED → ENDED(lose)。以後同 session の `end` は捨てる | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。formal: spec#13.7 P11, P12 | `packages/domain/test/session.spec.ts`、`spec/tla/Session.tla` | green |
+| R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | green |
+| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否 | unit | 遷移表の網羅 | 同上 | green |
 
 ## 8.2 ゲーム間の遷移
 

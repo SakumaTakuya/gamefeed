@@ -3,10 +3,10 @@ import {
   ALLOWED,
   EVENT_TYPES,
   type GameMeta,
+  initialSession,
   MEDIA_MAX_BYTES,
   type SessionState,
   STATE_KINDS,
-  initialSession,
   transition,
   watchdogMs,
 } from "../src/session.ts";
@@ -43,7 +43,11 @@ describe("R-6.4-3 典型: ready → init → start → end", () => {
     const s2 = run(s1, [{ type: "init", sessionId: SID, mode: "play", timeLimit: 300 }]);
     expect(s2).toMatchObject({ kind: "INITED", sessionId: SID, mode: "play", timeLimit: 300 });
     const s3 = run(s2, [{ type: "start" }], 1000);
-    expect(s3).toMatchObject({ kind: "RUNNING", sessionId: SID, deadlineAt: 1000 + watchdogMs(300) });
+    expect(s3).toMatchObject({
+      kind: "RUNNING",
+      sessionId: SID,
+      deadlineAt: 1000 + watchdogMs(300),
+    });
   });
 
   it("RUNNING で Guest の end(win) を受理すると ENDED になり、結果は guest 由来で scoreable", () => {
@@ -103,7 +107,9 @@ describe("R-6.4-3 遷移表の網羅: 許されない (状態, イベント) は
       const allowed = ALLOWED[kind].includes(type);
       it(`${kind} × ${type} → ${allowed ? "受理" : "拒否"}`, () => {
         const before = fixtures[kind]();
-        const r = transition(before, sample(type), 1);
+        // timeout だけは満了後の時刻で評価する（満了前は条件で拒否される。R-6.4-1 で別に検証）
+        const now = type === "timeout" ? 1_000_000 : 1;
+        const r = transition(before, sample(type), now);
         expect(r.ok).toBe(allowed);
         if (!r.ok) expect(r.state).toBe(before);
       });
@@ -119,7 +125,8 @@ describe("R-6.4-3 遷移表の網羅: 許されない (状態, イベント) は
   it("destroy はどの状態からでも DESTROYED に行き、DESTROYED からは何も受理しない", () => {
     for (const kind of STATE_KINDS) {
       const r = transition(fixtures[kind](), { type: "destroy" }, 0);
-      expect(r.ok && r.state.kind).toBe("DESTROYED");
+      if (kind === "DESTROYED") expect(r.ok).toBe(false);
+      else expect(r.ok && r.state.kind).toBe("DESTROYED");
     }
   });
 });
@@ -170,7 +177,10 @@ describe("R-6.4-1 監視タイマー満了と遅れて届く end", () => {
 
   it("error は RUNNING/PAUSED で ENDED(lose, via error) にする", () => {
     const r = transition(toRunning(), { type: "error", sessionId: SID, message: "boom" }, 1);
-    expect(r.ok && r.state).toMatchObject({ kind: "ENDED", result: { outcome: "lose", via: "error" } });
+    expect(r.ok && r.state).toMatchObject({
+      kind: "ENDED",
+      result: { outcome: "lose", via: "error" },
+    });
   });
 
   it("P2: replay セッションの end は受理するが scoreable ではない", () => {
@@ -199,7 +209,10 @@ describe("R-6.4-2 PAUSED 中はタイマーが進まない", () => {
   it("P3: PAUSED でも現在セッションの end は受理する", () => {
     const paused = run(toRunning(0), [{ type: "pause" }], 1000);
     const r = transition(paused, { type: "end", sessionId: SID, result: "win", frames: 5 }, 2000);
-    expect(r.ok && r.state).toMatchObject({ kind: "ENDED", result: { outcome: "win", via: "guest" } });
+    expect(r.ok && r.state).toMatchObject({
+      kind: "ENDED",
+      result: { outcome: "win", via: "guest" },
+    });
   });
 });
 
@@ -219,11 +232,23 @@ describe("R-6.1-4 media は kind ごとに 1 回、サイズ上限", () => {
 
   it("境界: thumb は 64 KiB ちょうどまで、video は 2 MiB ちょうどまで", () => {
     expect(MEDIA_MAX_BYTES).toEqual({ thumb: 65536, video: 2097152 });
-    const ok = transition(toRunning(), { type: "media", sessionId: SID, kind: "thumb", bytes: 65536 }, 1);
+    const ok = transition(
+      toRunning(),
+      { type: "media", sessionId: SID, kind: "thumb", bytes: 65536 },
+      1,
+    );
     expect(ok.ok).toBe(true);
-    const ng = transition(toRunning(), { type: "media", sessionId: SID, kind: "thumb", bytes: 65537 }, 1);
+    const ng = transition(
+      toRunning(),
+      { type: "media", sessionId: SID, kind: "thumb", bytes: 65537 },
+      1,
+    );
     expect(ng).toMatchObject({ ok: false, reason: "media_too_large" });
-    const ng2 = transition(toRunning(), { type: "media", sessionId: SID, kind: "video", bytes: 2097153 }, 1);
+    const ng2 = transition(
+      toRunning(),
+      { type: "media", sessionId: SID, kind: "video", bytes: 2097153 },
+      1,
+    );
     expect(ng2).toMatchObject({ ok: false, reason: "media_too_large" });
   });
 
@@ -234,7 +259,11 @@ describe("R-6.1-4 media は kind ごとに 1 回、サイズ上限", () => {
   });
 
   it("異常: 古い session_id の media は拒否", () => {
-    const r = transition(toRunning(), { type: "media", sessionId: "old", kind: "thumb", bytes: 1 }, 1);
+    const r = transition(
+      toRunning(),
+      { type: "media", sessionId: "old", kind: "thumb", bytes: 1 },
+      1,
+    );
     expect(r).toMatchObject({ ok: false, reason: "stale_session" });
   });
 });

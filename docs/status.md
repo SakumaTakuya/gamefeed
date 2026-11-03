@@ -3,14 +3,13 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-03）
-- 計画書 W1（11/3〜11/8）。ルール文書（#1）とスキャフォールド（#3）が済み、`pnpm install && pnpm check` が緑。
+- 計画書 W1（11/3〜11/8）。ルール文書（#1）、スキャフォールド（#3）、CI（#11）、セッション状態機械（#6）が済み、`pnpm install && pnpm check` が緑。
 - 仕様書・計画書は 11/3 にミクロゲーム・MCP 一本・趣味前提で改訂済み。
 - Vercel / Supabase / Cloudflare のアカウントとドメインはまだない（#4、オーナー作業）。
 
 ## 次の一手（順番どおりに）
-1. **#6 domain: Host セッション状態機械** — 外部依存ゼロで今すぐ着手できる。`packages/domain/test/session.spec.ts` に R-6.4-* の失敗するテストから書く。
-2. **#8 domain: 静的解析** — 同上。`packages/domain/test/static-check.spec.ts`。
-3. **#7 sdk: メッセージスキーマ** — #6 の型が決まってから。
+1. **#8 domain: 静的解析** — 外部依存ゼロ。`packages/domain/test/static-check.spec.ts` に R-6.3-* の失敗するテストから書く。`GameMeta` / `InputKind` は `session.ts` のものを使う。
+2. **#7 sdk: メッセージスキーマ** — `session.ts` の `SessionEvent` と対応させる。
 4. **#10 docs: 侵入テストの下書き** — 文書だけ。
 5. **#5 MCP PoC** と **#9 DB マイグレーション** — #4（オーナー）が済んでから。PoC のコードは #4 を待たずに書けるが、Muse からの実機確認は Vercel に出てから。
 
