@@ -1,17 +1,32 @@
 # サンドボックス安全チェックリスト（spec#5, #15）
 
 サンドボックスに関わる変更（`apps/games`、Host の iframe 生成、CSP、SDK のメッセージ処理）の PR では、該当項目を再確認して結果を PR 本文に書く。
-侵入テストの本体は計画書 #2（W2、Gate 0）で作り、ここに項目を追加していく。
+侵入テストの本体は `docs/manual-tests/sandbox-pentest.md`（plan#2、W2、Gate 0）。各行末の `PT-*` がその手順書の項目、`R-*` が `docs/requirements.md` の要件。
 
-- [ ] ゲームは Host と別サイトの配信オリジン（`<games-origin>/p/<post_id>/`）からのみ配信され、アプリのオリジンでは絶対に実行されない
-- [ ] 配信の全レスポンス（404 含む）に CSP `sandbox allow-scripts` が付き、ゲーム URL を直接開いても不透明オリジンで動く（R-5.3-1, R-5.3-3）
-- [ ] CSP の各ソースが自投稿パスと `/lib/` だけを指し、他投稿の `/p/<other>/` を読めない。配信 Worker がリダイレクトを返さない（R-5.3-2, R-5.3-4）
-- [ ] 配信オリジンが Cookie を発行せず、Host・ゲームのどちらもストレージを置いていない
-- [ ] iframe の `sandbox` は `allow-scripts` のみ（`allow-same-origin` を付けない）
-- [ ] 配信レスポンスの CSP が spec#5.3 のヘッダと一致する（`default-src 'none'`、`worker-src 'none'`、`frame-ancestors <app origin>` を含む）
-- [ ] `blob:` / `data:` へのナビゲーションが遮断される
-- [ ] Service Worker 登録が失敗する
-- [ ] `window.parent.document` / `window.top.location.href` などへのアクセスが例外になる
-- [ ] Host は postMessage の送り元を `event.source === iframe.contentWindow` で照合する（不透明オリジンなので `event.origin` は常に `"null"`）。Guest 側は親の `event.source === window.parent` を照合する
-- [ ] Host が描く UI（幕間・結果・ヘッダー）は iframe の上のレイヤで、ゲームが偽装できない
+## 配信（apps/games、spec#5.1, 5.3）
+- [ ] ゲームは Host と別サイトの配信オリジン（`<games-origin>/p/<post_id>/`）からのみ配信され、アプリのオリジンでは絶対に実行されない（PT-5.1-1, R-5.1-1）
+- [ ] 配信オリジンが Cookie を発行せず（`Set-Cookie` なし）、Host・ゲームのどちらもストレージを置いていない（PT-5.1-2, R-5.1-2）
+- [ ] ゲーム URL の組み立てが Host の 1 関数に閉じている（PT-5.1-3, R-5.1-3）
+- [ ] 配信の全レスポンス（404 含む）に CSP `sandbox allow-scripts` が付き、ゲーム URL を直接開いても不透明オリジンで動く（PT-5.3-1, PT-5.3-3, R-5.3-1, R-5.3-3）
+- [ ] CSP の各ソースが自投稿パスと `/lib/` だけを指し、他投稿の `/p/<other>/` を読めない。自アセットと `/lib/` は読める（PT-5.3-2, PT-5.3-5, PT-5.3-6, R-5.3-2）
+- [ ] 配信 Worker がリダイレクトを返さない（PT-5.3-4, R-5.3-4）
+- [ ] 配信レスポンスの CSP が spec#5.3 のヘッダと一致する（`default-src 'none'`、`worker-src 'none'`、`frame-src 'none'`、`object-src 'none'`、`base-uri 'none'`、`form-action 'none'`、`frame-ancestors <app origin>` を含む）（PT-5.3-7〜11）
+- [ ] `<meta http-equiv>` で CSP を緩められない（PT-5.3-8）
+
+## 埋め込み（apps/web の Host、spec#5.2）
+- [ ] iframe の `sandbox` は `allow-scripts` のみ（`allow-same-origin` / `allow-popups` / `allow-top-navigation` / `allow-forms` / `allow-modals` / `allow-pointer-lock` を付けない）（PT-5.2-1〜6, R-5.2-1）
+- [ ] `allow` は `accelerometer 'src'; gyroscope 'src'` のみ、`referrerpolicy="no-referrer"`、`credentialless`（PT-5.2-7〜9, R-5.2-2）
+- [ ] Host が描く UI（幕間・結果・ヘッダー）は iframe の上のレイヤで、ゲームが偽装できない（PT-5.4-8, R-5.4-5）
+- [ ] Host は `X-Frame-Options: DENY`（PT-5.4-14, R-5.4-6）
+
+## 実行時（spec#5.4）
+- [ ] `window.parent.document` / `window.top.location.href` などへのアクセスが例外になる（PT-5.4-1, PT-5.4-6, PT-5.4-7, R-5.4-1）
+- [ ] 外部へのデータ送信（`fetch` / `sendBeacon` / `WebSocket` / `EventSource` / `<img>` / XHR / DNS プリフェッチ）が遮断される（PT-5.4-2, PT-5.4-3, R-5.4-2）
+- [ ] `blob:` / `data:` へのナビゲーションが遮断されるか、遷移先も不透明オリジンのまま（PT-5.4-4, R-5.4-3）
+- [ ] Service Worker 登録が失敗する（PT-5.4-5, R-5.4-4）
+- [ ] 無限ループ・巨大 canvas・音量爆弾で Host のページが巻き込まれない（PT-5.4-11〜13）
+
+## メッセージ（packages/sdk、spec#6）
+- [ ] Host は postMessage の送り元を `event.source === iframe.contentWindow` で照合する（不透明オリジンなので `event.origin` は常に `"null"`）。Guest 側は親の `event.source === window.parent` を照合する（PT-5.4-9, PT-5.4-10, R-5.4-7）
+- [ ] 受信メッセージはスキーマ（`parseGuestMessage` / `parseHostMessage`）で検証し、違反は即セッション破棄（R-6.1-1, R-6.1-5）
 - [ ] 静的解析の禁止識別子リスト（spec#4.4）が更新されていれば、テストも更新されている
