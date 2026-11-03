@@ -2,20 +2,20 @@ import {
   ACCEPTED_INPUTS,
   DURATION_MAX,
   DURATION_MIN,
+  initialSession,
   MEDIA_MAX_BYTES,
   type SessionEvent,
-  VERB_MAX_CHARS,
-  initialSession,
   transition,
+  VERB_MAX_CHARS,
 } from "@gamefeed/domain";
 import { describe, expect, it } from "vitest";
 import {
   type GuestToHost,
   type HostToGuest,
   MESSAGE_TYPES,
-  SCORE_MAX,
   parseGuestMessage,
   parseHostMessage,
+  SCORE_MAX,
   toSessionEvent,
 } from "../src/messages.ts";
 
@@ -72,7 +72,18 @@ function expectReject(r: { ok: true } | { ok: false; reason: string }, contains?
 describe("R-6.1-5 10 種のメッセージをスキーマで検証する", () => {
   it("型の一覧は spec#6.1 の 10 種と一致する", () => {
     expect([...MESSAGE_TYPES].sort()).toEqual(
-      ["ready", "init", "start", "pause", "resume", "log", "end", "media", "error", "destroy"].sort(),
+      [
+        "ready",
+        "init",
+        "start",
+        "pause",
+        "resume",
+        "log",
+        "end",
+        "media",
+        "error",
+        "destroy",
+      ].sort(),
     );
   });
 
@@ -151,12 +162,14 @@ describe("R-6.1-5 ready のメタ制約は静的解析と同じ定数を使う�
     expect(parseGuestMessage({ ...ready, verb }).ok).toBe(ok);
   });
 
-  it.each([...ACCEPTED_INPUTS.map((i) => [i, true] as const), ["tilt", false], ["mouse", false]])(
-    "input=%s → 受理=%s",
-    (input, ok) => {
-      expect(parseGuestMessage({ ...ready, input }).ok).toBe(ok);
-    },
-  );
+  const inputCases: [string, boolean][] = [
+    ...ACCEPTED_INPUTS.map((i): [string, boolean] => [i, true]),
+    ["tilt", false],
+    ["mouse", false],
+  ];
+  it.each(inputCases)("input=%s → 受理=%s", (input, ok) => {
+    expect(parseGuestMessage({ ...ready, input }).ok).toBe(ok);
+  });
 
   it("sdk は 1.1 固定", () => {
     expectReject(parseGuestMessage({ ...ready, sdk: "1.0" }));
@@ -235,18 +248,22 @@ describe("R-6.1-5 media のサイズ上限と形式（spec#6.1, R-6.1-4）", () 
 
   it("video は WebM ≤ 2 MB", () => {
     expectOk(parseGuestMessage({ ...media, kind: "video", blob: webm(MEDIA_MAX_BYTES.video) }));
-    expectReject(parseGuestMessage({
-      ...media,
-      kind: "video",
-      blob: webm(MEDIA_MAX_BYTES.video + 1),
-    }));
+    expectReject(
+      parseGuestMessage({
+        ...media,
+        kind: "video",
+        blob: webm(MEDIA_MAX_BYTES.video + 1),
+      }),
+    );
     expectReject(parseGuestMessage({ ...media, kind: "video", blob: png(100) }));
     // MediaRecorder は codecs 付きの MIME を返すことがある
-    expectOk(parseGuestMessage({
-      ...media,
-      kind: "video",
-      blob: new Blob([new Uint8Array(10)], { type: "video/webm;codecs=vp8" }),
-    }));
+    expectOk(
+      parseGuestMessage({
+        ...media,
+        kind: "video",
+        blob: new Blob([new Uint8Array(10)], { type: "video/webm;codecs=vp8" }),
+      }),
+    );
   });
 
   it("kind は thumb / video のみ", () => {
