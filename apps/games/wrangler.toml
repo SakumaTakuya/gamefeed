@@ -1,0 +1,8 @@
+name = "gamefeed-games"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+
+# ゲーム HTML の保存先（spec#5）。バケットはオーナーが作る（#4）。
+[[r2_buckets]]
+binding = "GAMES"
+bucket_name = "gamefeed-games"
