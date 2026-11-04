@@ -7,4 +7,4 @@ AI で作った 5 秒のミクロゲームを、お題ごとに連続で遊ぶ�
 - 要件→テスト対応表: [docs/requirements.md](./docs/requirements.md)
 - 作業の流れ: [docs/workflow.md](./docs/workflow.md)
 
-個人の趣味プロジェクト。仕様書・計画書は Claude Docs 上にあり、CLAUDE.md からリンクしている。
+個人の趣味プロジェクト。仕様書は `docs/spec.md`、計画書は `docs/plan.md`。

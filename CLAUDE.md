@@ -4,15 +4,15 @@
 迷ったら「仕様書 → 計画書 → このファイル → docs/」の順で正を探す。
 
 ## 正とする文書
-- 仕様書: https://claude.ai/artifact/NAPG7cQ1PAXaiJXXVVAJZR（章番号で参照する。例: `spec#6.3`）
-- 計画書: https://claude.ai/artifact/7eTGjGg7grfZ3tkJHySVuj（WBS 番号で参照する。例: `plan#9`）
+- 仕様書: `docs/spec.md`（章番号で参照する。例: `spec#6.3`）
+- 計画書: `docs/plan.md`（WBS 番号で参照する。例: `plan#9`）
 - 要件→テスト対応表: `docs/requirements.md`
 - テスト方針: `docs/testing.md`
 - 作業の流れ: `docs/workflow.md`
 - 現在地と次の一手: `docs/status.md`（セッション開始時に最初に読む）
 
 仕様と実装がずれたら、実装を直すか仕様書を直す。黙ってずらさない。
-仕様書は Claude Docs 上にあるので、変更が必要なときは Issue に「仕様変更」ラベルを付けてオーナーに提案し、承認後に反映する。
+仕様書を変えるときは `type:spec` の Issue を切り、`docs/spec.md` を直す PR（`spec:` コミット）を出してオーナーの承認を待つ。AI が自分でマージしない。
 
 ## 構成（モノレポ、pnpm workspaces）
 ```
@@ -21,7 +21,7 @@ apps/api       Hono（REST API・Better Auth・MCP サーバ）。Vercel の api
 apps/games     Cloudflare Worker（ゲーム HTML 配信、R2、CSP）
 packages/sdk   Guest 側 SDK（GF.*）と Host 側ブリッジ、メッセージスキーマ
 packages/domain 状態機械・静的解析・ラン生成など純粋なドメインロジック
-docs/          方針文書。仕様そのものは置かない
+docs/          仕様書（spec.md）・計画書（plan.md）・方針文書
 ```
 - 依存の向き: `web`/`api`/`games` → `sdk`/`domain`。逆は禁止。`domain` は Node/ブラウザ両対応で、I/O を持たない。
 - TypeScript strict。`any` は理由をコメントして使う。
