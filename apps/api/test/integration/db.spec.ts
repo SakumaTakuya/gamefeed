@@ -52,6 +52,21 @@ dbSuite("spec#12 データモデル", () => {
       });
   }
 
+  /**
+   * drizzle は DB のエラーを DrizzleQueryError（message は SQL 文）で包む。
+   * 制約名やトリガーの文言で判定するため、元の Postgres のエラーを投げ直す。
+   */
+  function dbError(p: Promise<unknown>): Promise<never> {
+    return p.then(
+      () => {
+        throw new Error("DB が拒否するはずのクエリが通った");
+      },
+      (e: unknown) => {
+        throw e instanceof Error && e.cause instanceof Error ? e.cause : e;
+      },
+    );
+  }
+
   // ---- fixtures ---------------------------------------------------------------
 
   async function seedUser(tx: Db, id = "u-1", handle = "alice") {
@@ -155,7 +170,7 @@ dbSuite("spec#12 データモデル", () => {
     it("users.handle は一意", async () => {
       await rolledBack(async (tx) => {
         await seedUser(tx, "u-1", "alice");
-        await expect(seedUser(tx, "u-2", "alice")).rejects.toThrow(/unique/i);
+        await expect(dbError(seedUser(tx, "u-2", "alice"))).rejects.toThrow(/unique/i);
       });
     });
 
@@ -165,7 +180,7 @@ dbSuite("spec#12 データモデル", () => {
         await seedUser(tx, "u-2", "bob");
         const row = { postId: "p-1", reporterId: "u-2", category: "spam", weight: 1 };
         await tx.insert(s.reports).values(row);
-        await expect(tx.insert(s.reports).values(row)).rejects.toThrow(/unique/i);
+        await expect(dbError(tx.insert(s.reports).values(row))).rejects.toThrow(/unique/i);
       });
     });
 
@@ -182,7 +197,7 @@ dbSuite("spec#12 データモデル", () => {
         });
         const row = { postId: "p-1", name: "hero.webp", assetHash: "a-1", required: false };
         await tx.insert(s.postAssets).values(row);
-        await expect(tx.insert(s.postAssets).values(row)).rejects.toThrow(/unique/i);
+        await expect(dbError(tx.insert(s.postAssets).values(row))).rejects.toThrow(/unique/i);
       });
     });
   });
@@ -192,7 +207,7 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await seedPost(tx, "p-2", { parentId: "p-1", treeId: "p-1", depth: 1 });
-        await expect(tx.execute(sql`delete from posts where id = 'p-1'`)).rejects.toThrow(
+        await expect(dbError(tx.execute(sql`delete from posts where id = 'p-1'`))).rejects.toThrow(
           /foreign key|violates/i,
         );
       });
@@ -202,7 +217,7 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          seedPost(tx, "p-2", { parentId: "nope", treeId: "nope", depth: 1 }),
+          dbError(seedPost(tx, "p-2", { parentId: "nope", treeId: "nope", depth: 1 })),
         ).rejects.toThrow(/foreign key|violates/i);
       });
     });
@@ -226,13 +241,15 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          tx.insert(s.sessions).values({
-            id: "s-1",
-            postId: "p-1",
-            seed: 1,
-            mode: "play",
-            state: "submitted",
-          }),
+          dbError(
+            tx.insert(s.sessions).values({
+              id: "s-1",
+              postId: "p-1",
+              seed: 1,
+              mode: "play",
+              state: "submitted",
+            }),
+          ),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -241,14 +258,16 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          tx.insert(s.sessions).values({
-            id: "s-1",
-            postId: "p-1",
-            seed: 1,
-            mode: "play",
-            state: "open",
-            submittedAt: new Date(),
-          }),
+          dbError(
+            tx.insert(s.sessions).values({
+              id: "s-1",
+              postId: "p-1",
+              seed: 1,
+              mode: "play",
+              state: "open",
+              submittedAt: new Date(),
+            }),
+          ),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -257,14 +276,16 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          tx.insert(s.sessions).values({
-            id: "s-1",
-            postId: "p-1",
-            seed: 1,
-            mode: "play",
-            state: "open",
-            score: -1,
-          }),
+          dbError(
+            tx.insert(s.sessions).values({
+              id: "s-1",
+              postId: "p-1",
+              seed: 1,
+              mode: "play",
+              state: "open",
+              score: -1,
+            }),
+          ),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -336,17 +357,16 @@ dbSuite("spec#12 データモデル", () => {
   // ---- R-12.2 不変条件 ---------------------------------------------------------
 
   describe("R-12.2-1 I1: parent_id は更新不可（トリガー）", () => {
-    it("parent_id を書き換えると拒否される", async () => {
+    // 1 トランザクション内で 2 回エラーを起こすと 2 回目は "transaction is aborted" になるので分ける
+    it.each([
+      ["別の親", sql`update posts set parent_id = 'p-2' where id = 'p-3'`],
+      ["NULL", sql`update posts set parent_id = null where id = 'p-3'`],
+    ])("parent_id を %s に書き換えると拒否される", async (_, q) => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await seedPost(tx, "p-2");
         await seedPost(tx, "p-3", { parentId: "p-1", treeId: "p-1", depth: 1 });
-        await expect(
-          tx.execute(sql`update posts set parent_id = 'p-2' where id = 'p-3'`),
-        ).rejects.toThrow(/parent_id/);
-        await expect(
-          tx.execute(sql`update posts set parent_id = null where id = 'p-3'`),
-        ).rejects.toThrow(/parent_id/);
+        await expect(dbError(tx.execute(q))).rejects.toThrow(/parent_id/);
       });
     });
 
@@ -363,7 +383,9 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          tx.execute(sql`update posts set base_status = ${st}::base_status where id = 'p-1'`),
+          dbError(
+            tx.execute(sql`update posts set base_status = ${st}::base_status where id = 'p-1'`),
+          ),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -381,8 +403,10 @@ dbSuite("spec#12 データモデル", () => {
         await seedAll(tx);
         await tx.execute(sql`update posts set base_status = ${st}::base_status where id = 'p-1'`);
         await expect(
-          tx.execute(
-            sql`update posts set base_status = 'public', showcase_key = 'k' where id = 'p-1'`,
+          dbError(
+            tx.execute(
+              sql`update posts set base_status = 'public', showcase_key = 'k' where id = 'p-1'`,
+            ),
           ),
         ).rejects.toThrow(/removed|expired|終端/);
       });
@@ -402,7 +426,7 @@ dbSuite("spec#12 データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await expect(
-          tx.insert(s.treeLocks).values({ rootPostId: "p-1", actionId: 999 }),
+          dbError(tx.insert(s.treeLocks).values({ rootPostId: "p-1", actionId: 999 })),
         ).rejects.toThrow(/foreign key|violates/i);
       });
     });
@@ -419,7 +443,9 @@ dbSuite("spec#12 データモデル", () => {
 
     it.each([DURATION_MIN - 1, DURATION_MAX + 1])("%i は拒否", async (n) => {
       await rolledBack(async (tx) => {
-        await expect(seedGame(tx, `h-${n}`, { durationFrames: n })).rejects.toThrow(/check/i);
+        await expect(dbError(seedGame(tx, `h-${n}`, { durationFrames: n }))).rejects.toThrow(
+          /check/i,
+        );
       });
     });
 
@@ -441,7 +467,7 @@ dbSuite("spec#12 データモデル", () => {
         });
         await seedGame(tx, "h-t", { themeId: "t-1" });
         await seedGame(tx, "h-free", { themeId: null });
-        await expect(seedGame(tx, "h-bad", { themeId: "nope" })).rejects.toThrow(
+        await expect(dbError(seedGame(tx, "h-bad", { themeId: "nope" }))).rejects.toThrow(
           /foreign key|violates/i,
         );
       });
@@ -462,7 +488,7 @@ dbSuite("spec#12 データモデル", () => {
     it("cleared > total は拒否", async () => {
       await rolledBack(async (tx) => {
         await expect(
-          tx.insert(s.runs).values({ ...base, results: ["win", "win"], cleared: 3 }),
+          dbError(tx.insert(s.runs).values({ ...base, results: ["win", "win"], cleared: 3 })),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -470,7 +496,9 @@ dbSuite("spec#12 データモデル", () => {
     it("results が total より長ければ拒否", async () => {
       await rolledBack(async (tx) => {
         await expect(
-          tx.insert(s.runs).values({ ...base, results: ["win", "win", "lose"], cleared: 2 }),
+          dbError(
+            tx.insert(s.runs).values({ ...base, results: ["win", "win", "lose"], cleared: 2 }),
+          ),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -478,7 +506,7 @@ dbSuite("spec#12 データモデル", () => {
     it("results は win / lose 以外を含めない", async () => {
       await rolledBack(async (tx) => {
         await expect(
-          tx.insert(s.runs).values({ ...base, results: ["draw"], cleared: 0 }),
+          dbError(tx.insert(s.runs).values({ ...base, results: ["draw"], cleared: 0 })),
         ).rejects.toThrow(/check/i);
       });
     });
@@ -491,8 +519,10 @@ dbSuite("spec#12 データモデル", () => {
         await seedGame(tx, "h-1", { verb: null });
         await seedPost(tx);
         await expect(
-          tx.execute(
-            sql`update posts set base_status = 'public', showcase_key = 'k' where id = 'p-1'`,
+          dbError(
+            tx.execute(
+              sql`update posts set base_status = 'public', showcase_key = 'k' where id = 'p-1'`,
+            ),
           ),
         ).rejects.toThrow(/verb|input/);
       });
