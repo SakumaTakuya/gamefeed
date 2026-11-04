@@ -97,3 +97,38 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC | `docs/manual-tests/muse-connect.md` | todo |
 | R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-9-4 | 新規投稿は 5 件/日まで | integration | 6 件目が拒否される。日付境界は手動時計 | 同上 | todo |
+
+## 12.1 テーブル
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-12.1-1 | spec#12.1 の 10 テーブルと spec#12.4 の `themes` / `runs`、列挙型 10 種（値は記載順）がマイグレーションで作られ、再適用は何もしない | integration | 空の Postgres に `migrateDb` を当て `information_schema` / `pg_enum` を見る。2 回目も成功 | `apps/api/test/integration/db.spec.ts` | green |
+| R-12.1-2 | `users.handle`、`reports(post_id, reporter_id)`、`post_assets(post_id, name)` は一意 | integration | 同じ値を 2 回入れて unique 違反 | 同上 | green |
+| R-12.1-3 | `posts.parent_id` は `posts.id` への外部キー。子がある投稿は削除できない（RESTRICT） | integration | 子を持つ親の DELETE と、存在しない親の INSERT が FK 違反 | 同上 | green |
+| R-12.1-4 | `sessions.submitted_at` は `state = submitted` のときだけ非 NULL（CHECK）。`score` は 0 以上（spec#10.4） | integration | open で NULL は受理、submitted で NULL / open で非 NULL / score −1 は拒否 | 同上 | green |
+| R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `expired` / `pending` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status` | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` に `indiv_restricted` を立てても `removed` | 同上 | green |
+
+## 12.2 不変条件
+
+I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクションで担保するもので、DB の制約では書けない。該当する API を実装する Issue で状態を更新する。
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-12.2-1 | I1: `posts.parent_id` は挿入後に変更できない（トリガー。NULL への変更も拒否） | integration | 別の親 / NULL への UPDATE がエラー文 `parent_id` 付きで拒否。他の列の UPDATE は通る | `apps/api/test/integration/db.spec.ts` | green |
+| R-12.2-2 | I2: 子の `tree_id` は親と同じ、`depth` は親 + 1。挿入時に親行を `FOR SHARE` でロックして計算する | integration | `publish_game` のトランザクションで親を同時に更新しても一貫する | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-12.2-3 | I3: `tree_locks.action_id` は `moderation_actions` を必ず指す（FK）。BAN されたユーザーの投稿がすべて `removed` になるのは同一トランザクションで担保（`users` を `FOR SHARE`） | integration | FK: 監査行のない `tree_locks` が拒否される（green）。BAN 側はモデレーション API の Issue で（todo） | 同上 / `apps/api/test/integration/moderation.spec.ts` | green（FK）/ todo（BAN） |
+| R-12.2-4 | I4: `base_status` が `limited` / `public` なら `showcase_key` は非 NULL（CHECK） | integration | `showcase_key` NULL のまま `limited` / `public` にすると拒否。`pending` は NULL 可 | `apps/api/test/integration/db.spec.ts` | green |
+| R-12.2-5 | I5: `removed` / `expired` からの `base_status` 変更は存在しない（トリガー） | integration | `removed` / `expired` → `public` が拒否。`removed` のまま他の列の更新は通る | 同上 | green |
+| R-12.2-6 | I6: `restricted` からの復帰は `moderation_actions.kind = restore / restore_tree` を伴う | integration | モデレーション API が監査行と状態変更を同一トランザクションで書く | `apps/api/test/integration/moderation.spec.ts` | todo |
+| R-12.2-7 | I7: 1 セッションの `submitted` 遷移は高々 1 回（`UPDATE … WHERE state = 'open'` の更新行数で判定） | integration | 同じ `session_id` への 2 回目の `PUT /sessions/{id}/result` が 409 | `apps/api/test/integration/sessions.spec.ts` | todo |
+| R-12.2-8 | I8: `verdict = accepted` なら `score` と `checkpoint` が再実行結果と一致（検証ワーカーだけが `accepted` を書く）。DB ロールの分離は MVP 外 | integration | Phase 2 の検証ワーカーで。MVP では `accepted` を書く経路が検証ワーカーのみであることをコードで確認 | — | n/a（MVP） |
+| R-12.2-9 | I9: 投稿の `post_assets` は合計 3 MB・32 件以下、`required` 合計 512 KB 以下、BGM は `required` 不可 | integration | `publish_game` のトランザクションで集計して拒否 | `apps/api/test/integration/publish.spec.ts` | todo |
+
+## 12.4 ミクロゲーム対応の追加分
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-12.4-1 | `games.duration_frames` は 180〜480（CHECK）。`verb` / `input` / `duration_frames` は静的解析前は NULL 可。`games.theme_id` は `themes` への外部キーで NULL は「フリー」 | integration | 180 / 480 受理、179 / 481 拒否、全部 NULL 受理、存在しない `theme_id` 拒否 | `apps/api/test/integration/db.spec.ts` | green |
+| R-12.4-2 | `runs.cleared ≤ runs.total`、`results` の長さ ≤ `total`、`results` は `win` / `lose` のみ（CHECK） | integration | 境界（= total、空）受理、超過と `draw` 拒否 | 同上 | green |
+| R-12.4-3 | `limited` / `public` にする投稿のゲームは `verb`・`input` が非 NULL（トリガー） | integration | `verb` NULL のゲームを `public` にするとエラー文 `verb` / `input` 付きで拒否。揃っていれば通る | 同上 | green |
+| R-12.4-4 | ビュー `run_results`: お題ごとに `runs`、`clear_rate = Σcleared / Σtotal`、`completion_rate = ended_at 非 NULL の割合` | integration | 2 ラン（3/4 クリア完走、0/4 未完走）で 3/8 と 1/2 | 同上 | green |
