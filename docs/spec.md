@@ -69,7 +69,7 @@ GameFeed（仮称）は、AIで作られたブラウザミニゲームを縦ス�
 | 入力 | DOMイベント直接購読は可だが、SDK の `onInput` 経由を推奨。直接購読した入力はリプレイに記録されない旨を警告 | 警告 |
 | 音声 | `AudioContext` は可。再生開始は `onStart` 以後に限定（自動再生禁止）。音量は SDK の `audio.gain` を経由 | 警告 |
 | 画面 | 縦長 9:16 を基準に `100vw × 100vh` にフィットさせる。`<meta name="viewport">` はSDKが注入 | 警告 |
-| メタデータ | `<title>` 必須。`<meta name="gf:controls" content="tap | swipe |
+| メタデータ | `<title>` 必須。`gf:duration` / `gf:verb` / `gf:input` の宣言は第6.3章の表に従う | 拒否 |
 
 ### 4.2 アセット
 
