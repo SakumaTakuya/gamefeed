@@ -15,6 +15,13 @@
       "when": 1793774265004,
       "tag": "0001_triggers_and_views",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1793794263178,
+      "tag": "0002_better_auth_oauth",
+      "breakpoints": true
     }
   ]
 }
