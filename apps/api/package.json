@@ -10,7 +10,10 @@
     "build": "tsx scripts/build.ts",
     "dev": "tsx watch src/dev.ts",
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "db:generate": "drizzle-kit generate",
+    "db:generate:custom": "drizzle-kit generate --custom",
+    "db:migrate": "tsx scripts/migrate.ts"
   },
   "dependencies": {
     "@gamefeed/domain": "workspace:*",
