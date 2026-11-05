@@ -291,3 +291,7 @@ export const runs = pgTable(
     check("runs_results_win_lose", sql`${t.results} <@ ARRAY['win', 'lose']::text[]`),
   ],
 );
+
+// ---- Better Auth / OAuth 2.1 認可サーバ（#5） ---------------------------------------------
+// マイグレーション生成（drizzle-kit）がこのファイルを見るので、ここから再エクスポートする。
+export * from "./auth-schema.ts";

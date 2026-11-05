@@ -1,0 +1,20 @@
+name: db-migrate
+# 本番（Supabase）に apps/api/migrations/ を当てる。手動実行のみ。
+# GitHub Secrets `SUPABASE_DIRECT_URL` に direct 接続（:5432、pooler ではない）の URL を入れておく。
+# マイグレーションは Transaction mode の pooler を通さないほうが安全（docs/status.md）。
+on:
+  workflow_dispatch:
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @gamefeed/api db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
