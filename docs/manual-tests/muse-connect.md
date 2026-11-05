@@ -91,9 +91,11 @@ MC-2 の翌日以降に、同じ Muse / Claude から `publish_game` をもう�
 
 | 日付 | 項目 | 端末 / クライアント | 結果 | 所見 |
 | --- | --- | --- | --- | --- |
-| | MC-0 | | | |
-| | MC-1 | iPhone / Muse | | |
-| | MC-2 | iPhone / Muse | | |
+| 2026-11-05 | MC-0 | Mac / curl | pass | issuer・registration_endpoint・S256、resource・authorization_servers、401 + `www-authenticate: Bearer resource_metadata=…` すべて期待どおり。`/.well-known/(.*)` の rewrite は関数に元のパスを渡す |
+| 2026-11-05 | MC-1 | iPhone / Muse | pass | コネクタ登録 → Google ログイン → 同意 → 接続済み。DCR の登録メタデータは Better Auth の検証を通った |
+| 2026-11-05 | MC-2 | iPhone / Muse | pass | `publish_game` が通り `post_id: gf:poc-mw3b9vk5`、url、echo（title「接続テスト」、html 31 バイト、prompt 3 文字）、ダミー警告が返った |
 | | MC-3 | / Claude | | |
 | | MC-4 | | | |
-| | MC-5 | | | |
+| | MC-5 | | 2026-11-06 以降 | |
+
+判断（2026-11-05）: MC-1・MC-2 が通ったので Better Auth のまま plan#9（W5）へ。Cloudflare `workers-oauth-provider` への切替は不要。

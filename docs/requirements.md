@@ -94,7 +94,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
 | R-9-1 | OAuth 2.1 の DCR・PKCE・`.well-known`（RFC 8414 / 9728、issuer 配下とパス挿入形の両方）を提供する | integration | MCP 公式 SDK（v2）のクライアントで DCR → 認可 → 同意 → トークン → `tools/list` → `publish_game`（ダミー）まで通す。トークンなしの `POST /api/mcp` は 401 と `WWW-Authenticate`（`resource_metadata`） | `apps/api/test/integration/mcp-oauth.spec.ts` | green |
-| R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る。Claude のカスタムコネクタでも同じ | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC（MC-1〜MC-4） | `docs/manual-tests/muse-connect.md` | todo |
+| R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る。Claude のカスタムコネクタでも同じ | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC（MC-1〜MC-4） | `docs/manual-tests/muse-connect.md` | green（Muse、2026-11-05）/ todo（Claude） |
 | R-9-5 | アクセストークンは 24 時間以上、リフレッシュトークンは 30 日。ローテーション後の旧リフレッシュトークンは猶予内なら同じ応答を返す（計画書 第5節「トークン方針」） | integration + manual | `expires_in ≥ 86400`、`refresh_token` あり。旧トークンで 2 回目の refresh が 200 で同じ応答。24 時間以上空けた再接続は MC-5 | `apps/api/test/integration/mcp-oauth.spec.ts`、`docs/manual-tests/muse-connect.md` | green（integration）/ todo（manual） |
 | R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-9-4 | 新規投稿は 5 件/日まで | integration | 6 件目が拒否される。日付境界は手動時計 | 同上 | todo |
