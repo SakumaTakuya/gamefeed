@@ -18,6 +18,7 @@
 - 仕様書・計画書は #31 で repo に移した（`docs/spec.md` / `docs/plan.md`）。Claude Docs 側はもう更新しない。11/3 にミクロゲーム・MCP 一本・趣味前提で改訂済み。同日、#21 で Guest 配信を「投稿ごとのサブドメイン」から「配信オリジン上のパス `/p/<post_id>/` ＋ CSP `sandbox allow-scripts`」に変更（仕様書 rev 38）。
 - Vercel（本番 `gamefeed-seven.vercel.app`、hnd1）と Supabase（Tokyo）は稼働。Cloudflare は R2 バケット `gamefeed-games`（APAC）、予算アラート、GitHub Secrets `CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` まで済み。
 - #4 完了。Google OAuth クライアント（テスト中、リダイレクト URI は本番 `https://gamefeed-seven.vercel.app/api/auth/callback/google` とローカル `http://localhost:3000/api/auth/callback/google`）、Vercel に `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` / `BETTER_AUTH_URL`（Production のみ）。ドメイン購入は #21 により不要。
+- #35 で Node.js を 26（LTS、2026-10-28〜、EOL 2029-04）に揃えた。`engines.node >=26`、CI と `db-migrate` も 26。Vercel は `engines` で決まるので新規デプロイから 26。
 
 ## 次の一手（順番どおりに）
 1. **#5 の実機確認（オーナー）** — (a) Supabase に `0002_better_auth_oauth` を当てる（`DATABASE_URL=<direct :5432> pnpm --filter @gamefeed/api db:migrate`、または Secrets `SUPABASE_DIRECT_URL` を入れて Actions の `db-migrate` を手動実行。pooler は Transaction mode なので direct 接続で当てる）。(b) `docs/manual-tests/muse-connect.md` の MC-0〜MC-3 を本番で実施し、結果を Issue #5 にコメント（Google ログインはプレビュー環境では使えない）。通れば #5 を閉じて plan#9 は W5 へ。だめなら Cloudflare `workers-oauth-provider` 切替の Issue を切る。(c) MC-5 は翌日以降。
