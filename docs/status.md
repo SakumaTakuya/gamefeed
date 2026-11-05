@@ -46,3 +46,12 @@
 ## オーナーに聞かないと決められないこと
 - #26: spec#4.1「メタデータ」行の切れ（`gf:controls` と `gf:input` の不一致）
 - #27: spec#6.1 のワイヤ形式（フラット JSON）と `session_id` を載せる Guest メッセージの範囲
+
+## AI の作業環境メモ（Claude のチャットからコンテナで作業するとき）
+- `gh` は入っていない。`https://github.com/cli/cli/releases/download/v<ver>/gh_<ver>_linux_amd64.tar.gz` を curl で落として `bin/gh` を PATH に置く。認証は `GH_TOKEN` 環境変数（オーナーが PAT を貼る）。push は `gh auth setup-git` を 1 回。
+- `gh issue comment` に `--jq` は無い（成功したように見えて何も書かれない）。コメントは `gh api repos/<owner>/<repo>/issues/<n>/comments --jq length` で届いたか確かめる。
+- Node は 22 系が入っている（CI・本番は 26）。pnpm は `corepack enable`（`COREPACK_ENABLE_DOWNLOAD_PROMPT=0`）。
+- integration テスト用 Postgres: `apt-get install -y postgresql-16 && service postgresql start`、`postgres` ユーザーのパスワードを `postgres` に、DB `gamefeed_test` を作って `DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/gamefeed_test`。コンテナが休むと落ちるので、テスト前に `service postgresql start`。
+- バックグラウンドで dev サーバを動かすなら `setsid nohup ... &`。`pkill -f` は自分のシェルまで殺すので使わない。
+- このコンテナから `*.vercel.app` には届かない（curl は 000、Claude の fetch ツールは Vercel に弾かれて "server error"）。本番の確認はオーナーの curl を正とする。
+- ネットワークの許可先は GitHub・npm・PyPI・Ubuntu apt 程度。Supabase・Vercel・Google には届かない。
