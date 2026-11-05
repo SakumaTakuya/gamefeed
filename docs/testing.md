@@ -9,14 +9,14 @@
 | --- | --- | --- | --- | --- |
 | unit | `packages/domain` の純粋ロジック（状態機械、静的解析、ラン生成、メッセージスキーマ） | Node | すべて本物。mock なし | Vitest |
 | integration | `apps/api` のルート＋DB、`apps/games` の Worker＋R2、`packages/sdk` の Host↔Guest ブリッジ | Node / Workers / 実ブラウザ | DB は本物の Postgres（CI は service container、ローカルは Supabase CLI または Docker）。R2 は Miniflare の本物相当。認証はテスト用ユーザーで実際にログイン | Vitest、Miniflare、Playwright |
-| contract | Host と Guest の postMessage プロトコル（spec#6.1）。片側を仕様どおりの最小実装に置き換えて、もう片側を検証 | 実ブラウザ | iframe・postMessage・sandbox 属性は本物 | Playwright |
+| contract | Host と Guest の postMessage プロトコル（`docs/protocol.md`）。片側を仕様どおりの最小実装に置き換えて、もう片側を検証 | 実ブラウザ | iframe・postMessage・sandbox 属性は本物 | Playwright |
 | e2e | ユーザー視点の一連の流れ（お題を開く→ランを完走→結果画面、投稿→試遊→公開） | 実ブラウザ（Chromium、WebKit） | 全部本物。サンプルゲーム（`fixtures/games/`）を使う | Playwright |
 | manual | 実機でしか分からないこと（iOS Safari の音声、幕間のテンポ、タッチ感、Muse からの接続） | 実機 | — | 手順書と結果を PR 本文に残す |
-| formal | 状態機械の性質（spec#13） | TLC | モデル | TLA+。TS の union 型と遷移テーブルがモデルと一致することを unit で検証 |
+| formal | 状態機械の性質（`verification/`） | TLC | モデル | TLA+。TS の union 型と遷移テーブルがモデルと一致することを unit で検証 |
 
 「本物を使う」の原則: 境界の外側（他社サービス、時計、乱数、ネットワーク断）だけを差し替える。差し替えるときはインターフェースを `packages/domain` に置き、テスト用実装も製品コードと同じ型を満たす。
 - 時計: `Clock` インターフェース。テストでは手動で進める実装。
-- 乱数: seed を渡す（spec#7 と同じ仕組み）。
+- 乱数: seed を渡す（`game-contract.md` の決定論性と同じ仕組み）。
 - Muse / Claude などの MCP クライアント: 公式 SDK のクライアントで実際に接続する（integration）。Muse 本体は manual。
 - R2 / Postgres: mock しない。本物か本物相当を使う。
 

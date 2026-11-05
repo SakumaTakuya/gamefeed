@@ -4,7 +4,7 @@
 - 単位: 1 Issue = 1 PR で閉じられる大きさ（目安 0.5〜2 人日）。計画書の WBS 1 行は複数 Issue に割る。
 - テンプレート `task` を使い、次を必ず埋める:
   - 目的（なぜやるか。1〜2 行）
-  - 仕様書の参照（`spec#x.y`）と計画書の参照（`plan#n`）
+  - 仕様の参照（文書名と節。例: `protocol#3`、`product#5.2`）と計画書の参照（`plan#n`）
   - 関係する要件 ID（`docs/requirements.md`。なければ先に追加する）
   - テスト層（unit / integration / contract / e2e / manual）と、各層で何を確かめるか
   - 完了条件（チェックリスト。テストが通ること＋目視項目）
@@ -30,10 +30,10 @@
 
 ## 週次レビュー（金曜）
 - マイルストーンの完了 / 未完了を数え、計画書 第4節の「削る順番」と照らす。
-- 未解決事項（spec#15）に動きがあれば Issue にする。
+- 未解決事項（`product.md` 10 と各文書末尾）に動きがあれば Issue にする。
 - 計画書の「今週のタスク」をオーナーに提案し、承認後に更新する。
 
 ## 仕様変更
 - 実装中に仕様の穴や矛盾を見つけたら、勝手に解釈せず `type:spec` の Issue を切る。
 - Issue には「現状の記述」「問題」「提案」「影響範囲（章・要件 ID）」を書く。
-- `docs/spec.md` を直す PR（コミットは `spec:`、本文に Issue の「提案」を貼る）を出す。この PR だけはオーナーがマージする。マージ後に `docs/requirements.md` を追従させてから実装に戻る。
+- 該当する `docs/*.md`（`product.md` / `game-contract.md` / `protocol.md` など。対応表は `docs/decisions.md` D-001）を直す PR（コミットは `spec:`、本文に Issue の「提案」を貼る）を出す。`product.md` の「決定」を変えるなら `docs/decisions.md` に項目を足す。この PR だけはオーナーがマージする。マージ後に `docs/requirements.md` を追従させてから実装に戻る。

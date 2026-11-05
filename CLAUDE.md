@@ -4,7 +4,9 @@
 迷ったら「仕様書 → 計画書 → このファイル → docs/」の順で正を探す。
 
 ## 正とする文書
-- 仕様書: `docs/spec.md`（章番号で参照する。例: `spec#6.3`）
+- プロダクト定義: `docs/product.md`（節番号で参照する。例: `product#5.2`）。決定の履歴は `docs/decisions.md`（`D-002` のように参照する）
+- 仕様の各文書（2026-11-06 の分割、`D-001`）: `docs/game-contract.md`・`protocol.md`・`run.md`・`scoring.md`・`security.md`・`moderation.md`・`data-model.md`・`mcp.md`。ファイル名と節番号で参照する（例: `protocol#3`）。まだ存在しない文書は順次追加する
+- 旧 `docs/spec.md` は削除済み。`spec#x.y` の参照が残っている Issue・PR・要件 ID は、その記述を正として実装してはいけない。対応する新文書は `docs/decisions.md` D-001 の表で引く
 - 計画書: `docs/plan.md`（WBS 番号で参照する。例: `plan#9`）
 - 要件→テスト対応表: `docs/requirements.md`
 - テスト方針: `docs/testing.md`
@@ -12,7 +14,7 @@
 - 現在地と次の一手: `docs/status.md`（セッション開始時に最初に読む）
 
 仕様と実装がずれたら、実装を直すか仕様書を直す。黙ってずらさない。
-仕様書を変えるときは `type:spec` の Issue を切り、`docs/spec.md` を直す PR（`spec:` コミット）を出してオーナーの承認を待つ。AI が自分でマージしない。
+仕様を変えるときは `type:spec` の Issue を切り、該当する `docs/*.md` を直す PR（`spec:` コミット）を出してオーナーの承認を待つ。`product.md` の「決定」を変える PR は `docs/decisions.md` に項目を足す。AI が自分でマージしない。
 
 ## 構成（モノレポ、pnpm workspaces）
 ```
@@ -21,7 +23,7 @@ apps/api       Hono（REST API・Better Auth・MCP サーバ）。Vercel の api
 apps/games     Cloudflare Worker（ゲーム HTML 配信、R2、CSP）
 packages/sdk   Guest 側 SDK（GF.*）と Host 側ブリッジ、メッセージスキーマ
 packages/domain 状態機械・静的解析・ラン生成など純粋なドメインロジック
-docs/          仕様書（spec.md）・計画書（plan.md）・方針文書
+docs/          プロダクト定義（product.md）・仕様の各文書・決定の記録（decisions.md）・計画書（plan.md）・方針文書
 ```
 - 依存の向き: `web`/`api`/`games` → `sdk`/`domain`。逆は禁止。`domain` は Node/ブラウザ両対応で、I/O を持たない。
 - TypeScript strict。`any` は理由をコメントして使う。
@@ -34,14 +36,14 @@ docs/          仕様書（spec.md）・計画書（plan.md）・方針文書
 5. マージ後、Issue が閉じたことと `docs/requirements.md` の対応表が更新されていることを確認する。
 
 ## コミットとPR
-- コミット: `type(scope): 要約 (spec#6.3, #12)` 。type は feat / fix / test / docs / chore / refactor / spec。
+- コミット: `type(scope): 要約 (protocol#3, #12)` 。type は feat / fix / test / docs / chore / refactor / spec。
 - 1 コミット 1 意図。テストと実装は同じ PR に入れるが、コミットは「test: 失敗するテスト」→「feat: 通す実装」の順に分けてよい。
 - PR 本文のテンプレートを埋める。空欄で出さない。
 
 ## 絶対に守ること
 - 秘密情報（トークン・鍵・接続文字列）をコミットしない。`.env.example` だけコミットする。
 - `main` に直接 push しない（初期セットアップの docs 類だけ例外）。
-- サンドボックス（spec#5）に関わる変更は、`docs/security-checklist.md` の該当項目を PR で再確認する。
+- サンドボックス（`docs/security.md`）に関わる変更は、`docs/security-checklist.md` の該当項目を PR で再確認する。
 - 仕様書に書かれていない振る舞いを「便利だから」で足さない。足したいなら Issue で提案。
 - 動作確認を「目視のみ」と決めた要件は、PR 本文に確認手順と結果を書く。
 
