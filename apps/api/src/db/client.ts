@@ -17,22 +17,41 @@ export type Db = PostgresJsDatabase<typeof schema>;
 export interface DbHandle {
   db: Db;
   close: () => Promise<void>;
+  /** postgres-js に渡した実際の接続オプション（テストで確かめる用。実行時には触らない） */
+  options: { max: number; connect_timeout: number };
 }
+
+export interface CreateDbOptions {
+  /** 接続プールの上限。サーバーレス 1 インスタンスあたり。テストは 1 にして挙動を決定的にする */
+  max?: number;
+  /**
+   * 接続確立の待ち時間（秒）。既定 5。
+   * postgres-js の既定 30 秒では、DB に届かないとき Better Auth の初期化がそこで止まり、
+   * Vercel の関数制限（10 秒）に先に当たって原因の見えない 504 になる（#40）。
+   */
+  connectTimeout?: number;
+}
+
+export const DEFAULT_CONNECT_TIMEOUT_SEC = 5;
 
 const migrationsFolder = fileURLToPath(new URL("../../migrations", import.meta.url));
 
 /**
  * 接続プールを作る。Supabase の pooler（Transaction mode）を通すので prepared statement は使わない。
- * `max` はサーバーレス 1 インスタンスあたりの上限。テストは 1 にして挙動を決定的にする。
+ * 届かない DB には `connectTimeout` 秒で `CONNECT_TIMEOUT` を返し、呼び出し側が原因を切り分けられるようにする。
  */
-export function createDb(url: string, opts: { max?: number } = {}): DbHandle {
-  const client = postgres(url, {
+export function createDb(url: string, opts: CreateDbOptions = {}): DbHandle {
+  const options = {
     max: opts.max ?? 5,
+    connect_timeout: opts.connectTimeout ?? DEFAULT_CONNECT_TIMEOUT_SEC,
+  };
+  const client = postgres(url, {
+    ...options,
     prepare: false,
     // "already exists, skipping" 等の NOTICE をログに出さない
     onnotice: () => {},
   });
-  return { db: drizzle(client, { schema }), close: () => client.end() };
+  return { db: drizzle(client, { schema }), close: () => client.end(), options };
 }
 
 /** `migrations/` の未適用分を順に当てる。適用済みは `drizzle.__drizzle_migrations` で判定し、2 回目は何もしない。 */

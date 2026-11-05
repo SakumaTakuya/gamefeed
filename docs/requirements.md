@@ -108,6 +108,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | R-12.1-3 | `posts.parent_id` は `posts.id` への外部キー。子がある投稿は削除できない（RESTRICT） | integration | 子を持つ親の DELETE と、存在しない親の INSERT が FK 違反 | 同上 | green |
 | R-12.1-4 | `sessions.submitted_at` は `state = submitted` のときだけ非 NULL（CHECK）。`score` は 0 以上（spec#10.4） | integration | open で NULL は受理、submitted で NULL / open で非 NULL / score −1 は拒否 | 同上 | green |
 | R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `expired` / `pending` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status` | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` に `indiv_restricted` を立てても `removed` | 同上 | green |
+| R-12.1-6 | `createDb` は届かない DB に対して 5 秒（既定、上書き可）で `CONNECT_TIMEOUT` を返す。postgres-js の既定 30 秒では Vercel の 10 秒制限に先に当たり原因が見えない（#40） | unit | 接続を受け付けて応答しない TCP サーバに `select 1` を投げ、`CONNECT_TIMEOUT` が 1 秒で返る。既定値 5 秒と上書きを確かめる | `apps/api/test/db-client.spec.ts` | green |
 
 ## 12.2 不変条件
 
