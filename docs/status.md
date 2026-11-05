@@ -4,7 +4,7 @@
 
 ## 現在地（2026-11-04）
 - 計画書 W1（11/3〜11/8）。ルール文書（#1）、スキャフォールド（#3）、CI（#11）、セッション状態機械（#6）、静的解析（#8）、メッセージスキーマ（#7、valibot）、侵入テスト手順書（#10）、DB スキーマ（#9）、MCP PoC のコード側（#5）が済み、`pnpm install && pnpm check` が緑。
-- #5 で `apps/api` に Better Auth（Google）＋ `@better-auth/mcp`（OAuth 2.1 認可サーバ）＋ MCP 公式 SDK v2 の `publish_game` ダミーが入った（`src/auth.ts`・`src/mcp.ts`・`src/app.ts`・`src/pages.ts`・`src/config.ts`）。R-9-1 と R-9-5（integration）は green。**2026-11-05 に本番で MC-0〜MC-2 が通り、Muse から OAuth 2.1 / DCR で接続して `publish_game` を呼べた（R-9-2 の Muse 側 green）。計画書最大のリスクは消えたので Better Auth のまま plan#9 へ。残りは Claude コネクタ（MC-3）、再接続（MC-4）、24h 後（MC-5）で Issue #5 は開いたまま。** Supabase には `0002` まで当たっている（Actions `db-migrate`、Secrets `SUPABASE_DIRECT_URL`）。
+- #5 で `apps/api` に Better Auth（Google）＋ `@better-auth/mcp`（OAuth 2.1 認可サーバ）＋ MCP 公式 SDK v2 の `publish_game` ダミーが入った（`src/auth.ts`・`src/mcp.ts`・`src/app.ts`・`src/pages.ts`・`src/config.ts`）。R-9-1 と R-9-5（integration）は green。**2026-11-05 に本番で MC-0〜MC-2 が通り、Muse から OAuth 2.1 / DCR で接続して `publish_game` を呼べた（R-9-2 の Muse 側 green）。計画書最大のリスクは消えたので Better Auth のまま plan#9 へ。同日に Claude のカスタムコネクタ（MC-3）と再接続（MC-4）も通り R-9-2 は green。残りは 24h 後の MC-5 だけで Issue #5 は開いたまま。** Supabase には `0002` まで当たっている（Actions `db-migrate`、Secrets `SUPABASE_DIRECT_URL`）。
   - 計画書・Issue 作成時から前提が変わった点: Better Auth の `mcp` は `@better-auth/mcp`（`@better-auth/oauth-provider` ベース、`jwt()` 必須、エンドポイントは `/api/auth/oauth2/*`）になった。MCP 仕様 2026-07-28 は DCR を非推奨にし CIMD を推奨するので、両方を有効にしている（DCR は Better Auth で明示オプトイン）。MCP SDK は v2（`@modelcontextprotocol/server` / `client`）で、`createMcpHandler` が fetch 互換なので `@hono/mcp` は使わない。
   - Better Auth のテーブルは `auth_*` と `oauth_*`（`src/db/auth-schema.ts`、マイグレーション `0002_better_auth_oauth`）。spec#12 の `users` とは `id` で結ぶ予定だが、作成フック（handle 生成）は仕様にないので plan#9 で決める。
   - 設定不足（`DATABASE_URL` / `BETTER_AUTH_SECRET` / `BETTER_AUTH_URL` / `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`）のときは `/api/health` だけ生かし、認証系は 503 `not_configured` を返す（プレビュー環境向け）。
@@ -21,7 +21,7 @@
 - #35 で Node.js を 26（LTS、2026-10-28〜、EOL 2029-04）に揃えた。`engines.node >=26`、CI と `db-migrate` も 26。Vercel は `engines` で決まるので新規デプロイから 26。
 
 ## 次の一手（順番どおりに）
-1. **#5 の残り（オーナー）** — MC-3（Claude のカスタムコネクタ）、MC-4（再接続で同意スキップ）、MC-5（2026-11-06 以降に再度ツール呼び出し、401 にならないこと）。結果を Issue #5 にコメントし、`muse-connect.md` の記録欄を埋めて #5 を閉じる。
+1. **#5 の残り（オーナー）** — MC-5（2026-11-06 以降に Muse / Claude から再度ツール呼び出し、401 にならないこと）。結果を Issue #5 にコメントし、`muse-connect.md` の記録欄を埋めて #5 を閉じる。
 1. **`createDb` の `connect_timeout` を短くする**（`type:task`）— DB に届かないと Better Auth の初期化が 30 秒待ち、Vercel の 10 秒で関数ごとタイムアウトする。5 秒程度にして失敗を早くする。
 2. **#26 spec 第4.1章の切れた行**（owner 待ち）と **#27 spec#6.1 のワイヤ形式**（owner 待ち）はオーナーの返事を待つ。実装は止めない。
 3. W1 が終わったら plan#2（W2）: `apps/games` の CSP 実装（R-5.3-*、`sandbox-pentest.md` の integration / e2e 項目を先にテストに落とす）。
