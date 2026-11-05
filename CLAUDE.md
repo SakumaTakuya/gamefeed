@@ -46,7 +46,7 @@ docs/          仕様書（spec.md）・計画書（plan.md）・方針文書
 - 動作確認を「目視のみ」と決めた要件は、PR 本文に確認手順と結果を書く。
 
 ## 使うコマンド
-- `pnpm install` — 依存を入れる（Node 22、pnpm 10）
+- `pnpm install` — 依存を入れる（Node 26、pnpm 10）
 - `pnpm check` — lint（Biome）→ typecheck（tsc）→ test（Vitest）。PR 前に必ず通す
 - `pnpm lint:fix` — 整形と自動修正
 - `pnpm --filter @gamefeed/<pkg> test` — 1 パッケージだけ。`vitest` を `run` なしで呼べば watch
