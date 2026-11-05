@@ -36,4 +36,4 @@
 ## 仕様変更
 - 実装中に仕様の穴や矛盾を見つけたら、勝手に解釈せず `type:spec` の Issue を切る。
 - Issue には「現状の記述」「問題」「提案」「影響範囲（章・要件 ID）」を書く。
-- 該当する `docs/*.md`（`product.md` / `game-contract.md` / `protocol.md` など。対応表は `docs/decisions.md` D-001）を直す PR（コミットは `spec:`、本文に Issue の「提案」を貼る）を出す。`product.md` の「決定」を変えるなら `docs/decisions.md` に項目を足す。この PR だけはオーナーがマージする。マージ後に `docs/requirements.md` を追従させてから実装に戻る。
+- 該当する `docs/*.md`（`product.md` / `game-contract.md` / `protocol.md` など。対応表は Issue #43）を直す PR（コミットは `spec:`、本文に Issue の「提案」を貼る）を出す。`product.md` の「決定」を変えるなら、却下した案とその理由を規則の隣に残す。この PR だけはオーナーがマージする。マージ後に `docs/requirements.md` を追従させてから実装に戻る。

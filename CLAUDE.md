@@ -4,9 +4,9 @@
 迷ったら「仕様書 → 計画書 → このファイル → docs/」の順で正を探す。
 
 ## 正とする文書
-- プロダクト定義: `docs/product.md`（節番号で参照する。例: `product#5.2`）。決定の履歴は `docs/decisions.md`（`D-002` のように参照する）
-- 仕様の各文書（2026-11-06 の分割、`D-001`）: `docs/game-contract.md`・`protocol.md`・`run.md`・`scoring.md`・`security.md`・`moderation.md`・`data-model.md`・`mcp.md`。ファイル名と節番号で参照する（例: `protocol#3`）。まだ存在しない文書は順次追加する
-- 旧 `docs/spec.md` は削除済み。`spec#x.y` の参照が残っている Issue・PR・要件 ID は、その記述を正として実装してはいけない。対応する新文書は `docs/decisions.md` D-001 の表で引く
+- プロダクト定義: `docs/product.md`（節番号で参照する。例: `product#5.2`）。規則の理由と却下した案は規則の隣に書いてある。変更の経緯は `type:spec` の Issue と PR 本文に残す（決定の記録ファイルは持たない）
+- 仕様の各文書（2026-11-06 の分割、#43）: `docs/game-contract.md`・`protocol.md`・`run.md`・`scoring.md`・`security.md`・`moderation.md`・`data-model.md`・`mcp.md`。ファイル名と節番号で参照する（例: `protocol#3`）。まだ存在しない文書は順次追加する
+- 旧 `docs/spec.md` は削除済み。`spec#x.y` の参照が残っている Issue・PR・要件 ID は、その記述を正として実装してはいけない。対応する新文書は Issue #43 の対応表で引く
 - 計画書: `docs/plan.md`（WBS 番号で参照する。例: `plan#9`）
 - 要件→テスト対応表: `docs/requirements.md`
 - テスト方針: `docs/testing.md`
@@ -14,7 +14,7 @@
 - 現在地と次の一手: `docs/status.md`（セッション開始時に最初に読む）
 
 仕様と実装がずれたら、実装を直すか仕様書を直す。黙ってずらさない。
-仕様を変えるときは `type:spec` の Issue を切り、該当する `docs/*.md` を直す PR（`spec:` コミット）を出してオーナーの承認を待つ。`product.md` の「決定」を変える PR は `docs/decisions.md` に項目を足す。AI が自分でマージしない。
+仕様を変えるときは `type:spec` の Issue を切り、該当する `docs/*.md` を直す PR（`spec:` コミット）を出してオーナーの承認を待つ。`product.md` の「決定」を変える PR は、却下した案とその理由を規則の隣に残す。AI が自分でマージしない。
 
 ## 構成（モノレポ、pnpm workspaces）
 ```
@@ -23,7 +23,7 @@ apps/api       Hono（REST API・Better Auth・MCP サーバ）。Vercel の api
 apps/games     Cloudflare Worker（ゲーム HTML 配信、R2、CSP）
 packages/sdk   Guest 側 SDK（GF.*）と Host 側ブリッジ、メッセージスキーマ
 packages/domain 状態機械・静的解析・ラン生成など純粋なドメインロジック
-docs/          プロダクト定義（product.md）・仕様の各文書・決定の記録（decisions.md）・計画書（plan.md）・方針文書
+docs/          プロダクト定義（product.md）・仕様の各文書・計画書（plan.md）・方針文書
 ```
 - 依存の向き: `web`/`api`/`games` → `sdk`/`domain`。逆は禁止。`domain` は Node/ブラウザ両対応で、I/O を持たない。
 - TypeScript strict。`any` は理由をコメントして使う。
