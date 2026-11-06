@@ -60,13 +60,43 @@ Host → Guest:
 
 ## A.4 セッションの流れ
 
-```
-Guest: ready
-Host : init(session_id=s1, seed, mode=play, time_limit, speed)
-Host : start                      ← 監視タイマー開始
-Guest: log, log, …                ← 64 フレームごと
-Guest: log（最後の分）, end(s1)   ← または Host の監視タイマー満了
-Host : destroy                    ← または init(s2) で再利用（A.6）
+1 セッションの一生。操作はゲームの中で完結し、Host に届くのは記録（`log`）と結果（`end`）だけ。
+
+```mermaid
+sequenceDiagram
+    participant Finger as 指（DOM イベント）
+    participant SDK as SDK（Guest）
+    participant Game as ゲームのコード
+    participant Host
+
+    SDK->>Host: ready{sdk, title, verb, input, duration, target}
+    Host->>SDK: init{session_id, seed, mode, time_limit, speed}
+    SDK->>Game: onInit({seed, mode})
+    Host->>SDK: start
+    Note over Host: 監視タイマー開始
+    SDK->>Game: onStart()
+
+    loop 毎 tick（speed × 60 回/秒）
+        Finger-->>SDK: pointer イベント
+        Note over SDK: 次の tick のフレーム番号を付けて<br/>入力ログに積む
+        SDK->>Game: onInput({frame, kind, data})
+        SDK->>Game: onTick(frame)
+        SDK->>Game: onDraw(alpha)（描画のタイミングで）
+    end
+
+    loop 64 フレームごと
+        SDK->>Host: log{session_id, from_frame, inputs}
+    end
+
+    alt ゲームが GF.end() を呼ぶ / frame == time_limit
+        SDK->>Host: log（最後の分）
+        SDK->>Host: end{session_id, score, frames}
+    else 監視タイマー満了（SDK が end を送れなかった）
+        Note over Host: ENDED（via: timeout, score: 0）
+    end
+
+    Host->>SDK: destroy
+    Note over SDK: 音を止め、以後コールバックを呼ばない
 ```
 
 - Host は `ready` を受け取るまで何も送らない。`ready` より前に届いた Host のメッセージを Guest が受け取ることはない
@@ -91,6 +121,28 @@ Host : destroy                    ← または init(s2) で再利用（A.6）
 | DESTROYED | なし | |
 
 `destroy` はどの状態からも DESTROYED へ遷移する（LOADING を含む）。
+
+```mermaid
+stateDiagram-v2
+    [*] --> LOADING
+    LOADING --> READY: ready
+    READY --> INITED: init
+    INITED --> RUNNING: start（監視タイマー開始）
+    RUNNING --> PAUSED: pause（タイマー停止）
+    PAUSED --> RUNNING: resume（残り時間で再開）
+    RUNNING --> ENDED: end / error / タイマー満了
+    PAUSED --> ENDED: end / error
+    ENDED --> INITED: init（試遊ページとハーネスのみ）
+    LOADING --> DESTROYED: destroy
+    READY --> DESTROYED: destroy
+    INITED --> DESTROYED: destroy
+    RUNNING --> DESTROYED: destroy
+    PAUSED --> DESTROYED: destroy
+    ENDED --> DESTROYED: destroy
+    DESTROYED --> [*]
+```
+
+`log` は RUNNING と PAUSED で受理するだけで状態を変えないので、図には描いていない。
 
 `session_id` の照合: `log` / `end` / `error` は現在の `session_id` と一致するものだけ受理する。一致しないものは捨てる（古いセッションの遅延到着）。
 
