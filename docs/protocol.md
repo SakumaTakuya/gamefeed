@@ -172,7 +172,7 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 
 ## A.8 `speed`
 
-- `init.speed` は 1.0 以上 1.5 以下。Host が決め、Guest は変えられない
+- `init.speed` は 1.0 以上 1.5 以下の 1/8 刻み（1.0, 1.125, 1.25, 1.375, 1.5）。Host が決め、Guest は変えられない（値の決め方は `run.md` A.8）
 - Guest は `speed × 60` 回/秒で `onTick` を呼ぶ。論理フレームの意味（`time_limit`、`frames`、ログの `frame`）は `speed` に依存しない
 - `replay` では元のセッションと同じ `speed` を渡す。入力はフレーム番号で記録されているので、実時間の長さが違っても同じ結果になる
 - Host は `end.frames` を `time_limit` 以下として検証する。壁時計との整合（`frames ÷ (60 × speed)` が経過時間 × 1.05 以下）は `scoring.md` の検証段階で行う
@@ -257,5 +257,4 @@ Guest は CSP の `sandbox` で不透明オリジンになり、`event.origin` �
 ## 未解決
 
 - `log` の 64 フレームごとという間隔。`speed` が 1.5 のとき実時間で 0.7 秒ごとになる。短くする必要があるか、SDK 実装時にログの大きさと見比べて決める
-- `init.speed` の取りうる値。連続値か、1/8 刻みの離散値か。`run.md` の速度スケジュールと合わせて決める
 - `error.message` の長さ上限と、スタックトレースを含めるか。試遊ページの診断に必要な分だけ残す
