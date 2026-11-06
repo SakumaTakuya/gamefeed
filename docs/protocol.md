@@ -102,6 +102,7 @@ sequenceDiagram
 - Host は `ready` を受け取るまで何も送らない。`ready` より前に届いた Host のメッセージを Guest が受け取ることはない
 - `init` を受けた Guest は、そのセッションの状態を初期化し（`onInit`）、`start` を待つ。`start` の前にフレームは進まず、入力も記録しない
 - `start` を受けた Guest は `onStart` を呼び、以後 `speed × 60` 回/秒で `onTick` を呼ぶ。描画は端末の `requestAnimationFrame` に合わせて `onDraw` を呼ぶ。遅れたときは 1 描画あたり最大 5 tick まで追いつき、それ以上は捨てずに次に持ち越す
+- 端末が遅く tick が追いつかないときのために、SDK は壁時計も見る。`start` から `time_limit ÷ (60 × speed)` 秒が経過したら、フレームが `time_limit` に達していなくても `end` を送る（`frames < time_limit` になる）。これにより、動いてはいるが遅いゲームが監視タイマー（A.7）で `score: 0` になることはない。短縮されたセッションを校正の分布に入れるかは `scoring.md` で決める
 - 入力は DOM イベントの時点で受け、**次の tick のフレーム番号**を付けてログに入れ、その tick の前に `onInput` へ渡す
 - `frame == time_limit` に達した tick の直後に、SDK は `GF.end()` と同じ処理（最後の `log` と `end`）を行う。ゲームが先に `GF.end()` を呼んでいればその時点で行い、以後の tick は止める
 - `end` は 1 セッションに 1 回。SDK は 2 回目以降の `GF.end()` を無視する
@@ -159,7 +160,7 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 - 長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒。`start` で始まり、`pause` で止まり、`resume` で残り時間から再開する
 - 満了したら Host は ENDED へ遷移し、結果を `via: timeout`、`score: 0`、`frames: time_limit` として記録する。以後その `session_id` の `end` は捨てる
 - `error` を受けたときも ENDED で、`via: error`、`score: 0`
-- SDK は `time_limit` で必ず `end` を送るので、満了が起きるのはゲームが固まった（無限ループ）か、`end` の前に例外で止まったときだけ
+- SDK は `time_limit` または壁時計（A.4）で必ず `end` を送るので、満了が起きるのはゲームが固まった（無限ループ）か、`end` の前に例外で止まったときだけ。遅いだけの端末では起きない
 
 終わり方は 3 通りで、それぞれ記録の扱いが違う（`scoring.md`、`run.md`）。
 

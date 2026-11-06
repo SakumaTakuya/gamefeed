@@ -86,7 +86,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | --- | --- | --- | --- | --- | --- |
 | R-6.4-1 | 監視タイマー満了で RUNNING → ENDED（`via: timeout`、`score: 0`、`frames: time_limit`）。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | red（実装は lose を返し、speed を見ない） |
 | R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | green |
-| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅 | 同上 | green |
+| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅。`error` の結果に `score: 0` が入る | 同上 | red（実装は `error` に score を入れない） |
+| R-pr.A4-1 | SDK は `start` から `time_limit ÷ (60 × speed)` 秒の壁時計が経過したら、フレームが足りなくても `end` を送る（`frames < time_limit`）。5 tick の追いつき上限は維持する（pr#A.4） | contract | rAF を 12 回/秒に絞った環境で speed 1.5・600 フレームのゲームを動かし、監視タイマー満了前に `end` が届き `frames < 600` | `packages/sdk/test/contract/slow-device.spec.ts` | todo |
 | R-pr.A5-1 | PAUSED からの `init` は受理しない。ENDED からの `init` は受理する（pr#A.6） | unit | 遷移表の網羅 | 同上 | green |
 | R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | todo |
 | R-pr.A10-1 | Guest はコールバックの例外で `error` を 1 回だけ送り、以後そのセッションで何も送らない。`end` の後の例外は無視する（pr#A.10） | contract | `onTick` で throw するゲームで `error` が 1 回、`end` の後に throw しても何も来ない | `packages/sdk/test/contract/error.spec.ts` | todo |
