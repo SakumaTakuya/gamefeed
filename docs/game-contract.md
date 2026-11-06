@@ -200,7 +200,7 @@ BGM はアセットにない。ゲームは 10 秒以内に終わるので、ゲ
 
 ## A.13 最小の例
 
-タップで落ちてくる丸を消す 5 秒のゲーム。これだけで規約をすべて満たす。
+タップで落ちてくる丸を消す 5 秒のゲーム。これだけで規約をすべて満たす。座標は「画面の幅を 1」とした単位で持ち、縦は 16/9 まで。端末の実サイズはロジックに使わない（端末ごとに結果が変わると決定論性が崩れる）。
 
 ```html
 <!doctype html>
@@ -220,14 +220,17 @@ BGM はアセットにない。ゲームは 10 秒以内に終わるので、ゲ
 <body>
 <canvas id="c"></canvas>
 <script>
+const ASPECT = 16 / 9;            // 画面の幅を 1 としたときの高さ
 const canvas = document.getElementById('c');
 const ctx = canvas.getContext('2d');
-let circles = [];                 // { x, y, r, vy } 座標は 0〜1
+let circles = [];                 // { x, y, r, vy } 幅 1 の単位
 let taps = [];                    // onInput で受けて、次の onTick で処理する
 
 GF.onInit(() => { circles = []; taps = []; GF.score = 0; });
 
-GF.onInput((ev) => { if (ev.kind === 'tap') taps.push(ev.data); });
+GF.onInput((ev) => {
+  if (ev.kind === 'tap') taps.push([ev.data[0], ev.data[1] * ASPECT]);  // y を幅の単位に直す
+});
 
 GF.onTick((frame) => {
   for (const [x, y] of taps) {
@@ -236,10 +239,10 @@ GF.onTick((frame) => {
   }
   taps = [];
   if (frame % 20 === 0) {
-    circles.push({ x: 0.1 + GF.rng() * 0.8, y: -0.05, r: 0.06, vy: 0.006 + GF.rng() * 0.004 });
+    circles.push({ x: 0.1 + GF.rng() * 0.8, y: -0.05, r: 0.06, vy: 0.01 + GF.rng() * 0.006 });
   }
   for (const c of circles) c.y += c.vy;
-  circles = circles.filter(c => c.y < 1.1);
+  circles = circles.filter(c => c.y < ASPECT + 0.1);
 });
 
 GF.onDraw(() => {
@@ -248,7 +251,7 @@ GF.onDraw(() => {
   ctx.fillStyle = '#111'; ctx.fillRect(0, 0, w, h);
   ctx.fillStyle = '#ffd400';
   for (const c of circles) {
-    ctx.beginPath(); ctx.arc(c.x * w, c.y * h, c.r * w, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(c.x * w, c.y * w, c.r * w, 0, Math.PI * 2); ctx.fill();
   }
 });
 </script>
