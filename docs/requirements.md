@@ -70,10 +70,11 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | --- | --- | --- | --- | --- | --- |
 | R-6.3-1 | `gf:duration` は 180〜600（gc#A.3）。範囲外・欠落は静的検査で拒否 | unit | 179 / 180 / 600 / 601 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | red（実装は 480 上限のまま） |
 | R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | green |
-| R-6.3-3 | `gf:input` は tap / hold / swipe のいずれか（MVP は tilt 拒否） | unit | 各値と `tilt`、未知の値 | 同上 | green |
+| R-6.3-3 | `gf:input` は tap / hold / swipe / drag / stick のいずれか（tilt は拒否）。gc#A.3 | unit | 各値と `tilt`、未知の値 | 同上 | red（実装は drag / stick を拒否する） |
 | R-6.3-4 | 時間切れ時、SDK はそのときの `GF.score` で `end` を自動送信する。`GF.end()` は 1 回だけ効く（gc#A.4） | contract | 最小 Host で `time_limit` フレーム進め、`end{score}` が 1 回届く。`GF.end()` を 2 回呼んでも 1 回 | `packages/sdk/test/contract/timeout.spec.ts` | todo |
 | R-gc.A4-1 | `GF.score` は整数・0 以上・2^31−1 以下に SDK がクランプする（gc#A.10） | unit | 負・小数・上限超・文字列 | `packages/sdk/test/score.spec.ts` | todo |
-| R-gc.A4-2 | 入力イベントの座標は 0〜1 の正規化値。`tap` は `[x,y]`、`hold` は `[x,y,1|0]`、`swipe` は `[x0,y0,x1,y1]`（gc#A.4） | contract | 実ブラウザで各入力を発生させ `onInput` の `data` を検証 | `packages/sdk/test/contract/input.spec.ts` | todo |
+| R-gc.A4-2 | 入力イベントの座標は 0〜1 の正規化値。`tap` は `[x,y]`、`hold` は `[x,y,1|0]`、`swipe` は `[x0,y0,x1,y1]`、`drag` は `[x,y,1|0]` を 1/256 に量子化（gc#A.4） | contract | 実ブラウザで各入力を発生させ `onInput` の `data` を検証 | `packages/sdk/test/contract/input.spec.ts` | todo |
+| R-gc.A4-3 | `stick` は SDK が描いて解釈する。原点は押した地点、最大半径は画面幅の 12%、デッドゾーン 15%、`GF.stick.{x,y,active}` が `onTick` ごとに更新される。`onInput` には `stick` イベントが来ない（gc#A.4） | contract | 実ブラウザで押下→移動→離すを再現し、各 tick の `GF.stick` とログの `drag` 列を検証。同じログから `GF.stick` 列が再現される | `packages/sdk/test/contract/stick.spec.ts` | todo |
 | R-gc.A9-1 | 同じシードと同じ入力ログで `onDraw` なしに再実行すると同じ `GF.score` になる（gc#A.9） | contract | A.13 の例を 2 回実行して比較 | `packages/sdk/test/contract/determinism.spec.ts` | todo |
 | R-6.3-5 | ゲームは `onStart` 直後から操作可能（タイトル画面を置かない） | manual | サンプル 30 本を実機で通し、開始遅延を感じる本を記録 | `docs/manual-tests/microgame-tempo.md` | todo |
 
