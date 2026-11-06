@@ -1,19 +1,21 @@
 # 要件→テスト対応表
 
 仕様書の要件に ID を振り、設計時点で検証方法を決める。実装前に行を追加し、PR で状態を更新する。
-ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態: `todo` / `red` / `green` / `manual-ok` / `n/a`。
+ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振ったもので、ID 自体はテスト名から参照されるので変えない。2026-11-06 の文書分割（#43）以降、見出しは新文書の節を指し、要件の本文は新文書に合わせて直す。新しく足す行は `R-<文書略号>.<節>-<連番>`（例: `R-gc.A3-1`。gc = game-contract）。状態: `todo` / `red` / `green` / `manual-ok` / `n/a`。
 
 最初の数行は書き方の例を兼ねる。章ごとに Issue を切る前に埋めていく。
 
-## 4.1 コード規約（静的解析）
+## game-contract A.2 / A.5 / A.11 コードと静的検査（旧 4.1）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
 | R-4.1-1 | `index.html` は 128 KiB 以下（gzip 前、UTF-8 バイト数）。超過は拒否 | unit | ちょうど上限 / +1 バイト / 日本語（バイト数で数える） | `packages/domain/test/static-check.spec.ts` | green |
-| R-4.1-2 | spec#4.1 の禁止 API・時間・乱数の識別子を字句レベルで検出し拒否する。一覧はデータファイル（`forbidden-identifiers.ts`）に持ち、全項目にテスト例がある。コメント・文字列・プロパティ名・識別子の一部は誤検出しない。`<script>` と `on*` 属性を検査する | unit | 全項目の代表例、`location` の代入と参照の区別、誤検出 10 例、行番号 | 同上 | green |
+| R-4.1-2 | gc#A.5 の禁止 API・時間・乱数の識別子を字句レベルで検出し拒否する。一覧はデータファイル（`forbidden-identifiers.ts`）に持ち、全項目にテスト例がある。コメント・文字列・プロパティ名・識別子の一部は誤検出しない。`<script>` と `on*` 属性を検査する | unit | 全項目の代表例、`location` の代入と参照の区別、誤検出 10 例、行番号 | 同上 | green |
 | R-4.1-3 | `<title>` 必須（空白のみは拒否） | unit | 欠落 / 空白のみ / 前後の空白除去 | 同上 | green |
 | R-4.1-4 | `src` / `href` / `url()` / `@import` は `./assets/<name>` と `/lib/<name>@<version>.min.js` のみ。外部 URL・`data:`・相対パス越えは拒否 | unit | 受理 6 例 / 拒否 10 例 | 同上 | green |
-| R-4.1-5 | DOM イベント直接購読・`onStart` 前の音声再生・画面サイズは警告（拒否しない） | unit | — | 同上 | todo |
+| R-4.1-5 | 入力の直接購読（`DIRECT_INPUT`）、`GF.score` への代入も `GF.end()` もない（`NO_SCORE`）、自前の viewport（`VIEWPORT`）は警告（拒否しない）。gc#A.11 | unit | 各警告の有無 3 例ずつ | 同上 | todo |
+| R-gc.A3-1 | `gf:target` は 1 以上の整数。欠落・0・非数は `META_TARGET` で拒否 | unit | 欠落 / 0 / 1 / 非数 / 小数 | 同上 | todo |
+| R-gc.A2-1 | `<form>` / `<iframe>` / `<object>` / `<embed>` は拒否（gc#A.5） | unit | 各要素 1 例 | 同上 | todo |
 
 ## 5.1 オリジン設計
 
@@ -62,14 +64,18 @@ ID は `R-<章>.<節>-<連番>`。章・節は仕様書に合わせる。状態:
 | R-6.1-4 | `media` は kind ごとに 1 セッション 1 回、サイズ上限（thumb 64KB、video 2MB） | unit + integration | unit: 2 回目拒否と上限超過拒否。integration: 実 iframe から上限超の blob を送り破棄される | `packages/domain/test/session.spec.ts`、`packages/sdk/test/integration/media.spec.ts` | green（unit）/ todo（integration） |
 | R-6.1-5 | spec#6.1 の 10 種を方向別のスキーマで検証する。余計なフィールド・型違い・未知の type・方向違い・`media` の上限超過と MIME 違反を拒否。`ready` の `verb` / `input` / `duration` は静的解析と同じ定数（`VERB_MAX_CHARS`、`ACCEPTED_INPUTS`、`DURATION_MIN/MAX`）、`end.score` は spec#10.4 の上限。検証済み Guest メッセージは `SessionEvent` に 1 対 1 で変換できる | unit | 各型の正例 1 つ、余計なフィールド、型違い、未知の type、境界値（duration 179/180/480/481、verb 0/8/9 文字、score 2^31−1/+1、thumb 64KB/+1、video 2MB/+1）、replay で inputs 欠落 | `packages/sdk/test/messages.spec.ts` | green |
 
-## 6.3 ミクロゲーム契約
+## game-contract A.3 / A.4 / A.10 メタ宣言と SDK（旧 6.3）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.3-1 | `gf:duration` は 180〜480。範囲外・欠落は静的解析で拒否 | unit | 179 / 180 / 480 / 481 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | green |
+| R-6.3-1 | `gf:duration` は 180〜600（gc#A.3）。範囲外・欠落は静的検査で拒否 | unit | 179 / 180 / 600 / 601 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | red（実装は 480 上限のまま） |
 | R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | green |
-| R-6.3-3 | `gf:input` は tap / hold / swipe のいずれか（MVP は tilt 拒否） | unit | 各値と `tilt`、未知の値 | 同上 | green |
-| R-6.3-4 | 時間切れ時、SDK は `onTimeout` の戻り値で `end` を自動送信（既定 lose） | contract | 最小 Host で `time_limit` フレーム進め、`end{result}` が 1 回届く | `packages/sdk/test/contract/timeout.spec.ts` | todo |
+| R-6.3-3 | `gf:input` は tap / hold / swipe / drag / stick のいずれか（tilt は拒否）。gc#A.3 | unit | 各値と `tilt`、未知の値 | 同上 | red（実装は drag / stick を拒否する） |
+| R-6.3-4 | 時間切れ時、SDK はそのときの `GF.score` で `end` を自動送信する。`GF.end()` は 1 回だけ効く（gc#A.4） | contract | 最小 Host で `time_limit` フレーム進め、`end{score}` が 1 回届く。`GF.end()` を 2 回呼んでも 1 回 | `packages/sdk/test/contract/timeout.spec.ts` | todo |
+| R-gc.A4-1 | `GF.score` は整数・0 以上・2^31−1 以下に SDK がクランプする（gc#A.10） | unit | 負・小数・上限超・文字列 | `packages/sdk/test/score.spec.ts` | todo |
+| R-gc.A4-2 | 入力イベントの座標は 0〜1 の正規化値。`tap` は `[x,y]`、`hold` は `[x,y,1|0]`、`swipe` は `[x0,y0,x1,y1]`、`drag` は `[x,y,1|0]` を 1/256 に量子化（gc#A.4） | contract | 実ブラウザで各入力を発生させ `onInput` の `data` を検証 | `packages/sdk/test/contract/input.spec.ts` | todo |
+| R-gc.A4-3 | `stick` は SDK が描いて解釈する。原点は押した地点、最大半径は画面幅の 12%、デッドゾーン 15%、`GF.stick.{x,y,active}` が `onTick` ごとに更新される。`onInput` には `stick` イベントが来ない（gc#A.4） | contract | 実ブラウザで押下→移動→離すを再現し、各 tick の `GF.stick` とログの `drag` 列を検証。同じログから `GF.stick` 列が再現される | `packages/sdk/test/contract/stick.spec.ts` | todo |
+| R-gc.A9-1 | 同じシードと同じ入力ログで `onDraw` なしに再実行すると同じ `GF.score` になる（gc#A.9） | contract | A.13 の例を 2 回実行して比較 | `packages/sdk/test/contract/determinism.spec.ts` | todo |
 | R-6.3-5 | ゲームは `onStart` 直後から操作可能（タイトル画面を置かない） | manual | サンプル 30 本を実機で通し、開始遅延を感じる本を記録 | `docs/manual-tests/microgame-tempo.md` | todo |
 
 ## 6.4 Host 状態機械
