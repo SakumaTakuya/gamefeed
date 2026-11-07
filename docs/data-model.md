@@ -153,7 +153,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `started_at` | timestamptz | |
 | `ended_at` | timestamptz null | |
 
-索引: `(theme_id, date, user_id)`、`(theme_id, date, device_id)`（初回判定）。
+索引: `(theme_id, date, user_id)`、`(theme_id, date, device_id)`。初回判定は部分一意索引 `(theme_id, date, coalesce(user_id, device_id)) WHERE recorded` で行い、同じ主体の同日のランが同時に作られても `recorded = true` は 1 行しか入らない（2 本目は一意違反を受けて `recorded = false` で作り直す）。
 
 手番ごとの値は `sessions`（`run_id`, `turn`）にあり、`runs` は集計だけ持つ（`product.md` 5、B.2）。
 
@@ -188,7 +188,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `scores` | int[] | 昇順。上限 10,000 件（暫定、超えたら分位点 101 点に切り替え） |
 | `updated_at` | timestamptz | |
 
-`sessions` から再計算できる。`result` 受理のトランザクションで更新し、`miss_below` と偏差値はここから計算する（`scoring.md` 未解決の保持方法は、まずこの形で始める）。
+`sessions` から再計算できる。`result` 受理のトランザクションで追加し、verdict が `rejected` / `flagged` に変わる遷移（検証ワーカー）では同じトランザクションでその点数を外す。1 主体 5 件の窓から押し出された古い結果も外す。`miss_below` と偏差値はここから計算する（`scoring.md` 未解決の保持方法は、まずこの形で始める）。整合の検査として、日次で `sessions` から再計算した結果と突き合わせ、ずれていれば作り直す。
 
 ## A.4 ビュー
 
@@ -215,7 +215,8 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | I12 | `sessions.speed` は 5 値のどれか。`miss_below` が非 NULL なら `run_id` が非 NULL かつそのランが `endless` かつ `is_new = false` | CHECK と発行時の検査 | `run.md` A.3, A.8 |
 | I13 | `(run_id, turn)` は一意。`ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は変わらない | unique、トリガー | `scoring.md` A.9 |
 | I14 | `likes` / `reports` は 1 投稿につき 1 主体 1 回。匿名の通報は `weight = 0` | unique、CHECK | `moderation.md`、`product.md` 10 |
-| I15 | `author = true` のセッションは `post_stats` に入らない。`speed ≠ 1.0` も入らない | `post_stats` 更新の条件 | `scoring.md` A.4 |
+| I15 | `post_stats` は `scoring.md` A.4 の条件を満たす結果だけを含む: `author = false`、`speed = 1.0`、verdict が `provisional` / `accepted`、`frames ≥ 0.9 × time_limit`、1 主体 5 件。verdict の変更と窓からの押し出しで外す | `post_stats` 更新の条件（受理と verdict 変更の両トランザクション）、日次の再計算との突き合わせ | `scoring.md` A.3, A.4 |
+| I16 | 同じ主体・お題・日付で `recorded = true` のランは 1 本 | 部分一意索引 | `run.md` A.2 |
 
 ## A.6 Redis と R2
 

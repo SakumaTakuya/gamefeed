@@ -162,7 +162,8 @@ I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクション�
 | R-dm.A5-11 | I11: 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日の `draft` は日次ジョブで削除 | integration | 11 件目の `publish_game` が拒否。31 日前の下書きがジョブで消え、30 日前は残る | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-dm.A5-13 | I13: `ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は更新できない（トリガー） | integration | finish 後の UPDATE が拒否 | `apps/api/test/integration/db.spec.ts` | todo |
 | R-dm.A5-14 | I14: `reports` で `user_id` が NULL なら `weight = 0`（CHECK） | integration | 匿名で `weight = 1` が拒否、`0` は通る | 同上 | todo |
-| R-dm.A5-15 | I15: `post_stats` には `author = false` かつ `speed = 1.0` の結果だけが入る | integration | 作者と speed 1.25 の結果を受理しても `n` が増えない | `apps/api/test/distribution.spec.ts` | todo |
+| R-dm.A5-15 | I15: `post_stats` には sc#A.4 の条件を満たす結果だけが入り、verdict が `rejected` / `flagged` に変わると外れ、1 主体 6 件目で最古が外れる | integration | 作者と speed 1.25 を受理しても `n` が増えない。`rejected` にすると `n` が減り `miss_below` が変わる。6 件目で `n` が増えない | `apps/api/test/distribution.spec.ts` | todo |
+| R-dm.A5-16 | I16: 同じ主体・お題・日付で `recorded = true` のランは 1 本（部分一意索引） | integration | 同時に 2 本作って 1 本だけ `recorded`、2 本目は `recorded = false` で作られる | `apps/api/test/runs.spec.ts` | todo |
 
 ## data-model A.7 現行スキーマとの差分（旧 12.4。すべて追従で消える行）
 
