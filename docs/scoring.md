@@ -130,13 +130,13 @@ stateDiagram-v2
 
 ## A.8 校正状態とランへの出題
 
-| 校正状態 | 投稿状態が `public` のとき |
-| --- | --- |
-| `uncalibrated` | 新作枠にだけ入る |
-| `calibrated` | 正規枠に入る |
-| `review` / `invalid` | 入らない |
+| 校正状態 | 投稿状態が `public` のとき | 投稿状態が `limited` のとき |
+| --- | --- | --- |
+| `uncalibrated` | 新作枠にだけ入る | 新作枠にだけ入る |
+| `calibrated` | 正規枠に入る | （`calibrated` になる遷移で `public` に昇格する。昇格できない投稿は入らない） |
+| `review` / `invalid` | 入らない | 入らない |
 
-投稿状態が `public` でなければ校正状態によらず入らない（`moderation.md`）。
+投稿状態が `public` / `limited` 以外なら校正状態によらず入らない（`moderation.md` A.3 / A.8）。
 
 ## A.9 成績表の凍結値
 
