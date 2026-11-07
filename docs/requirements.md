@@ -132,18 +132,18 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-9-4 | 新規投稿は 5 件/日まで | integration | 6 件目が拒否される。日付境界は手動時計 | 同上 | todo |
 
-## 12.1 テーブル
+## data-model A.2 / A.3 / A.4 テーブルと列挙型（旧 12.1）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-12.1-1 | spec#12.1 の 10 テーブルと spec#12.4 の `themes` / `runs`、列挙型 10 種（値は記載順）がマイグレーションで作られ、再適用は何もしない | integration | 空の Postgres に `migrateDb` を当て `information_schema` / `pg_enum` を見る。2 回目も成功 | `apps/api/test/integration/db.spec.ts` | green |
-| R-12.1-2 | `users.handle`、`reports(post_id, reporter_id)`、`post_assets(post_id, name)` は一意 | integration | 同じ値を 2 回入れて unique 違反 | 同上 | green |
+| R-12.1-1 | dm#A.3 のテーブル（`users`, `themes`, `games`, `posts`, `sessions`, `runs`, `likes`, `reports`, `moderation_actions`, `tree_locks`, `post_stats`。Phase 2 の 3 表は任意）と dm#A.2 の列挙型 13 種（値は記載順）がマイグレーションで作られ、再適用は何もしない | integration | 空の Postgres に `migrateDb` を当て `information_schema` / `pg_enum` を見る。2 回目も成功 | `apps/api/test/integration/db.spec.ts` | red（現行は旧 12.1 の表と列挙。差分は dm#A.7） |
+| R-12.1-2 | `users.handle`、`reports(post_id, coalesce(user_id, device_id))`、`likes(post_id, coalesce(user_id, device_id))`、`sessions(run_id, turn)`、`post_assets(post_id, name)` は一意 | integration | 同じ値を 2 回入れて unique 違反。匿名（`user_id` NULL）同士は `device_id` で衝突 | 同上 | red（`likes` と `device_id` が未実装） |
 | R-12.1-3 | `posts.parent_id` は `posts.id` への外部キー。子がある投稿は削除できない（RESTRICT） | integration | 子を持つ親の DELETE と、存在しない親の INSERT が FK 違反 | 同上 | green |
-| R-12.1-4 | `sessions.submitted_at` は `state = submitted` のときだけ非 NULL（CHECK）。`score` は 0 以上（spec#10.4） | integration | open で NULL は受理、submitted で NULL / open で非 NULL / score −1 は拒否 | 同上 | green |
-| R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `expired` / `pending` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status` | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` に `indiv_restricted` を立てても `removed` | 同上 | green |
+| R-12.1-4 | `sessions.submitted_at` は `state = submitted` のときだけ非 NULL、`via` も同様（CHECK）。`score` は 0〜2^31−1、`frames` は 1〜`time_limit`、`speed` は 5 値（dm#A.3, I12） | integration | open で NULL は受理、submitted で NULL / open で非 NULL / score −1 / speed 1.1 は拒否 | 同上 | red（`via`, `frames`, `speed` が未実装） |
+| R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `unpublished` / `draft` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status`（dm#A.4） | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` / `draft` に `indiv_restricted` を立てても変わらない | 同上 | red（`draft` / `unpublished` が未実装） |
 | R-12.1-6 | `createDb` は届かない DB に対して 5 秒（既定、上書き可）で `CONNECT_TIMEOUT` を返す。postgres-js の既定 30 秒では Vercel の 10 秒制限に先に当たり原因が見えない（#40） | unit | 接続を受け付けて応答しない TCP サーバに `select 1` を投げ、`CONNECT_TIMEOUT` が 1 秒で返る。既定値 5 秒と上書きを確かめる | `apps/api/test/db-client.spec.ts` | green |
 
-## 12.2 不変条件
+## data-model A.5 不変条件（旧 12.2）
 
 I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクションで担保するもので、DB の制約では書けない。該当する API を実装する Issue で状態を更新する。
 
@@ -152,18 +152,23 @@ I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクション�
 | R-12.2-1 | I1: `posts.parent_id` は挿入後に変更できない（トリガー。NULL への変更も拒否） | integration | 別の親 / NULL への UPDATE がエラー文 `parent_id` 付きで拒否。他の列の UPDATE は通る | `apps/api/test/integration/db.spec.ts` | green |
 | R-12.2-2 | I2: 子の `tree_id` は親と同じ、`depth` は親 + 1。挿入時に親行を `FOR SHARE` でロックして計算する | integration | `publish_game` のトランザクションで親を同時に更新しても一貫する | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-12.2-3 | I3: `tree_locks.action_id` は `moderation_actions` を必ず指す（FK）。BAN されたユーザーの投稿がすべて `removed` になるのは同一トランザクションで担保（`users` を `FOR SHARE`） | integration | FK: 監査行のない `tree_locks` が拒否される（green）。BAN 側はモデレーション API の Issue で（todo） | 同上 / `apps/api/test/integration/moderation.spec.ts` | green（FK）/ todo（BAN） |
-| R-12.2-4 | I4: `base_status` が `limited` / `public` なら `showcase_key` は非 NULL（CHECK） | integration | `showcase_key` NULL のまま `limited` / `public` にすると拒否。`pending` は NULL 可 | `apps/api/test/integration/db.spec.ts` | green |
-| R-12.2-5 | I5: `removed` / `expired` からの `base_status` 変更は存在しない（トリガー） | integration | `removed` / `expired` → `public` が拒否。`removed` のまま他の列の更新は通る | 同上 | green |
+| R-12.2-4 | I4: `base_status` が `limited` / `public` / `unpublished` なら `published_at` と `thumb_key` は非 NULL（CHECK）。`showcase_key` は廃止 | integration | NULL のまま `public` にすると拒否。`draft` は NULL 可 | `apps/api/test/integration/db.spec.ts` | red（現行は `showcase_key`） |
+| R-12.2-5 | I5: `removed` から出る遷移はない。`unpublished` からは `limited` / `public` にだけ戻れる（トリガー） | integration | `removed` → `public` が拒否。`unpublished` → `public` は通り、`unpublished` → `draft` は拒否 | 同上 | red（`unpublished` が未実装、`expired` が残る） |
 | R-12.2-6 | I6: `restricted` からの復帰は `moderation_actions.kind = restore / restore_tree` を伴う | integration | モデレーション API が監査行と状態変更を同一トランザクションで書く | `apps/api/test/integration/moderation.spec.ts` | todo |
 | R-12.2-7 | I7: 1 セッションの `submitted` 遷移は高々 1 回（`UPDATE … WHERE state = 'open'` の更新行数で判定） | integration | 同じ `session_id` への 2 回目の `PUT /sessions/{id}/result` が 409 | `apps/api/test/integration/sessions.spec.ts` | todo |
-| R-12.2-8 | I8: `verdict = accepted` なら `score` と `checkpoint` が再実行結果と一致（検証ワーカーだけが `accepted` を書く）。DB ロールの分離は MVP 外 | integration | Phase 2 の検証ワーカーで。MVP では `accepted` を書く経路が検証ワーカーのみであることをコードで確認 | — | n/a（MVP） |
-| R-12.2-9 | I9: 投稿の `post_assets` は合計 3 MB・32 件以下、`required` 合計 512 KB 以下、BGM は `required` 不可 | integration | `publish_game` のトランザクションで集計して拒否 | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-12.2-8 | I8: `verdict = accepted` なら `score` が再実行結果と一致（検証ワーカーだけが `accepted` を書く。`checkpoint` は廃止）。DB ロールの分離は MVP 外 | integration | Phase 2 の検証ワーカーで。MVP では `accepted` を書く経路が検証ワーカーのみであることをコードで確認 | — | n/a（MVP） |
+| R-12.2-9 | I9: 投稿の `post_assets` は合計 3 MB・32 件以下、`required` 合計 512 KB 以下（Phase 2。`asset_type` に `bgm` はない） | integration | `publish_game` のトランザクションで集計して拒否 | `apps/api/test/integration/publish.spec.ts` | n/a（Phase 2） |
+| R-dm.A5-10 | I10: `game_hash` / `title` / `prompt` は `base_status = draft` の間だけ更新できる（トリガー） | integration | `draft` で更新が通り、`public` で拒否される | `apps/api/test/integration/db.spec.ts` | todo |
+| R-dm.A5-11 | I11: 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日の `draft` は日次ジョブで削除 | integration | 11 件目の `publish_game` が拒否。31 日前の下書きがジョブで消え、30 日前は残る | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-dm.A5-13 | I13: `ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は更新できない（トリガー） | integration | finish 後の UPDATE が拒否 | `apps/api/test/integration/db.spec.ts` | todo |
+| R-dm.A5-14 | I14: `reports` で `user_id` が NULL なら `weight = 0`（CHECK） | integration | 匿名で `weight = 1` が拒否、`0` は通る | 同上 | todo |
+| R-dm.A5-15 | I15: `post_stats` には `author = false` かつ `speed = 1.0` の結果だけが入る | integration | 作者と speed 1.25 の結果を受理しても `n` が増えない | `apps/api/test/distribution.spec.ts` | todo |
 
-## 12.4 ミクロゲーム対応の追加分
+## data-model A.7 現行スキーマとの差分（旧 12.4。すべて追従で消える行）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-12.4-1 | `games.duration_frames` は 180〜480（CHECK）。`verb` / `input` / `duration_frames` は静的解析前は NULL 可。`games.theme_id` は `themes` への外部キーで NULL は「フリー」 | integration | 180 / 480 受理、179 / 481 拒否、全部 NULL 受理、存在しない `theme_id` 拒否 | `apps/api/test/integration/db.spec.ts` | green |
-| R-12.4-2 | `runs.cleared ≤ runs.total`、`results` の長さ ≤ `total`、`results` は `win` / `lose` のみ（CHECK） | integration | 境界（= total、空）受理、超過と `draw` 拒否 | 同上 | green |
-| R-12.4-3 | `limited` / `public` にする投稿のゲームは `verb`・`input` が非 NULL（トリガー） | integration | `verb` NULL のゲームを `public` にするとエラー文 `verb` / `input` 付きで拒否。揃っていれば通る | 同上 | green |
-| R-12.4-4 | ビュー `run_results`: お題ごとに `runs`、`clear_rate = Σcleared / Σtotal`、`completion_rate = ended_at 非 NULL の割合` | integration | 2 ラン（3/4 クリア完走、0/4 未完走）で 3/8 と 1/2 | 同上 | green |
+| R-12.4-1 | 廃止。`games` の `verb` / `input` / `duration_frames` / `theme_id` は `meta jsonb` と `posts` に移る（dm#A.7）。`duration_frames` の範囲は静的検査（R-6.3-1） | — | — | — | n/a（追従で削除） |
+| R-12.4-2 | 廃止。`runs.results[]` / `cleared` / `total` は `sessions(run_id, turn)` と凍結値に置き換える（dm#A.3, B.2） | — | — | — | n/a（追従で削除） |
+| R-12.4-3 | `limited` / `public` にする投稿の `games.meta` は `verb` / `input` / `duration_frames` / `target` を持つ（トリガーまたは公開 API の検査） | integration | 欠けた `meta` のゲームを `public` にすると拒否 | 同上 | red（現行は列で検査） |
+| R-12.4-4 | 廃止。ビュー `run_results` は持たない。お題の統計は `sessions` と `runs` の凍結値から出す | — | — | — | n/a（追従で削除） |
