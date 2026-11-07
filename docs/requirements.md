@@ -92,14 +92,21 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | todo |
 | R-pr.A10-1 | Guest はコールバックの例外で `error` を 1 回だけ送り、以後そのセッションで何も送らない。`end` の後の例外は無視する（pr#A.10） | contract | `onTick` で throw するゲームで `error` が 1 回、`end` の後に throw しても何も来ない | `packages/sdk/test/contract/error.spec.ts` | todo |
 
-## 8.2 ゲーム間の遷移
+## run A.4 / A.5 / A.6 / A.7 スロットと手番の切り替え（旧 8.2）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-8.2-1 | RUNNING(play) の Guest は同時に 1 つ | unit + formal + e2e | unit: ラン状態機械。formal: F1。e2e: 10 本完走中に RUNNING が常に 1 | `packages/domain/test/run.spec.ts`、`apps/web/e2e/run.spec.ts` | todo |
-| R-8.2-2 | 幕間の延長は最大 3 秒、超えたら lose 扱いで飛ばす | unit | 手動時計で 3 秒経過、次ゲームが LOADING のまま → 結果 lose、次へ | `packages/domain/test/run.spec.ts` | todo |
-| R-8.2-3 | iframe は最大 3 枚 | integration | Playwright で DOM 上の iframe 数を各遷移で数える | `apps/web/e2e/run.spec.ts` | todo |
-| R-8.2-4 | 幕間 1.0 秒・結果 0.5 秒のテンポ | manual | 実機で自分と大学生が試し、感想を記録（spec#15 (a)） | `docs/manual-tests/run-tempo.md` | todo |
+| R-8.2-1 | RUNNING の Guest は同時に 1 つで、常に N（run#A.15 F1, F2） | unit + formal + e2e | unit: ラン状態機械。formal: F1, F2。e2e: 10 本完走中に RUNNING が常に 1 | `packages/domain/test/run.spec.ts`、`apps/web/e2e/run.spec.ts` | todo |
+| R-8.2-2 | 幕間の延長は最大 3 秒（暫定、定数）。超えたら skip にして `destroy` し、N+2 を繰り上げる。skip は成績の分母に入らず残機も減らないが手番は消費する（run#A.5, A.6） | unit | 手動時計で 3 秒経過、次ゲームが LOADING のまま → skip、残機不変、手番 +1、N+2 が N に | `packages/domain/test/run.spec.ts` | todo |
+| R-8.2-3 | iframe は最大 3 枚で、集合は常に N〜N+2 の部分集合。`start` は INITED のスロットにだけ送る（run#A.15 F3〜F5） | integration + formal | Playwright で DOM 上の iframe 数を各遷移で数える。formal: F3〜F5 | `apps/web/e2e/run.spec.ts`、`verification/Run.tla` | todo |
+| R-run.A3-1 | ランの進行はサーバが持つ。`POST /runs/{id}/next` が手番（`post_id`, `session_id`, `seed`, `speed`, `is_new`, `lap`, `miss_below`）を発行し、上限か残機切れで `{done: true}` を返す。Host は `speed` をそのまま `init.speed` に渡す。`miss_below` は発行時点の分布から求め、セッションに凍結する（run#A.3） | unit + integration | unit: 山札 12・上限 50 で 51 回目が done、残機 0 で done、`miss_below` が発行後に分布が動いても変わらない。integration: API の応答を Host がそのまま init に渡す | `apps/api/test/runs.spec.ts`、`apps/web/e2e/run.spec.ts` | todo |
+| R-run.A7-1 | ミスは Host が `end` の瞬間に `score < miss_below` で判定し、通信を待たない。`miss_below: null` と skip はミスにならない。3 回目のミスでその場でランが終わり `start` は出ない。サーバは同じ凍結値で判定し直し Host と一致する（run#A.5, A.7, A.15 F7, F8） | unit + formal | unit: 3 回目のミスで finish、`null` と skip は残機不変、`result` の応答が遅れても進行は変わらない。サーバ側: 同じ score と miss_below で同じ miss。formal: F7, F8 |
+| R-run.A7-2 | `finish` は手番の順に結果を見て、3 回目のミス以降に発行された手番の結果を記録から捨てる。到達本数はサーバが決める（run#A.7, A.15 F9） | unit | 3 回目のミスの後に 2 手番ぶんの result を送っても到達本数が増えない | `apps/api/test/runs.spec.ts` | todo | `packages/domain/test/run.spec.ts`、`verification/Run.tla` | todo |
+| R-run.A8-1 | 速度は 1/8 刻みの 5 値。エンドレスは周回 k で `min(1.5, 1 + 0.125k)`（暫定、定数）、デイリーは 1.0（run#A.8） | unit | k = 0〜5 の値、デイリーは常に 1.0 | `apps/api/test/runs.spec.ts` | todo |
+| R-run.A15-1 | ランは必ず終わる。skip が続いても上限で終わる（run#A.15 F6） | formal + unit | formal: F6。unit: 全手番 skip で 50 回目に done | `verification/Run.tla`、`packages/domain/test/run.spec.ts` | todo |
+| R-run.A2-1 | デイリーは同じ山札で何度でも遊べるが、保存される記録は初回だけ。2 回目以降は成績表を出すが `finish` で保存しない（run#A.2） | integration | 同じお題・同日に 2 回 finish し、記録が 1 つ | `apps/api/test/runs.spec.ts` | todo |
+| R-run.A12-1 | 試遊ページは残機も成績表も持たず、同じ iframe に `init` し直して「もう一回」と速度変更ができる。作者のセッションは校正に数えない印を付けて送る（run#A.12） | e2e | 下書きで 2 回遊び、速度 1.5 に変えて 1 回。送られた result に作者印 | `apps/web/e2e/trial.spec.ts` | todo |
+| R-8.2-4 | 幕間 1.0 秒・結果 0.5 秒のテンポ（暫定、定数）。周回ごとの速度上昇で平均的な遊ぶ側が 20〜30 本で終わるか | manual | 実機で自分と大学生が試し、感想と到達本数を記録 | `docs/manual-tests/run-tempo.md` | todo |
 
 ## 9 MCP
 
