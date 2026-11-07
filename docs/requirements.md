@@ -136,8 +136,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-12.1-1 | dm#A.3 のテーブル（`users`, `themes`, `games`, `posts`, `sessions`, `runs`, `likes`, `reports`, `moderation_actions`, `tree_locks`, `post_stats`。Phase 2 の 3 表は任意）と dm#A.2 の列挙型 13 種（値は記載順）がマイグレーションで作られ、再適用は何もしない | integration | 空の Postgres に `migrateDb` を当て `information_schema` / `pg_enum` を見る。2 回目も成功 | `apps/api/test/integration/db.spec.ts` | red（現行は旧 12.1 の表と列挙。差分は dm#A.7） |
-| R-12.1-2 | `users.handle`、`reports(post_id, coalesce(user_id, device_id))`、`likes(post_id, coalesce(user_id, device_id))`、`sessions(run_id, turn)`、`post_assets(post_id, name)` は一意 | integration | 同じ値を 2 回入れて unique 違反。匿名（`user_id` NULL）同士は `device_id` で衝突 | 同上 | red（`likes` と `device_id` が未実装） |
+| R-12.1-1 | dm#A.3 のテーブル（`users`, `actors`, `themes`, `theme_posts`, `games`, `posts`, `sessions`, `runs`, `likes`, `reports`, `moderation_actions`, `tree_locks`, `post_stats`。Phase 2 の 3 表は任意）と dm#A.2 の列挙型 13 種（値は記載順）がマイグレーションで作られ、再適用は何もしない | integration | 空の Postgres に `migrateDb` を当て `information_schema` / `pg_enum` を見る。2 回目も成功 | `apps/api/test/integration/db.spec.ts` | red（現行は旧 12.1 の表と列挙。差分は dm#A.7） |
+| R-12.1-2 | `users.handle`、`actors.device_id`、`reports(post_id, actor_id)`、`likes(post_id, actor_id)`、`sessions(run_id, turn)`、`theme_posts(theme_id, post_id)`、`post_assets(post_id, name)` は一意 | integration | 同じ値を 2 回入れて unique 違反 | 同上 | red（`actors` / `likes` / `theme_posts` が未実装） |
 | R-12.1-3 | `posts.parent_id` は `posts.id` への外部キー。子がある投稿は削除できない（RESTRICT） | integration | 子を持つ親の DELETE と、存在しない親の INSERT が FK 違反 | 同上 | green |
 | R-12.1-4 | `sessions.submitted_at` は `state = submitted` のときだけ非 NULL、`via` も同様（CHECK）。`score` は 0〜2^31−1、`frames` は 1〜`time_limit`、`speed` は 5 値（dm#A.3, I12） | integration | open で NULL は受理、submitted で NULL / open で非 NULL / score −1 / speed 1.1 は拒否 | 同上 | red（`via`, `frames`, `speed` が未実装） |
 | R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `unpublished` / `draft` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status`（dm#A.4） | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` / `draft` に `indiv_restricted` を立てても変わらない | 同上 | red（`draft` / `unpublished` が未実装） |
@@ -161,9 +161,10 @@ I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクション�
 | R-dm.A5-10 | I10: `game_hash` / `title` / `prompt` は `base_status = draft` の間だけ更新できる（トリガー） | integration | `draft` で更新が通り、`public` で拒否される | `apps/api/test/integration/db.spec.ts` | todo |
 | R-dm.A5-11 | I11: 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日の `draft` は日次ジョブで削除 | integration | 11 件目の `publish_game` が拒否。31 日前の下書きがジョブで消え、30 日前は残る | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-dm.A5-13 | I13: `ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は更新できない（トリガー） | integration | finish 後の UPDATE が拒否 | `apps/api/test/integration/db.spec.ts` | todo |
-| R-dm.A5-14 | I14: `reports` で `user_id` が NULL なら `weight = 0`（CHECK） | integration | 匿名で `weight = 1` が拒否、`0` は通る | 同上 | todo |
+| R-dm.A5-14 | I14: 主体が匿名（`actors.user_id` が NULL）の通報は受理時に `weight = 0` にする | integration | 匿名の通報が `weight = 0` で保存され、ログイン主体は信頼スコア由来の重み | `apps/api/test/reports.spec.ts` | todo |
+| R-dm.A5-17 | I17: `actors.device_id` は一意。`user_id` は一度埋まったら変えられない（トリガー） | integration | 同じ `device_id` の 2 行目が拒否。`user_id` を別の値に更新すると拒否 | `apps/api/test/integration/db.spec.ts` | todo |
 | R-dm.A5-15 | I15: `post_stats` には sc#A.4 の条件を満たす結果だけが入り、verdict が `rejected` / `flagged` に変わると外れ、1 主体 6 件目で最古が外れる | integration | 作者と speed 1.25 を受理しても `n` が増えない。`rejected` にすると `n` が減り `miss_below` が変わる。6 件目で `n` が増えない | `apps/api/test/distribution.spec.ts` | todo |
-| R-dm.A5-16 | I16: 同じ主体・お題・日付で `recorded = true` のランは 1 本（部分一意索引） | integration | 同時に 2 本作って 1 本だけ `recorded`、2 本目は `recorded = false` で作られる | `apps/api/test/runs.spec.ts` | todo |
+| R-dm.A5-16 | I16: 同じ `actor_id`・お題・日付で `recorded = true` のランは 1 本（部分一意索引） | integration | 同時に 2 本作って 1 本だけ `recorded`、2 本目は `recorded = false` で作られる | `apps/api/test/runs.spec.ts` | todo |
 
 ## data-model A.7 現行スキーマとの差分（旧 12.4。すべて追従で消える行）
 
