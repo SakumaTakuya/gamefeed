@@ -186,7 +186,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 
 | 表 | 列 | 制約 |
 | --- | --- | --- |
-| `moderation_actions` | `id`, `moderator_id`（fk users。運営）, `kind`, `post_id null`, `user_id null`, `reason`, `created_at` | 追記のみ |
+| `moderation_actions` | `id`, `moderator_id null`（fk users。運営。NULL は自動制限、`moderation.md` A.4）, `kind`, `post_id null`, `user_id null`, `reason`, `created_at` | 追記のみ。`restrict` / `restore` は `post_id` と `user_id` のどちらか一方（CHECK） |
 | `tree_locks` | `root_post_id` pk, `action_id` fk moderation_actions, `created_at` | |
 
 ### Phase 2（定義だけ先に置く）
@@ -213,7 +213,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | ビュー | 定義 |
 | --- | --- |
 | `post_status` | `removed` / `unpublished` / `draft` はそのまま。`indiv_restricted` または祖先（自身を含む）が `tree_locks` にあれば `restricted`。それ以外は `base_status` |
-| `post_eligibility` | ランに出せるか: `post_status = public` かつ `calibration` で `normal` / `new` / `none`（`scoring.md` A.8） |
+| `post_eligibility` | ランに出せるか: `post_status = public` かつ `calibration = calibrated` なら `normal`、`post_status IN (limited, public)` かつ `calibration = uncalibrated` なら `new`、それ以外は `none`（`scoring.md` A.8、`moderation.md` A.3 / A.8） |
 
 ## A.5 不変条件
 
@@ -312,3 +312,4 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 - `post_stats.scores` の上限 1 万件と分位点への切り替え条件
 - `users.handle` の生成規則と、Better Auth の `auth_user` 作成時に `users` 行を作るか初回 `publish_game` 時か（`status.md` の「オーナーに聞くこと」）
 - 総合の記録（`rank:weekly`）の定義。Phase 2
+- `draft` の削除（作者の操作と I11 の日次ジョブ）は行を消す（`moderation.md` B.6）。その `post_id` を指す試遊セッション（`run_id` が NULL）を一緒に消すか `ON DELETE CASCADE` にするか。#59 の前に決める

@@ -130,7 +130,30 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る。Claude のカスタムコネクタでも同じ | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC（MC-1〜MC-4） | `docs/manual-tests/muse-connect.md` | green（Muse・Claude、2026-11-05） |
 | R-9-5 | アクセストークンは 24 時間以上、リフレッシュトークンは 30 日。ローテーション後の旧リフレッシュトークンは猶予内なら同じ応答を返す（計画書 第5節「トークン方針」） | integration + manual | `expires_in ≥ 86400`、`refresh_token` あり。旧トークンで 2 回目の refresh が 200 で同じ応答。24 時間以上空けた再接続は MC-5 | `apps/api/test/integration/mcp-oauth.spec.ts`、`docs/manual-tests/muse-connect.md` | green（integration）/ todo（manual） |
 | R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
-| R-9-4 | 新規投稿は 5 件/日まで | integration | 6 件目が拒否される。日付境界は手動時計 | 同上 | todo |
+| R-9-4 | 新規の下書きは `trust_score` 30 未満で 5 件/日、以上で 30 件/日まで。置き換え（`post_id` 指定）は数えない（mo#A.5） | integration | 6 件目が拒否される。日付境界は手動時計。置き換えを 6 回しても通る | 同上 | todo |
+
+## moderation A.2 / A.3 / A.4 / A.5 / A.6 / A.7 投稿状態・通報・信頼スコア・運営の操作（旧 11）
+
+遷移と可視性の性質 M1〜M10（mo#A.10）は `verification/Moderation.tla` と、ここに並べる API の integration テストで確かめる。定数は mo#A.9 の名前で `packages/domain` に置き、テストはその値を参照する（値を変えてもテストを直さない）。
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-mo.A2-1 | 公開（`draft` / `unpublished` → `limited` / `public`）は作者の `trust_score` が `TRUST_PUBLIC_THRESHOLD` 未満なら `limited`、以上なら `public`。既存の投稿には遡らない | integration | `trust_score` 10 と 30 で公開して基本状態を見る。公開後に 30 にしても `limited` のまま | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-mo.A2-2 | `unpublish_game` は `limited` / `public` → `unpublished`。`unpublished` / `draft` は何もせず成功、`removed` は `invalid_state`、他人の投稿は `not_found`。`indiv_restricted` / `tree_locks` / `reports` は変わらない | integration | 5 つの状態と他人の投稿で呼ぶ。制限中の投稿を非公開にして再公開すると `restricted` に戻る | `apps/api/test/integration/mcp-tools.spec.ts` | todo |
+| R-mo.A2-3 | `limited` は `calibration` が `calibrated` になる遷移で `public` に昇格する。`indiv_restricted` または `upheld` の通報がある投稿は昇格しない | integration | 20 件受理して `public` になる。制限中の投稿は `limited` のまま | `apps/api/test/distribution.spec.ts` | todo |
+| R-mo.A2-4 | 制限は自動では解けない（M9）。`restore` / `restore_tree` 以外のどの操作・遷移でも `indiv_restricted` と `tree_locks` は減らない | integration | 再公開・昇格・`remove`・BAN の後も `indiv_restricted` が立ったまま | `apps/api/test/integration/moderation.spec.ts` | todo |
+| R-mo.A3-1 | 投稿状態ごとの可視性（mo#A.3 の表）: 直リンクは `draft`（作者のみ）/ `limited` / `public` だけ 200、それ以外は `not_found` で文言は同じ。一覧には `public` だけ出る | integration | 6 状態 × 作者 / 他人でゲームページと一覧 API を呼ぶ | `apps/api/test/integration/posts.spec.ts` | todo |
+| R-mo.A3-2 | `next` は発行時に `post_eligibility` を見直し、出せなくなった投稿を手番を消費せず飛ばす。発行済みの手番の結果は受理する | integration | ラン開始後に山札の 1 本を `restrict` し、`next` がそれを飛ばして `turn` が連番のまま。発行済みの手番の `result` は 200 | `apps/api/test/runs.spec.ts` | todo |
+| R-mo.A4-1 | 通報は `limited` / `public` / `restricted` の投稿にだけ付く。1 主体 1 回（2 回目は成功で何もしない）、作者自身は `invalid`、コメントは 200 文字まで | integration | 各状態と重複、作者、201 文字で呼ぶ | `apps/api/test/reports.spec.ts` | todo |
+| R-mo.A4-2 | `weight` は受付時に凍結: 匿名 0、ログイン済みは `trust_score ÷ 10 × REPORT_COEF[category]`。後で通報者の `trust_score` が変わっても `reports.weight` は変わらない | integration | 新規（1.0）と 50（5.0）で `sexual` / `spam` / `broken` を通報し保存値を見る。通報後に `trust_score` を変える | 同上 | todo |
+| R-mo.A4-3 | `open` の通報の重みの合計が `AUTO_RESTRICT_SUM` 以上、または `sexual` / `flashing` の合計が `AUTO_RESTRICT_SEVERE` 以上で `indiv_restricted = true` になり、`moderation_actions` に `kind = restrict`、`moderator_id = NULL` の行が入る。匿名は何件でも制限しない（M10） | integration | 新規 10 人の `spam`、新規 2 人の `sexual`、匿名 100 人で確かめる。9 人目では制限されない | 同上 | todo |
+| R-mo.A5-1 | 信頼スコアの増減は mo#A.5 の 5 事象だけで、投稿ごとに各 1 回、0〜100 に切り詰める | integration | +5（日次ジョブ、7 日前に公開・通報なし）、−20（`restrict`、2 回目の `restrict` では減らない）、−50、通報者 +1 / −2、下限 0 と上限 100 | `apps/api/test/integration/moderation.spec.ts` | todo |
+| R-mo.A5-2 | `post_restricted` のユーザーは `publish_game`（新規・公開）が `post_restricted` で拒否され、`unpublish_game` / `list_my_games` / 試遊は通る。`trust_score` が 0 になると自動で `post_restricted` | integration | 運営の `restrict(user_id)` 後と、`trust_score` を 0 にした後で各ツールを呼ぶ | 同上 | todo |
+| R-mo.A5-3 | `ban_user` は `removed` でない全投稿を同一トランザクションで `removed` にし、ログインを無効にする（I3、M2）。並行する `publish_game` は BAN 後に残らない | integration | 投稿 3 件（うち 1 件 `removed`）を持つユーザーを BAN。同時に `publish_game` を走らせて、終了後に `removed` でない投稿が 0 | 同上 | todo |
+| R-mo.A6-1 | `restrict_tree` は根と子孫（`parent_id` を辿る）だけを `restricted` にし、兄弟は巻き込まない。ロック中に挿入した子孫も `restricted`（M5）。`restore_tree` は `tree_locks` を消すだけで `indiv_restricted` を残す（M4）。入れ子の外側の `restore_tree` で内側は解けない | integration | 深さ 3 のツリーと兄弟で確かめる。ロック中に子を挿入、個別制限した子孫、入れ子のロック | 同上 | todo |
+| R-mo.A7-1 | 運営の操作 10 行（mo#A.7）が `moderation_actions` に 1 行ずつ残り、通報の解決（`restrict` / `remove` / `restrict_tree` / `ban_user` → `upheld`、`restore` → `dismissed`、`restore_tree` → 変えない）と信頼スコアの変化が表のとおり | integration | 各操作の前後で `reports.resolution` と `trust_score` を見る | 同上 | todo |
+| R-mo.A8-1 | `post_eligibility`: `public` × `calibrated` が `normal`、`limited` / `public` × `uncalibrated` が `new`、それ以外は `none`。`unpublished` → 再公開で校正状態と `post_stats` を引き継ぐ | integration | 状態の組み合わせでビューを見る。再公開後に `calibrated` のままで `normal` | `apps/api/test/integration/db.spec.ts` | todo |
+| R-mo.A10-1 | M1〜M8 を `verification/Moderation.tla` で網羅検査する（2 ユーザー・投稿 3 件。`draft` / `unpublished` / 昇格 / 再公開を旧モデル C に足す） | manual | TLC が反例なしで終わる。結果は `verification/README.md` | `verification/Moderation.tla` | todo |
 
 ## data-model A.2 / A.3 / A.4 テーブルと列挙型（旧 12.1）
 
@@ -151,10 +174,10 @@ I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクション�
 | --- | --- | --- | --- | --- | --- |
 | R-12.2-1 | I1: `posts.parent_id` は挿入後に変更できない（トリガー。NULL への変更も拒否） | integration | 別の親 / NULL への UPDATE がエラー文 `parent_id` 付きで拒否。他の列の UPDATE は通る | `apps/api/test/integration/db.spec.ts` | green |
 | R-12.2-2 | I2: 子の `tree_id` は親と同じ、`depth` は親 + 1。挿入時に親行を `FOR SHARE` でロックして計算する | integration | `publish_game` のトランザクションで親を同時に更新しても一貫する | `apps/api/test/integration/publish.spec.ts` | todo |
-| R-12.2-3 | I3: `tree_locks.action_id` は `moderation_actions` を必ず指す（FK）。BAN されたユーザーの投稿がすべて `removed` になるのは同一トランザクションで担保（`users` を `FOR SHARE`） | integration | FK: 監査行のない `tree_locks` が拒否される（green）。BAN 側はモデレーション API の Issue で（todo） | 同上 / `apps/api/test/integration/moderation.spec.ts` | green（FK）/ todo（BAN） |
+| R-12.2-3 | I3: `tree_locks.action_id` は `moderation_actions` を必ず指す（FK）。BAN されたユーザーの投稿がすべて `removed` になるのは同一トランザクションで担保（`users` を `FOR SHARE`。mo#A.5） | integration | FK: 監査行のない `tree_locks` が拒否される（green）。BAN 側は R-mo.A5-3 | 同上 / `apps/api/test/integration/moderation.spec.ts` | green（FK）/ todo（BAN） |
 | R-12.2-4 | I4: `base_status` が `limited` / `public` / `unpublished` なら `published_at` と `thumb_key` は非 NULL（CHECK）。`showcase_key` は廃止 | integration | NULL のまま `public` にすると拒否。`draft` は NULL 可 | `apps/api/test/integration/db.spec.ts` | red（現行は `showcase_key`） |
 | R-12.2-5 | I5: `removed` から出る遷移はない。`unpublished` からは `limited` / `public` にだけ戻れる（トリガー） | integration | `removed` → `public` が拒否。`unpublished` → `public` は通り、`unpublished` → `draft` は拒否 | 同上 | red（`unpublished` が未実装、`expired` が残る） |
-| R-12.2-6 | I6: `restricted` からの復帰は `moderation_actions.kind = restore / restore_tree` を伴う | integration | モデレーション API が監査行と状態変更を同一トランザクションで書く | `apps/api/test/integration/moderation.spec.ts` | todo |
+| R-12.2-6 | I6: `restricted` からの復帰は `moderation_actions.kind = restore / restore_tree` を伴う。自動制限の行は `moderator_id = NULL`（mo#A.4, A.7） | integration | モデレーション API が監査行と状態変更を同一トランザクションで書く。`restrict` / `restore` で `post_id` と `user_id` の両方 NULL・両方非 NULL は CHECK で拒否 | `apps/api/test/integration/moderation.spec.ts` | todo |
 | R-12.2-7 | I7: 1 セッションの `submitted` 遷移は高々 1 回（`UPDATE … WHERE state = 'open'` の更新行数で判定） | integration | 同じ `session_id` への 2 回目の `PUT /sessions/{id}/result` が 409 | `apps/api/test/integration/sessions.spec.ts` | todo |
 | R-12.2-8 | I8: `verdict = accepted` なら `score` が再実行結果と一致（検証ワーカーだけが `accepted` を書く。`checkpoint` は廃止）。DB ロールの分離は MVP 外 | integration | Phase 2 の検証ワーカーで。MVP では `accepted` を書く経路が検証ワーカーのみであることをコードで確認 | — | n/a（MVP） |
 | R-12.2-9 | I9: 投稿の `post_assets` は合計 3 MB・32 件以下、`required` 合計 512 KB 以下（Phase 2。`asset_type` に `bgm` はない） | integration | `publish_game` のトランザクションで集計して拒否 | `apps/api/test/integration/publish.spec.ts` | n/a（Phase 2） |
