@@ -114,7 +114,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | --- | --- | --- | --- | --- | --- |
 | R-sc.A2-1 | `PUT /sessions/{id}/result` は sc#A.2 の条件をすべて検査し、2 回目以降は 409、`frames` 超過・単調性違反・実時間超過は拒否して `flagged` | unit + integration | 各条件の境界 1 例ずつ。同じ id に 2 回送る | `apps/api/test/sessions.spec.ts` | todo |
 | R-sc.A5-1 | 偏差値は sc#A.5 の手順（`p = (L + 0.5E + 0.5) ÷ (n + 1)`、Acklam の逆関数、小数 1 桁、20〜80）で、`verification/scoring_check.py` の S1〜S3、S5 と同じ値を返す | unit + formal | TS 実装と Python 参照実装を同じ分布で突き合わせる。S3: n=20 で 69.8、n=100 で 75.8 | `packages/domain/test/deviation.spec.ts`、`verification/scoring_check.py` | todo |
-| R-sc.A6-1 | `miss_below` は分布の `ceil(0.1587n)` 番目の点数で、`score < miss_below` ⇔ 偏差値 < 40 が分布のどの点数でも成り立つ（S4）。校正前・新作枠・デイリーは `null` | unit + formal | 正規・0 張り付き・二峰・長い尾・全件同点の 5 分布で S4 | 同上 | todo |
+| R-sc.A6-1 | `miss_below` は発行時点の分布に対して偏差値が 40 以上になる最小の点数（A.5 と同じ計算、二分探索）。新しい結果について `score < miss_below` ⇔ 偏差値 < 40 が成り立つ（S4）。校正前・新作枠・デイリーは `null` | unit + formal | 正規・0 張り付き・二峰・長い尾・全件同点の 5 分布と、n = 20〜60 の境界で S4 | 同上 | todo |
 | R-sc.A4-1 | 分布に入るのは `provisional` / `accepted`、`speed = 1.0`、`author = false`、`frames ≥ 0.9 × time_limit`、1 ユーザー直近 5 件までの結果。`timeout` / `error` は 0 として入る | unit | 各条件を外した結果が分布に入らない / 入る | `apps/api/test/distribution.spec.ts` | todo |
 | R-sc.A7-1 | 校正状態は `n ≥ 20` で `uncalibrated → calibrated / invalid`。分散ゼロと 0 張り付き ≥ 80% で `invalid`、`invalid` は終端 | unit | 20 件目で遷移、19 件目では遷移しない、`invalid` から戻らない | `apps/api/test/calibration.spec.ts` | todo |
 | R-sc.A8-1 | ランの出題は投稿状態 `public` かつ校正状態で決まる: `uncalibrated` は新作枠のみ、`calibrated` は正規枠、`review` / `invalid` は出ない | unit | 4 状態 × `public` / `limited` の組で山札を引く | `apps/api/test/runs.spec.ts` | todo |

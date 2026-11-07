@@ -53,10 +53,17 @@ def deviation(score: int, dist: list[int]) -> float:
 
 
 def miss_below(dist: list[int]) -> int:
-    """A.6: k-th smallest (1-based) with k = ceil(0.1587 n)."""
-    n = len(dist)
-    k = math.ceil(0.1587 * n)
-    return dist[max(0, k - 1)]
+    """A.6: smallest integer score s >= 0 whose deviation against dist is >= 40.
+
+    deviation() is monotone in s, and the only candidates are the distinct
+    scores in dist and each of them + 1 (plus 0), so a linear scan over the
+    candidates is enough here; an implementation may binary-search them.
+    """
+    candidates = sorted({0} | set(dist) | {v + 1 for v in dist})
+    for c in candidates:
+        if deviation(c, dist) >= 40.0:
+            return c
+    return candidates[-1] + 1  # unreachable for any non-empty dist
 
 
 # ---------------------------------------------------------------------------
@@ -102,22 +109,22 @@ def main() -> int:
         results.append(check(f"S3 n={n} max == {expect}", deviation(10**9, d) == expect,
                              f"got {deviation(10**9, d)}"))
 
-    # S4 miss_below ⇔ deviation < 40, for every score in the distribution
-    for name, dist in dists.items():
-        if name == "small_n20":
-            continue
+    # S4 — a NEW result evaluated against the distribution frozen at issue time:
+    #      score < miss_below  ⇔  deviation(score) < 40
+    def s4(name: str, dist: list[int]) -> None:
         mb = miss_below(dist)
         agree = True
-        for s in sorted(set(dist)):
-            others = list(dist)
-            others.remove(s)  # the session itself is excluded from its own distribution
-            below = s < mb
-            low_dev = deviation(s, others) < 40.0
-            if below != low_dev:
+        for s in range(0, max(dist) + 3):  # scores present, absent, and beyond the max
+            if (s < mb) != (deviation(s, dist) < 40.0):
                 agree = False
-                print(f"      mismatch [{name}] score={s} miss_below={mb} dev={deviation(s, others)}")
+                print(f"      mismatch [{name}] score={s} miss_below={mb} dev={deviation(s, dist)}")
                 break
         results.append(check(f"S4 miss_below ⇔ dev<40 [{name}]", agree, f"miss_below={mb}"))
+
+    for name, dist in dists.items():
+        s4(name, dist)
+    for n in range(20, 61):  # boundary sample sizes, distinct scores 0..n-1 (Codex's case: n = 25)
+        s4(f"distinct n={n}", list(range(n)))
 
     # S6 frozen values never change when the distribution grows
     dist = list(dists["normalish"])
