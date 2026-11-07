@@ -51,7 +51,7 @@ stateDiagram-v2
 | `draft` の削除 | 作者（サイト）、日次ジョブ | 行を消す。公開前なので系譜にもランにも痕跡がない（B.6） |
 | `limited` → `public` | 自動（校正） | `calibration` が `calibrated` になる遷移（`scoring.md` A.7）と同じトランザクションで昇格する。ただし `indiv_restricted` が立っている、または `upheld` の通報がある投稿は昇格しない（`limited` のまま。復帰は運営） |
 | `limited` / `public` → `unpublished` | 作者（`unpublish_game`、サイト） | 可逆の非公開。制限（`indiv_restricted`、`tree_locks`）と通報は触らない。`unpublished` / `draft` に対しては何もせず成功、`removed` は error `invalid_state`、他人の投稿は error `not_found`（存在を漏らさない） |
-| `unpublished` → `limited` / `public` | 作者（再公開） | 再公開時点の `trust_score` で `draft` からの公開と同じ分岐。内容は変わらない（I10）。制限が残っていれば投稿状態は `restricted` のまま |
+| `unpublished` → `limited` / `public` | 作者（再公開） | 既に `calibrated` で、`indiv_restricted` も `upheld` の通報もない投稿は `trust_score` によらず `public`（昇格の条件を満たしているため。B.3）。それ以外は再公開時点の `trust_score` で `draft` からの公開と同じ分岐。内容は変わらない（I10）。制限が残っていれば投稿状態は `restricted` のまま |
 | `limited` / `public` / `unpublished` → `removed` | 運営（`remove`）、BAN | 終端（I5）。`draft` は `removed` にしない（消す） |
 
 制限は基本状態の遷移ではない。`indiv_restricted` は自動制限（A.4）と運営の `restrict` で立ち、運営の `restore` でだけ下りる。`tree_locks` は運営の `restrict_tree` / `restore_tree` でだけ増減する（A.6）。自動で制限が解けることはない（旧 P9、B.1）。
@@ -117,7 +117,7 @@ stateDiagram-v2
 
 新規ユーザー（信頼係数 1.0）の通報なら、`sexual` は 2 人（3 + 3 ≥ 5）、`spam` は 10 人で制限がかかる。信頼スコア 17 以上のユーザーの `sexual` 通報は 1 件で制限になる。匿名（重み 0）は何人いても自動制限にならず、キューの材料にだけなる。
 
-自動制限は `moderation_actions` に `kind = restrict`、`moderator_id = NULL`、`reason` に重みの内訳を書いた行を残す（`data-model.md` A.3、B.4）。作者には「制限中」と通報カテゴリの集計を見せる（`list_my_games`、「作る」ページ）。通報者は誰か見せない。
+自動制限は `moderation_actions` に `kind = restrict`、`moderator_id = NULL`、`reason` に重みの内訳を書いた行を残す（`data-model.md` A.3、B.4）。自動制限は通報を解決せず（`open` のまま）、信頼スコアも変えない。通報の解決と信頼スコアの変化は運営の操作（`moderator_id` が非 NULL）でだけ起きる（A.7、B.5）。作者には「制限中」と通報カテゴリの集計を見せる（`list_my_games`、「作る」ページ）。通報者は誰か見せない。
 
 ### キュー
 
@@ -165,7 +165,7 @@ stateDiagram-v2
 
 ## A.7 運営の操作一覧
 
-すべて `moderation_actions` に 1 行書き、状態の変更と同じトランザクションで行う（I6）。`reason` は必須（自動制限は重みの内訳）。
+すべて `moderation_actions` に 1 行書き、状態の変更と同じトランザクションで行う（I6）。`reason` は必須。表の「通報の解決」と「信頼スコア」は運営の操作（`moderator_id` 非 NULL）にだけ適用する。自動制限（`moderator_id = NULL` の `restrict`）は `indiv_restricted` を立てるだけで、通報は `open` のまま、信頼スコアも変えない。運営が自動制限された投稿を `restrict` し直せば（制限は変わらない）、その時点で `upheld` と −20 が起きる。
 
 | `kind` | 対象 | 効果 | 通報の解決 | 信頼スコア |
 | --- | --- | --- | --- | --- |
@@ -257,7 +257,7 @@ stateDiagram-v2
 
 `product.md` 9 の 6 と #42 の 2。作者が旧版を止めたくなる場面は「直した新版を出したから」が多く、後で「やはり旧版も残す」に戻れる方がよい。`removed` にすると終端で戻れず、運営の操作と区別がつかない。`unpublished` を別の基本状態にしたのは、`draft` と違って内容が不変でセッションが参照しているため（`data-model.md` B.6）。
 
-再公開の初期状態を再公開時点の `trust_score` で決めるのは、`draft` からの公開と規則を 1 つにするため。非公開の間に信頼スコアが下がっていれば `limited` に戻ることになるが、校正状態は引き継ぐので校正済みならすぐ昇格する。
+再公開の初期状態は、校正済みで制限も `upheld` もない投稿なら `trust_score` によらず `public` に戻す。昇格の条件（A.2）を既に満たしている投稿を `limited` に戻すと、昇格の契機（`calibrated` になる遷移）がもう来ないので `limited` に留まってしまう。それ以外は `draft` からの公開と同じ分岐にして規則を 1 つにする。
 
 ## B.4 自動制限の監査行に `moderator_id = NULL` を使う理由
 
@@ -265,7 +265,7 @@ stateDiagram-v2
 
 ## B.5 通報の解決を運営の操作に結びつける理由
 
-通報の `resolution` を運営が 1 件ずつ付ける案は、同じ投稿に 10 件の通報があると 10 回の操作になる。運営が判断するのは投稿であって通報ではないので、投稿への操作（`restrict` / `remove` は `upheld`、`restore` は `dismissed`）で `open` の通報を一括で解決する。通報者の信頼スコアへの反映もこの時点で 1 回だけ起きる。`restore_tree` で解決しないのは、子孫の通報は根の判断と独立だから。
+通報の `resolution` を運営が 1 件ずつ付ける案は、同じ投稿に 10 件の通報があると 10 回の操作になる。運営が判断するのは投稿であって通報ではないので、投稿への操作（`restrict` / `remove` は `upheld`、`restore` は `dismissed`）で `open` の通報を一括で解決する。通報者の信頼スコアへの反映もこの時点で 1 回だけ起きる。`restore_tree` で解決しないのは、子孫の通報は根の判断と独立だから。自動制限で解決しないのは、閾値は「人が見るまで隠す」ための装置で判断ではないから。自動で `upheld` にすると、通報が集まっただけで作者の信頼スコアが下がり、通報者の信頼スコアが上がる。それは通報の組織化に報酬を与える。
 
 ## B.6 `draft` を `removed` にせず消す理由
 
