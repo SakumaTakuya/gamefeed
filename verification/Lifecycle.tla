@@ -11,9 +11,9 @@
 EXTENDS Naturals
 
 CONSTANT RestorePromotes
-  \* BOOLEAN. FALSE = moderation.md as written (2026-11-08). TRUE = proposed
-  \* fix: `restore` of a `limited` + `calibrated` post without upheld reports
-  \* promotes it to `public` (see README, L4).
+  \* BOOLEAN. TRUE = moderation.md A.7 (#70, #71): `restore` of a `limited` +
+  \* `calibrated` post without upheld reports promotes it to `public`.
+  \* FALSE = the wording before #71, under which L4 fails (see README).
 ASSUME RestorePromotes \in BOOLEAN
 
 VARIABLES
