@@ -177,10 +177,14 @@ RestrictTree(r) ==
   /\ open' = [p \in Posts |-> IF p \in Desc(r) THEN "none" ELSE open[p]]
   /\ UNCHANGED << rows, np, author, parent, base, indiv, calib, ustatus, trustHigh, pending >>
 
+\* mo#A.7 (#71): descendants that are limited, calibrated, without upheld
+\* reports and not individually restricted are promoted in the same step.
 RestoreTree(r) ==
   /\ r \in treeLocks
   /\ treeLocks' = treeLocks \ {r}
-  /\ UNCHANGED << rows, np, postVars, ustatus, trustHigh, pending >>
+  /\ base' = [p \in Posts |-> IF p \in Desc(r) /\ base[p] = "limited" /\ calib[p] = "calibrated" /\ CanPromote(p)
+                              THEN "public" ELSE base[p]]
+  /\ UNCHANGED << rows, np, author, parent, indiv, calib, upheld, open, ustatus, trustHigh, pending >>
 
 RestrictUser(u) ==
   /\ ustatus[u] = "active"

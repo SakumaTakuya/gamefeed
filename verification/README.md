@@ -50,7 +50,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | L2 | `uncalibrated → calibrated` は `n >= 20`（`enough`）でだけ | アクション性質 |
 | L3 | `normal` ⇒ `public ∧ calibrated`、`new` ⇒ `limited/public ∧ uncalibrated ∧ thumb`、それ以外は `none`（dm#A.4） | 不変条件 |
 | L4 | 可視の `limited ∧ calibrated` は `upheld` を持つ（mo#A.8 表） | 不変条件。#71 より前の文言（`Lifecycle_asis.cfg`）では不成立 |
-| L5 | 昇格が制限中の投稿を可視にしない（M8 の 1 投稿版） | アクション性質 |
+| L5 | 昇格が制限中の投稿を可視にしない（M8 の 1 投稿版）。`restore` / `restore_tree` 自身の昇格は除く | アクション性質 |
 | L6 | 記録が分布に入るのは `new` 枠のときだけ | アクション性質 |
 | M1 | `parent < id`、`parent` は挿入後不変 | 不変条件＋アクション性質 |
 | M2 | `banned` のユーザーの行はすべて `removed` | 不変条件 |
@@ -74,10 +74,10 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | `Run_cheat.cfg` | 残機 0 を無視する Host（F9 用） | **反例なし** | 223,769 |
 | `Run_cheat_withhold.cfg` | 残機無視＋未提出 | **反例なし** | 6,155,229 |
 | `Run_literal.cfg` | A.5 step 6 / 7 を文字どおり（`cur + 2` より先を発行しない） | **F6 違反**。`start(1)` → `end` → 2 を skip → 3 を skip で候補が尽き、発行規則がなく停止 | — |
-| `Lifecycle.cfg` | `moderation.md` A.7 どおり（`restore` で昇格、#71） | **反例なし** | 1,723 |
+| `Lifecycle.cfg` | `moderation.md` A.7 どおり（`restore` / `restore_tree` で昇格、#71） | **反例なし** | 1,723 |
 | `Lifecycle_asis.cfg` | #71 より前の文言（`RestorePromotes = FALSE`） | **L4 違反**（6 手）。下の穴 2 | — |
 | `Moderation_norecheck.cfg` | 挿入時に `users.status` を再確認しない | **M2 違反**（3 手）。`Check(u1)` → `Ban(u1)` → `Insert(u1)`。旧反例 4 | — |
-| `Moderation_2u2p.cfg` | 採用。2 ユーザー・投稿 2 件 | **反例なし** | 2,712,272（3 分 53 秒） |
+| `Moderation_2u2p.cfg` | 採用。2 ユーザー・投稿 2 件（`restore_tree` の昇格を含む、#78） | **反例なし** | 2,712,272（3 分 53 秒） |
 | `Moderation_1u3p.cfg` | 採用。1 ユーザー・投稿 3 件 | **未完走**。20 分で 1.4 億状態生成 / 1,290 万 distinct でキューが増え続け、以後進まなくなった（メモリ 3 GB の限界） | — |
 | `Moderation.cfg` | 採用。2 ユーザー・投稿 3 件 | **未完走**。1 CPU で 1,400 万状態生成 / 260 万 distinct の時点で中断。別環境（複数 CPU・メモリ 8 GB 以上）か、`open` を 2 値にする・`RestrictUser` を外すなどの削減が要る | — |
 
