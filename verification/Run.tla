@@ -20,10 +20,13 @@ CONSTANTS
   Cap,      \* upper bound on turns (50 in prod, run#A.2)
   Lives,    \* 3
   Cheat,    \* BOOLEAN: Host ignores lives = 0 (F9 only; F8 is checked with FALSE)
-  LiteralWindow \* BOOLEAN: read A.15 F3 / A.5 step 7 literally, i.e. never
-                \* issue a turn numbered above cur + 2 (see README: F6 fails)
+  LiteralWindow, \* BOOLEAN: read A.15 F3 / A.5 step 7 literally, i.e. never
+                 \* issue a turn numbered above cur + 2 (see README: F6 fails)
+  Withhold       \* BOOLEAN: Host may not send `result` for a turn it played
+                 \* (run#A.7 / sc#A.9 abandoned rule, #74)
 
-ASSUME Cap \in Nat /\ Lives \in Nat /\ Cheat \in BOOLEAN /\ LiteralWindow \in BOOLEAN
+ASSUME Cap \in Nat /\ Lives \in Nat /\ Cheat \in BOOLEAN
+ASSUME LiteralWindow \in BOOLEAN /\ Withhold \in BOOLEAN
 
 Turns == 1..Cap
 States == {"NONE", "LOADING", "READY", "INITED", "RUNNING", "ENDED", "DESTROYED"}
@@ -120,14 +123,16 @@ SkipLoad ==
 (***************************************************************************)
 End ==
   /\ cur # 0 /\ frame[cur] = "RUNNING"
-  /\ \E via \in Vias, below \in BOOLEAN :
+  /\ \E via \in Vias, below \in BOOLEAN, send \in (IF Withhold THEN BOOLEAN ELSE {TRUE}) :
        LET miss == via = "guest" /\ ~isNew[cur] /\ below
            skip == via # "guest"
        IN /\ frame' = [frame EXCEPT ![cur] = "ENDED"]
           /\ lives' = IF miss /\ lives > 0 THEN lives - 1 ELSE lives
           /\ missTurns' = IF miss THEN missTurns \cup {cur} ELSE missTurns
           /\ skipped' = IF skip THEN skipped \cup {cur} ELSE skipped
-          /\ result' = [result EXCEPT ![cur] = IF skip THEN "skip" ELSE IF miss THEN "miss" ELSE "ok"]
+          \* send = FALSE: the Host never sends `result`; the session stays open
+          /\ result' = IF send THEN [result EXCEPT ![cur] = IF skip THEN "skip" ELSE IF miss THEN "miss" ELSE "ok"]
+                       ELSE result
           /\ hostDone' = IF Cheat THEN FALSE ELSE (lives' = 0 \/ cur = Cap)
   /\ UNCHANGED << cur, issued, isNew, startedAfterZero, finished >>
 
@@ -158,14 +163,26 @@ Next ==
 Spec == Init /\ [][Next]_vars /\ WF_vars(Next)
 
 (***************************************************************************)
-(* Server-side record (sc#A.9): turns up to and including the 3rd miss,   *)
-(* in turn order, counting skips. Results after that are dropped.          *)
+(* Server-side record (run#A.7, sc#A.9). At finish every open session is    *)
+(* abandoned. Abandoned turns after the last reported one (prefetch) do   *)
+(* not count; abandoned turns before it count as a miss when the turn had  *)
+(* a threshold (miss_below non-null) and as a skip otherwise. The record   *)
+(* stops at the 3rd miss; without one it is the last reported turn.        *)
 (***************************************************************************)
-MissesUpTo(t) == Cardinality({u \in 1..t : result[u] = "miss"})
-ThirdMiss == IF \E t \in 1..issued : MissesUpTo(t) = Lives
-             THEN CHOOSE t \in 1..issued : MissesUpTo(t) = Lives /\ MissesUpTo(t - 1) < Lives
-             ELSE issued
-Reached == ThirdMiss
+Reported == {t \in Turns : result[t] # "open"}
+LastReported == IF Reported = {} THEN 0 ELSE CHOOSE t \in Reported : \A u \in Reported : u <= t
+Eff(t) == IF result[t] # "open" THEN result[t]
+          ELSE IF t <= LastReported THEN (IF isNew[t] THEN "skip" ELSE "miss")
+          ELSE "none"
+MissesUpTo(t) == Cardinality({u \in 1..t : Eff(u) = "miss"})
+Reached == IF \E t \in 1..LastReported : MissesUpTo(t) = Lives
+           THEN CHOOSE t \in 1..LastReported : MissesUpTo(t) = Lives /\ MissesUpTo(t - 1) < Lives
+           ELSE LastReported
+
+\* The Host's own truth: the turn of its 3rd miss, if any
+HostMisses(t) == Cardinality(missTurns \cap (1..t))
+HostThird == CHOOSE t \in Turns : HostMisses(t) = Lives /\ HostMisses(t - 1) < Lives
+LastEnded == IF cur = 0 \/ frame[cur] \notin {"ENDED", "DESTROYED"} THEN cur - 1 ELSE cur
 
 (***************************************************************************)
 (* Properties (run#A.15)                                                   *)
@@ -188,14 +205,14 @@ F5 == \A t \in Running : t \in Turns  \* placeholder; see F5Action
 F5Action == [][\A t \in Turns : (frame[t] # "RUNNING" /\ frame'[t] = "RUNNING") => frame[t] = "INITED"]_vars
 F7 == \A t \in missTurns : ~isNew[t]
 F8 == ~startedAfterZero
-\* F9: at finish, the record stops at the turn of the 3rd miss even when the
-\* Host kept issuing turns after it (Cheat = TRUE); without a 3rd miss the
-\* record is the number of issued turns (skips included, run#B.3).
+\* F9: at finish the record never reaches past the Host's 3rd miss, whatever
+\* the Host sent or withheld (Withhold = TRUE) and even if it kept issuing
+\* turns (Cheat = TRUE). With every result sent it is exactly the Host's
+\* 3rd-miss turn, or the last played turn when there was no 3rd miss.
 F9 == finished =>
-        /\ MissesUpTo(Reached) <= Lives
-        /\ (Cardinality(missTurns) >= Lives
-              => result[Reached] = "miss" /\ MissesUpTo(Reached) = Lives)
-        /\ (Cardinality(missTurns) < Lives => Reached = issued)
+        /\ (Cardinality(missTurns) >= Lives => Reached <= HostThird)
+        /\ (~Withhold /\ Cardinality(missTurns) >= Lives => Reached = HostThird)
+        /\ (~Withhold /\ Cardinality(missTurns) < Lives => Reached = LastReported)
 
 Invariants == TypeOK /\ F1 /\ F2 /\ F3 /\ F4 /\ F7 /\ F9
 

@@ -11,9 +11,9 @@
 EXTENDS Naturals
 
 CONSTANT RestorePromotes
-  \* BOOLEAN. FALSE = moderation.md as written (2026-11-08). TRUE = proposed
-  \* fix: `restore` of a `limited` + `calibrated` post without upheld reports
-  \* promotes it to `public` (see README, L4).
+  \* BOOLEAN. TRUE = moderation.md A.7 (#70, #71): `restore` of a `limited` +
+  \* `calibrated` post without upheld reports promotes it to `public`.
+  \* FALSE = the wording before #71, under which L4 fails (see README).
 ASSUME RestorePromotes \in BOOLEAN
 
 VARIABLES
@@ -160,10 +160,14 @@ RestrictTree ==
   /\ lastOp' = "restrict_tree"
   /\ UNCHANGED << base, calib, indiv, thumb, enough, trustHigh, gone >>
 
+\* mo#A.7: restore_tree also promotes qualifying descendants (this post is
+\* one of them) that are not individually restricted.
 RestoreTree ==
   /\ Alive /\ treeLocked
   /\ treeLocked' = FALSE /\ lastOp' = "restore_tree"
-  /\ UNCHANGED << base, calib, indiv, upheld, openRep, thumb, enough, trustHigh, gone >>
+  /\ base' = IF RestorePromotes /\ base = "limited" /\ calib = "calibrated" /\ ~upheld /\ ~indiv
+             THEN "public" ELSE base
+  /\ UNCHANGED << calib, indiv, upheld, openRep, thumb, enough, trustHigh, gone >>
 
 Next ==
   \/ Publish \/ DeleteDraft \/ Thumbnail \/ Unpublish \/ Republish \/ Play
@@ -200,7 +204,7 @@ L4 == (Status = "limited" /\ calib = "calibrated") => upheld
 \* post was restricted before the step it is still not visible after it,
 \* unless the step is the restore itself.
 L5 == [][base = "limited" /\ base' = "public" /\ Status = "restricted"
-          => Status' = "restricted" \/ lastOp' = "restore"]_vars
+          => Status' = "restricted" \/ lastOp' \in {"restore", "restore_tree"}]_vars
 
 \* L6: results enter the distribution only through the new slot
 L6 == [][~enough /\ enough' => Eligibility = "new"]_vars
