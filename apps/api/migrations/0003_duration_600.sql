@@ -1,0 +1,2 @@
+ALTER TABLE "games" DROP CONSTRAINT "games_duration_frames_range";--> statement-breakpoint
+ALTER TABLE "games" ADD CONSTRAINT "games_duration_frames_range" CHECK ("games"."duration_frames" IS NULL OR "games"."duration_frames" BETWEEN 180 AND 600);
