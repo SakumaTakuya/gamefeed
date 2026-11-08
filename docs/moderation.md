@@ -49,7 +49,7 @@ stateDiagram-v2
 | `draft` → `draft` | 作者（`publish_game` に `post_id`） | 内容の置き換え。`draft` の間だけ（I10）。試遊ページの「公開」は `publish: true` と同じ |
 | `draft` → `limited` / `public` | 作者（公開） | 公開時点の `trust_score` で分岐。`TRUST_PUBLIC_THRESHOLD`（30、暫定）未満なら `limited`。ここで内容が不変になり、`published_at` が入る（I4）。サムネは公開直後のジョブが作り、できるまで新作枠に入らない（`mcp.md` A.9）。`users` を `FOR SHARE` して `status` を再確認する（I3） |
 | `draft` の削除 | 作者（サイト）、日次ジョブ | 行を消す。公開前なので系譜にもランにも痕跡がない（B.6） |
-| `limited` → `public` | 自動（校正） | `calibration` が `calibrated` になる遷移（`scoring.md` A.7）と同じトランザクションで昇格する。ただし `indiv_restricted` が立っている、または `upheld` の通報がある投稿は昇格しない（`limited` のまま。復帰は運営） |
+| `limited` → `public` | 自動（校正）、運営（`restore` / `restore_tree`） | `calibration` が `calibrated` になる遷移（`scoring.md` A.7。`uncalibrated → calibrated` と `calibration_confirm` の `review → calibrated` の両方）と同じトランザクションで昇格する。ただし `indiv_restricted` が立っている、または `upheld` の通報がある投稿は昇格しない（`limited` のまま）。制限が解けたときに昇格条件（`calibrated`、`upheld` の通報なし）を満たしていれば、運営の `restore` / `restore_tree` が同じトランザクションで昇格させる（A.7、B.9） |
 | `limited` / `public` → `unpublished` | 作者（`unpublish_game`、サイト） | 可逆の非公開。制限（`indiv_restricted`、`tree_locks`）と通報は触らない。`unpublished` / `draft` に対しては何もせず成功、`removed` は error `invalid_state`、他人の投稿は error `not_found`（存在を漏らさない） |
 | `unpublished` → `limited` / `public` | 作者（再公開） | 既に `calibrated` で、`indiv_restricted` も `upheld` の通報もない投稿は `trust_score` によらず `public`（昇格の条件を満たしているため。B.3）。それ以外は再公開時点の `trust_score` で `draft` からの公開と同じ分岐。内容は変わらない（I10）。制限が残っていれば投稿状態は `restricted` のまま |
 | `limited` / `public` / `unpublished` → `removed` | 運営（`remove`）、BAN | 終端（I5）。`draft` は `removed` にしない（消す） |
@@ -171,10 +171,10 @@ stateDiagram-v2
 | `kind` | 対象 | 効果 | 通報の解決 | 信頼スコア |
 | --- | --- | --- | --- | --- |
 | `restrict` | `post_id` | `indiv_restricted = true`。`draft` / `removed` には使えない | `open` → `upheld` | 作者 −20（未適用なら） |
-| `restore` | `post_id` | `indiv_restricted = false`。`limited` / `public` / `unpublished` が対象 | `open` → `dismissed` | 通報者 −2 ずつ。作者は戻さない |
+| `restore` | `post_id` | `indiv_restricted = false`。`limited` / `public` / `unpublished` が対象。対象が `limited` かつ `calibrated` で `upheld` の通報がなければ `public` に昇格する（A.2、B.9） | `open` → `dismissed` | 通報者 −2 ずつ。作者は戻さない |
 | `remove` | `post_id` | `base_status = removed`。`indiv_restricted` は残す（履歴） | `open` → `upheld` | 作者 −50（と、未適用なら −20） |
 | `restrict_tree` | `post_id`（根） | `tree_locks` に挿入 | 子孫の `open` → `upheld` | 根の作者 −20（未適用なら）。子孫の作者は変えない |
-| `restore_tree` | `post_id`（根） | `tree_locks` から削除 | 変えない（個別に判断する） | 変えない |
+| `restore_tree` | `post_id`（根） | `tree_locks` から削除。子孫（根を含む）のうち `limited` かつ `calibrated` で `upheld` の通報がなく `indiv_restricted` でないものは `public` に昇格する（A.2、B.9） | 変えない（個別に判断する） | 変えない |
 | `restrict` | `user_id`（`post_id` NULL） | `users.status = post_restricted` | 変えない | 変えない |
 | `restore` | `user_id`（`post_id` NULL） | `users.status = active` | 変えない | 変えない |
 | `ban_user` | `user_id` | `users.status = banned`、全投稿を `removed`（A.5） | その作者の投稿の `open` → `upheld` | 変えない |
@@ -192,7 +192,7 @@ stateDiagram-v2
 
 | 投稿状態 \ 校正状態 | `uncalibrated` | `calibrated` | `review` / `invalid` |
 | --- | --- | --- | --- |
-| `limited` | 新作枠 | （`public` に昇格するので起きない。起きていれば制限か `upheld` がある投稿で、出さない） | 出さない |
+| `limited` | 新作枠 | 出さない（`upheld` の通報がある投稿だけがここに残る。制限中に校正済みになった投稿は、制限が解けるときに昇格する。A.2） | 出さない |
 | `public` | 新作枠 | 正規枠 | 出さない |
 | `restricted` / `unpublished` / `removed` / `draft` | 出さない | 出さない | 出さない |
 
@@ -280,6 +280,10 @@ stateDiagram-v2
 ## B.8 信頼スコアを 0〜100 の整数にし、重みを ÷ 10 で読む理由
 
 旧 11.2 の「通報者の信頼スコア × カテゴリ係数」は尺度が書かれておらず、新規の 10 × 係数 1 = 10 で閾値 10 に単独で届く読み方も、届かない読み方もできた。÷ 10 にして新規 1.0 と定めると、閾値 10 は「新規 10 人」、`sexual` の 5 は「新規 2 人、信頼 17 以上なら 1 人」と数えられる。値そのものは暫定で、運営がキューを見ながら動かす。
+
+## B.9 `restore` / `restore_tree` が昇格を兼ねる理由
+
+形式検証（`verification/Lifecycle.tla`、#70）で見つけた取り残し。`limited` の投稿が自動制限を受け（通報は `open` のまま、`upheld` にならない）、制限中に校正済みになると昇格しない。その後運営が `restore` すると、可視・`calibrated`・制限なし・`upheld` なしで昇格条件をすべて満たすのに `limited` のままになる。昇格は「`calibrated` になる遷移」でしか起きず、その遷移はもう来ないので、作者に落ち度がないまま一覧にも正規枠にも出ない投稿ができる。制限を解く操作が昇格条件を見直して昇格させれば、昇格の契機は「校正済みになった」か「制限が解けた」の 2 つになり、取り残しが消える。却下した案: 運営に `promote` の操作を足す。運営が見落とすと同じ取り残しが起き、`restore` と別に押す理由もない。
 
 ---
 
