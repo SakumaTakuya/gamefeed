@@ -17,7 +17,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-gc.A3-1 | `gf:target` は 1 以上の整数。欠落・0・非数は `META_TARGET` で拒否 | unit | 欠落 / 0 / 1 / 非数 / 小数 | 同上 | todo |
 | R-gc.A2-1 | `<form>` / `<iframe>` / `<object>` / `<embed>` は拒否（gc#A.5） | unit | 各要素 1 例 | 同上 | todo |
 
-## 5.1 オリジン設計
+## security A.2 オリジンと Cookie（旧 5.1）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
@@ -25,23 +25,23 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-5.1-2 | 配信オリジンは `Set-Cookie` を一切返さない（HTML・アセット・404） | integration + manual | R-5.3-1 と同じ 3 パスでヘッダを検査。PT-5.1-2 | `apps/games/test/integration/csp.spec.ts`、同上 | todo |
 | R-5.1-3 | ゲーム URL の組み立ては Host の 1 関数に閉じ、サブドメイン方式へ設定だけで戻せる | manual | PT-5.1-3（grep で 1 か所） | 同上 | todo |
 
-## 5.2 iframe sandbox 属性
+## security A.3 iframe（旧 5.2）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-5.2-1 | Host の iframe は `sandbox="allow-scripts"` のみ。`allow-same-origin` / `allow-popups` / `allow-top-navigation` / `allow-forms` / `allow-modals` / `allow-pointer-lock` を付けない | e2e + manual | 攻撃 HTML（PT-5.2-1〜6）で `localStorage` / `window.open` / `top.location` / form 送信 / `alert` / pointer lock がすべて遮断。DOM の `sandbox` 属性値を assert | `apps/web/e2e/sandbox.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo |
-| R-5.2-2 | `allow="accelerometer 'src'; gyroscope 'src'"`、`referrerpolicy="no-referrer"`、`credentialless` | e2e + manual | PT-5.2-7〜9。カメラ・位置情報が `NotAllowedError`、`Referer` が空 | 同上 | todo |
+| R-5.2-1 | Host の iframe は `sandbox="allow-scripts"` のみ。`allow-same-origin` / `allow-popups` / `allow-top-navigation` / `allow-forms` / `allow-modals` / `allow-pointer-lock` / `allow-downloads` を付けない（se#A.3） | e2e + manual | 攻撃 HTML（PT-5.2-1〜6）で `localStorage` / `window.open` / `top.location` / form 送信 / `alert` / pointer lock がすべて遮断。DOM の `sandbox` 属性値を assert | `apps/web/e2e/sandbox.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo |
+| R-5.2-2 | `allow` を付けない（tilt は保留、se#B.6）、`referrerpolicy="no-referrer"`、`credentialless`。`draft` の `src` には `?t=<試遊トークン>` | e2e + manual | PT-5.2-7〜9。カメラ・位置情報・加速度が `NotAllowedError` または発火しない、`Referer` が空 | 同上 | todo |
 
-## 5.3 Content-Security-Policy（#21 でパス分けに改訂）
+## security A.4 配信レスポンスのヘッダ（旧 5.3。#21 でパス分けに改訂）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-5.3-1 | ゲーム配信の全レスポンス（HTML・アセット・404 含む）に CSP `sandbox allow-scripts` が付く | integration | Miniflare で `/p/<id>/`、`/p/<id>/assets/x`、存在しないパスを取得し、ヘッダを検査 | `apps/games/test/integration/csp.spec.ts`、PT-5.3-1 | todo |
+| R-5.3-1 | ゲーム配信の全レスポンス（HTML・アセット・404・405 含む）に se#A.4 の CSP（`sandbox allow-scripts` を含む）、`Cross-Origin-Resource-Policy: cross-origin`、`nosniff`、`Referrer-Policy: no-referrer` が付く | integration | Miniflare で `/p/<id>/`、`/p/<id>/assets/x`、存在しないパス、`POST` を取得し、ヘッダを検査 | `apps/games/test/integration/csp.spec.ts`、PT-5.3-1 | todo |
 | R-5.3-2 | CSP の各ソースは自投稿パス `/p/<post_id>/` と `/lib/` だけを指し、他投稿のパスを含まない | integration + e2e | integration: 投稿 A の CSP に投稿 B のパスが含まれない。e2e: 投稿 A のゲームから `/p/B/assets/` を読むと CSP 違反になる | `apps/games/test/integration/csp.spec.ts`、`apps/web/e2e/sandbox.spec.ts`、PT-5.3-2 | todo |
 | R-5.3-3 | ゲーム URL を直接開いても不透明オリジンで動く（`origin === "null"`、`localStorage` が例外） | e2e | Playwright でゲーム URL をトップレベルで開き、`self.origin` と `localStorage` を確かめる | `apps/web/e2e/sandbox.spec.ts`、PT-5.3-3 | todo |
 | R-5.3-4 | 配信 Worker はリダイレクトを返さない（CSP のパス照合がリダイレクト後に効かないため） | integration | 末尾スラッシュなし等で 3xx が返らない | `apps/games/test/integration/csp.spec.ts`、PT-5.3-4 | todo |
 
-## 5.4 脅威モデル（侵入テスト項目）
+## security A.7 脅威モデル（旧 5.4。侵入テスト項目）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
@@ -53,6 +53,18 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-5.4-6 | Host は `X-Frame-Options: DENY` を返す | integration + manual | `app.request("/")` のヘッダ。PT-5.4-14 | `apps/api/test/integration/headers.spec.ts`、同上 | todo |
 | R-5.4-7 | Host は `event.source === iframe.contentWindow`、Guest は `event.source === window.parent` で送り元を照合し、他からのメッセージを捨てる | contract + manual | PT-5.4-9, PT-5.4-10。第三者ページからの `end` / `init` で状態が動かない | `packages/sdk/test/contract/schema.spec.ts`、同上 | todo |
 | R-5.4-8 | 無限ループ・巨大 canvas・音量爆弾で Host のページが巻き込まれない | manual | PT-5.4-11〜13 | `docs/manual-tests/sandbox-pentest.md` | todo |
+| R-5.4-9 | Guest が自分の iframe を遷移させたら、Host は 2 回目以降の `load` で即 `destroy` し、手番を `via: error` で終える（se#A.3） | e2e + manual | PT-5.4-16。`location.href` と `meta refresh` の 2 通りで、`load` の後に iframe が消え、セッションが ENDED(error) | `apps/web/e2e/sandbox.spec.ts`、同上 | todo |
+
+## security A.5 / A.6 / A.8 / A.9 配信可否・試遊トークン・アプリのヘッダ・ライブラリ（新規）
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-se.A5-1 | 配信 Worker は KV `serve:<post_id>` が `ok` のときだけ配信し、`no` / 未知 / `draft`（トークンなし）は同じ文言の 404。`Cache-Control` は `draft` が `no-store`、`ok` が `public, max-age=60`、`/lib/` が `immutable` | integration | Miniflare に KV を 3 状態で置いて `/p/<id>/` を取得。本文とヘッダ | `apps/games/test/integration/serve.spec.ts` | todo |
+| R-se.A5-2 | 試遊トークンは `draft` の作者にだけ発行され（他は `not_found`）、Worker は HMAC・`post_id` の一致・`exp` を検証する。期限切れ・別の `post_id`・改ざんは 404。公開後の投稿では `?t=` を無視する | integration | API: 作者 / 他人 / `public` の投稿で `play-token` を呼ぶ。Worker: 正しいトークン、10 分 + 1 秒後、別 ID、署名 1 バイト改変 | `apps/api/test/integration/play-token.spec.ts`、`apps/games/test/integration/serve.spec.ts` | todo |
+| R-se.A5-3 | se#A.5 の遷移（公開・置き換え・非公開・再公開・運営の操作・自動制限・下書きの削除）のたびに KV が書かれ、ツリー制限は子孫全員分。日次の突き合わせでずれが直る | integration | fake の KV クライアントで各遷移後の値を見る。突き合わせジョブが欠けたキーを書く | `apps/api/test/integration/serve-kv.spec.ts` | todo |
+| R-se.A6-1 | アプリのオリジンは se#A.6 の CSP（`frame-src` は配信オリジンだけ、`frame-ancestors 'none'`）と `Referrer-Policy`、`nosniff` を返す | integration | `app.request("/")` と `/api/connect/sign-in` のヘッダ | `apps/api/test/integration/headers.spec.ts` | todo |
+| R-se.A8-1 | 運営の操作（`moderation.md` A.7）は `MODERATOR_IDS` に含まれるユーザーだけが呼べ、他は `forbidden` | integration | 運営 / 一般 / 未ログインで `restrict` を呼ぶ | `apps/api/test/integration/moderation.spec.ts` | todo |
+| R-se.A9-1 | `/lib/` は `apps/games/lib/manifest.json` にある `name@version` だけを返し、CI が R2 のファイルの `sha256` と一致を確かめる。静的検査は同じファイルで照合する | integration + unit | 一覧にない `@version` が 404。`manifest.json` を書き換えると静的検査の受理が変わる | `apps/games/test/integration/lib.spec.ts`、`packages/domain/test/static-check.spec.ts` | todo |
 
 ## protocol A.2 / A.3 / A.9 ワイヤ形式とメッセージ（旧 6.1）
 
