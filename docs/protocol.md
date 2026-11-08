@@ -200,7 +200,7 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 
 ## A.12 検査する性質
 
-形式検証（`verification/Session.tla`）と単体テストで確かめる性質。TLA+ モデルは旧設計のもので、この文書に合わせた改訂は `verification/` の PR で行う。
+形式検証（`verification/Session.tla`、#68）と単体テストで確かめる性質。モデルの境界と結果は `verification/README.md`。
 
 | ID | 性質 |
 | --- | --- |

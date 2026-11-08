@@ -164,7 +164,7 @@ skip の手番は成績の分母に入れず、残機も減らさず、成績表
 
 ## A.15 検査する性質
 
-`verification/Run.tla`（旧 `Feed.tla` の置き換え）と単体テスト・e2e で確かめる。
+`verification/Run.tla`（#68。結果は `verification/README.md`）と単体テスト・e2e で確かめる。
 
 | ID | 性質 |
 | --- | --- |
