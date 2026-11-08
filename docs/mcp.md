@@ -49,7 +49,7 @@
 | 出力 | 型 | 意味 |
 | --- | --- | --- |
 | `post_id` | string | `gf:` 接頭辞なしの ULID |
-| `status` | `draft` / `limited` / `public` | 結果の投稿状態 |
+| `status` | `draft` / `limited` / `public` / `unpublished` / `restricted` | 結果の投稿状態。`unpublished` / `restricted` は同一内容の既存投稿を返したとき（A.7）だけ |
 | `url` | string | `draft` なら試遊 URL、公開後はゲームページ（A.9） |
 | `warnings` | `[{code, message}]` | 静的検査の警告（`game-contract.md` A.11） |
 | `reused` | boolean | 同一内容の既存投稿を返したとき `true`（A.7） |
@@ -62,7 +62,7 @@
 | --- | --- |
 | `post_id`, `title`, `status`, `url` | `status` は投稿状態（`restricted` を含む 6 値） |
 | `calibration` | `uncalibrated` / `calibrated` / `review` / `invalid` |
-| `plays`, `likes` | `post_stats.n` と `posts.likes` |
+| `plays`, `likes` | `post_stats.n` と、`likes` を `post_id` で数えた件数 |
 | `calibration_remaining` | 校正までの残りプレイ数（`uncalibrated` のとき。20 − `n`） |
 | `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}` |
 | `published_at`, `updated_at` | ISO 8601 |
@@ -125,18 +125,18 @@
 
 1. トークンから `sub` を取り、`ensureUser`（A.5）。`users` を `FOR SHARE` し、`status` が `active` でなければ error（`banned` → 401、`post_restricted` → `post_restricted`）
 2. `post_id` があれば、自分の `draft` であることを確かめる。他人・存在しない → `not_found`。自分の `draft` 以外 → `invalid_state`
-3. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない
-4. 静的検査（`game-contract.md` A.11）。拒否が 1 つでもあれば `rejected`（`errors[]` に `code`, `message`, `fix`, `line?`）。何も書かない
-5. `game_hash = sha256(html)` を計算し、`games` に `ON CONFLICT (hash) DO NOTHING` で入れる（`meta` は検査結果）
-6. 同一内容の確認（A.7）。既存を返すならここで 11 へ
+3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ
+4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない
+5. 静的検査（`game-contract.md` A.11）。拒否が 1 つでもあれば `rejected`（`errors[]` に `code`, `message`, `fix`, `line?`）。何も書かない
+6. `games` に `ON CONFLICT (hash) DO NOTHING` で入れる（`meta` は検査結果、`stored_at` は NULL）
 7. `post_id` あり: `posts.game_hash`, `title`, `prompt`, `updated_at` を更新。なし: `posts` を `draft` で挿入（`tree_id` は新規。`parent_id` は NULL。リミックスは Phase 2）
-8. `publish: true` なら公開: `trust_score` で `limited` / `public` を決め（`moderation.md` A.2）、`published_at` を入れる。サムネ・プレビューは公開後のジョブが作る（A.9）
+8. `publish: true` なら公開: `trust_score` で `limited` / `public` を決め（`moderation.md` A.2）、`published_at` を入れる。サムネは公開後のジョブが作る（A.9）
 9. `warnings` を組み立てる
 10. コミット
-11. `games` の行が新規なら HTML を R2 に置く（A.8）。失敗したら `games` の行は残るが `posts` は指したまま。配信は KV で止まる（12 を書かない）のでリトライ可能
-12. KV `serve:<post_id>` を書く（`security.md` A.5）。失敗はリトライ、日次の突き合わせで直る
+11. `games.stored_at` が NULL なら HTML を R2 に置き（A.8）、成功したら `stored_at` を入れる。失敗したら `storage_failed`（12 を書かない）
+12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。失敗はリトライ、日次の突き合わせで直る
 
-5 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。11 が失敗したら `publish_game` は `storage_failed` を返し、同じ呼び出しを繰り返せば 5 が `DO NOTHING` で通り 11 だけやり直す。
+6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
 
 ## A.7 同一内容
 
@@ -149,6 +149,8 @@
 | `post_id` なしで、自分の `removed` に同じ `game_hash` がある | 別投稿として扱わない。error `invalid_state`（運営が消した内容を再投稿させない） |
 | `post_id` あり | 同一内容の確認はしない。置き換え先が決まっている |
 | 他人の投稿と同じ `game_hash` | 気にしない（`games` の行を共有するだけ。`data-model.md` B.1） |
+
+同一内容の確認は上限と静的検査より先（A.6 の 3）。上限に達していても、同じ内容の再送は既存の投稿に戻るだけで新しい行を作らない。
 
 ## A.8 保存
 
@@ -172,7 +174,7 @@
 
 `publish_game` が返す `url` は `draft` なら試遊ページ、公開後はゲームページ。配信オリジンの URL は返さない（B.5）。
 
-公開後の静止サムネとプレビュー動画は公開直後のジョブが決定論ハーネスを 1 回実行して作り（`scoring.md`、`data-model.md` の `thumb_key`）、できるまでゲームページは「？」の枠を出す。`thumb_key` が入るまで新作枠に入らない（`post_eligibility`）。入力なしで固まる・`end` が呼ばれないゲームは、このジョブが `thumb_key` を入れずに `calibration = invalid` にして運営のキューに出す。`publish_game` の応答はジョブを待たない。
+公開後の静止サムネは公開直後のジョブが決定論ハーネスを入力なしで 1 回実行して作り（`scoring.md`、`data-model.md` の `thumb_key`）、できるまでゲームページは「？」の枠を出す。`thumb_key` が入るまで新作枠に入らない（`post_eligibility`）。固まる・例外で止まる・`GF.timeLimit` を過ぎても終わらないゲームは、このジョブが `thumb_key` を入れずに `calibration = invalid` にして運営のキューに出す。`GF.end()` を呼ばず制限時間で終わるのは正常（`game-contract.md` A.4）。プレビュー動画は作者以外の最初の結果から作る（`product.md` 8、`posts.preview_key`）。`publish_game` の応答はジョブを待たない。
 
 ## A.10 エラー
 
@@ -210,7 +212,7 @@
 | C4 | `publish: true` の結果は `trust_score` で `limited` / `public`（`moderation.md` A.2） | R-mo.A2-1 |
 | C5 | 初回のツール呼び出しで `users` 行ができ、`handle` が一意 | R-mc.A5-1 |
 | C6 | 他人の `post_id` は `not_found` で、存在しない ID と同じ応答 | R-mc.A10-1 |
-| C7 | DB にあって R2 にないゲームは配信されない（KV を書かない） | A.6 の 11〜12、R-mc.A6-1 |
+| C7 | DB にあって R2 にないゲーム（`stored_at` NULL）は配信されない（KV を書かない） | A.6 の 11〜12、R-mc.A6-1 |
 
 ---
 
