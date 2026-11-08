@@ -55,6 +55,18 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-5.4-8 | 無限ループ・巨大 canvas・音量爆弾で Host のページが巻き込まれない | manual | PT-5.4-11〜13 | `docs/manual-tests/sandbox-pentest.md` | todo |
 | R-5.4-9 | Guest が自分の iframe を遷移させたら、Host は 2 回目以降の `load` で即 `destroy` し、手番を `via: error` で終える（se#A.3） | e2e + manual | PT-5.4-16。`location.href` と `meta refresh` の 2 通りで、`load` の後に iframe が消え、セッションが ENDED(error) | `apps/web/e2e/sandbox.spec.ts`、同上 | todo |
 
+## mcp A.2 / A.3 / A.5 / A.6 / A.7 / A.10 サーバ・ツール・users 行・処理順・同一内容・エラー（旧 9）
+
+| ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
+| --- | --- | --- | --- | --- | --- |
+| R-mc.A3-1 | `tools/list` は `publish_game` / `list_my_games` / `unpublish_game` の 3 本、`resources/list` は `gf://guide` の 1 つだけ。`gf://guide` の本文は `game-contract.md` の A 部と一致する | integration | MCP クライアントで一覧を取り、名前の集合を比べる。リソース本文とリポジトリのファイルの差分が空 | `apps/api/test/integration/mcp-tools.spec.ts` | todo |
+| R-mc.A3-2 | `publish_game` の出力は `{post_id, status, url, warnings, reused}`。`draft` なら `url` は `<app-origin>/draft/<post_id>`、公開後は `/g/<post_id>`。`list_my_games` は最新 50 件で mc#A.3 の項目、`restricted` には `restricted_reason` | integration | 下書き・公開・制限の 3 状態で呼ぶ | 同上 | todo |
+| R-mc.A5-1 | 初回のツール呼び出しと「作る」ページのログインで `users` 行ができる（`trust_score` 10、`active`）。`handle` は mc#A.5 の slug 規則で一意。空・3 文字未満・非ラテンは `user-<id 末尾 6>`。衝突は `-2`, `-3` | unit + integration | `handle` の生成を表で（`"Taku Sakuma"` → `taku-sakuma`、`"佐久間"` → `user-xxxxxx`、`"a"` → `user-xxxxxx`、同名 2 人目 → `-2`）。`auth_user` だけのユーザーで `list_my_games` を呼ぶと行ができる | `packages/domain/test/handle.spec.ts`、同上 | todo |
+| R-mc.A6-1 | `publish_game` の処理順（mc#A.6）: 拒否なら何も書かない。DB コミット後に R2、R2 成功後に KV。R2 失敗は `storage_failed` で、同じ入力の再呼び出しが R2 だけやり直す | integration | fake の R2 を失敗させて `games` / `posts` は残り KV は書かれない。2 回目で KV が書かれる | 同上 | todo |
+| R-mc.A7-1 | 同一内容（mc#A.7）: `post_id` なしで同じ `game_hash` が自分の `draft` にあれば同じ `post_id`（`reused: true`）で `title` / `prompt` を更新、公開済みなら変更なしで返す、`removed` なら `invalid_state`。上限・当日の件数を消費しない | integration | 同じ HTML を 2 回・3 回送る。10 件の上限に達していても通る | 同上 | todo |
+| R-mc.A10-1 | エラーは `isError: true` と `structuredContent.{code, message, errors?, reason?}`。他人の `post_id` と存在しない `post_id` は同じ `not_found` 応答 | integration | 各 `code` を 1 つずつ起こす。2 つの `not_found` の `structuredContent` が等しい | 同上 | todo |
+| R-mc.A9-1 | 公開直後のジョブが決定論ハーネスを 1 回実行し、`thumb_key` と `preview_key` を入れる。固まる・`end` が呼ばれないゲームは `thumb_key` を入れず `calibration = invalid`。`thumb_key` が NULL の間は `post_eligibility = none` | integration + manual | fake のハーネスで成功・固まる・`end` なしの 3 通り。実行環境は plan#2 で決めてから manual | `apps/api/test/integration/publish-job.spec.ts` | todo |
+
 ## security A.5 / A.6 / A.8 / A.9 配信可否・試遊トークン・アプリのヘッダ・ライブラリ（新規）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
@@ -141,7 +153,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-9-1 | OAuth 2.1 の DCR・PKCE・`.well-known`（RFC 8414 / 9728、issuer 配下とパス挿入形の両方）を提供する | integration | MCP 公式 SDK（v2）のクライアントで DCR → 認可 → 同意 → トークン → `tools/list` → `publish_game`（ダミー）まで通す。トークンなしの `POST /api/mcp` は 401 と `WWW-Authenticate`（`resource_metadata`） | `apps/api/test/integration/mcp-oauth.spec.ts` | green |
 | R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る。Claude のカスタムコネクタでも同じ | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC（MC-1〜MC-4） | `docs/manual-tests/muse-connect.md` | green（Muse・Claude、2026-11-05） |
 | R-9-5 | アクセストークンは 24 時間以上、リフレッシュトークンは 30 日。ローテーション後の旧リフレッシュトークンは猶予内なら同じ応答を返す（計画書 第5節「トークン方針」） | integration + manual | `expires_in ≥ 86400`、`refresh_token` あり。旧トークンで 2 回目の refresh が 200 で同じ応答。24 時間以上空けた再接続は MC-5 | `apps/api/test/integration/mcp-oauth.spec.ts`、`docs/manual-tests/muse-connect.md` | green（integration）/ todo（manual） |
-| R-9-3 | 契約に合わない HTML は `publish_game` が拒否し、修正方法をエラーに含める | integration | 範囲外 duration の HTML を送り、エラー文に「180〜480」が含まれる | `apps/api/test/integration/publish.spec.ts` | todo |
+| R-9-3 | 契約に合わない HTML は `publish_game` が `rejected` で拒否し、`errors[].fix` に修正方法を含める。拒否では何も書かない（mc#A.6） | integration | 範囲外 duration の HTML を送り、`fix` に「180〜600」が含まれ、`posts` / `games` に行が増えない | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-9-4 | 新規の下書きは `trust_score` 30 未満で 5 件/日、以上で 30 件/日まで。置き換え（`post_id` 指定）は数えない（mo#A.5） | integration | 6 件目が拒否される。日付境界は手動時計。置き換えを 6 回しても通る | 同上 | todo |
 
 ## moderation A.2 / A.3 / A.4 / A.5 / A.6 / A.7 投稿状態・通報・信頼スコア・運営の操作（旧 11）
@@ -164,7 +176,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-mo.A5-3 | `ban_user` は `removed` でない全投稿を同一トランザクションで `removed` にし、ログインを無効にする（I3、M2）。並行する `publish_game` は BAN 後に残らない | integration | 投稿 3 件（うち 1 件 `removed`）を持つユーザーを BAN。同時に `publish_game` を走らせて、終了後に `removed` でない投稿が 0 | 同上 | todo |
 | R-mo.A6-1 | `restrict_tree` は根と子孫（`parent_id` を辿る）だけを `restricted` にし、兄弟は巻き込まない。ロック中に挿入した子孫も `restricted`（M5）。`restore_tree` は `tree_locks` を消すだけで `indiv_restricted` を残す（M4）。入れ子の外側の `restore_tree` で内側は解けない | integration | 深さ 3 のツリーと兄弟で確かめる。ロック中に子を挿入、個別制限した子孫、入れ子のロック | 同上 | todo |
 | R-mo.A7-1 | 運営の操作 11 行（mo#A.7。`unban_user` は列挙だけで操作は Phase 2）が `moderation_actions` に 1 行ずつ残り、通報の解決（`restrict` / `remove` / `restrict_tree` / `ban_user` → `upheld`、`restore` → `dismissed`、`restore_tree` → 変えない）と信頼スコアの変化が表のとおり | integration | 各操作の前後で `reports.resolution` と `trust_score` を見る | 同上 | todo |
-| R-mo.A8-1 | `post_eligibility`: `public` × `calibrated` が `normal`、`limited` / `public` × `uncalibrated` が `new`、それ以外は `none`。`unpublished` → 再公開で校正状態と `post_stats` を引き継ぐ | integration | 状態の組み合わせでビューを見る。再公開後に `calibrated` のままで `normal` | `apps/api/test/integration/db.spec.ts` | todo |
+| R-mo.A8-1 | `post_eligibility`: `public` × `calibrated` が `normal`、`limited` / `public` × `uncalibrated` × `thumb_key` 非 NULL が `new`、それ以外は `none`。`unpublished` → 再公開で校正状態と `post_stats` を引き継ぐ | integration | 状態の組み合わせでビューを見る。再公開後に `calibrated` のままで `normal` | `apps/api/test/integration/db.spec.ts` | todo |
 | R-mo.A10-1 | M1〜M8 を `verification/Moderation.tla` で網羅検査する（2 ユーザー・投稿 3 件。`draft` / `unpublished` / 昇格 / 再公開を旧モデル C に足す） | manual | TLC が反例なしで終わる。結果は `verification/README.md` | `verification/Moderation.tla` | todo |
 
 ## data-model A.2 / A.3 / A.4 テーブルと列挙型（旧 12.1）
@@ -187,7 +199,7 @@ I2・I3（ユーザー側）・I6〜I9 はアプリのトランザクション�
 | R-12.2-1 | I1: `posts.parent_id` は挿入後に変更できない（トリガー。NULL への変更も拒否） | integration | 別の親 / NULL への UPDATE がエラー文 `parent_id` 付きで拒否。他の列の UPDATE は通る | `apps/api/test/integration/db.spec.ts` | green |
 | R-12.2-2 | I2: 子の `tree_id` は親と同じ、`depth` は親 + 1。挿入時に親行を `FOR SHARE` でロックして計算する | integration | `publish_game` のトランザクションで親を同時に更新しても一貫する | `apps/api/test/integration/publish.spec.ts` | todo |
 | R-12.2-3 | I3: `tree_locks.action_id` は `moderation_actions` を必ず指す（FK）。BAN されたユーザーの投稿がすべて `removed` になるのは同一トランザクションで担保（`users` を `FOR SHARE`。mo#A.5） | integration | FK: 監査行のない `tree_locks` が拒否される（green）。BAN 側は R-mo.A5-3 | 同上 / `apps/api/test/integration/moderation.spec.ts` | green（FK）/ todo（BAN） |
-| R-12.2-4 | I4: `base_status` が `limited` / `public` / `unpublished` なら `published_at` と `thumb_key` は非 NULL（CHECK）。`showcase_key` は廃止 | integration | NULL のまま `public` にすると拒否。`draft` は NULL 可 | `apps/api/test/integration/db.spec.ts` | red（現行は `showcase_key`） |
+| R-12.2-4 | I4: `base_status` が `limited` / `public` / `unpublished` なら `published_at` は非 NULL（CHECK）。`thumb_key` は公開直後のジョブが入れる（mc#A.9）。`showcase_key` は廃止 | integration | `published_at` NULL のまま `public` にすると拒否。`thumb_key` NULL は通る。`draft` は両方 NULL 可 | `apps/api/test/integration/db.spec.ts` | red（現行は `showcase_key`） |
 | R-12.2-5 | I5: `removed` から出る遷移はない。`unpublished` からは `limited` / `public` にだけ戻れる（トリガー） | integration | `removed` → `public` が拒否。`unpublished` → `public` は通り、`unpublished` → `draft` は拒否 | 同上 | red（`unpublished` が未実装、`expired` が残る） |
 | R-12.2-6 | I6: `restricted` からの復帰は `moderation_actions.kind = restore / restore_tree` を伴う。自動制限の行は `moderator_id = NULL`（mo#A.4, A.7） | integration | モデレーション API が監査行と状態変更を同一トランザクションで書く。`restrict` / `restore` で `post_id` と `user_id` の両方 NULL・両方非 NULL は CHECK で拒否 | `apps/api/test/integration/moderation.spec.ts` | todo |
 | R-12.2-7 | I7: 1 セッションの `submitted` 遷移は高々 1 回（`UPDATE … WHERE state = 'open'` の更新行数で判定） | integration | 同じ `session_id` への 2 回目の `PUT /sessions/{id}/result` が 409 | `apps/api/test/integration/sessions.spec.ts` | todo |

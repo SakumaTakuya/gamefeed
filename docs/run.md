@@ -149,7 +149,7 @@ skip の手番は成績の分母に入れず、残機も減らさず、成績表
 - RUNNING は常に 1 枚。CPU を使うのはそれだけ
 - 先読みはコードと `required` アセットまで。残りは N になってから。BGM はゲームにない（`game-contract.md` A.6）
 - 固まった Guest は `protocol.md` A.7 の監視タイマーで終える。タイマーは Host の `setTimeout` で持ち、Guest が別プロセスで動くブラウザ（Chrome の site isolation）では Guest が無限ループでも発火する。`PerformanceObserver` の long task は補助で、500 ms 以上止まったフレームを数えて「重い」判定（skip と「このゲームは重すぎます」）に使うが、無限ループはタスクが終わらないので long task には現れない。主は監視タイマー
-- Guest が Host と同じプロセスで動くブラウザ（iOS Safari）では、Guest の無限ループが Host の main thread も止めるので、監視タイマーも効かない。これはブラウザ側で止める（応答なしの警告）しかない。公開前にサーバが決定論ハーネスで 1 回実行し（`scoring.md`）、入力なしで固まるゲームを公開させないことで頻度を下げる
+- Guest が Host と同じプロセスで動くブラウザ（iOS Safari）では、Guest の無限ループが Host の main thread も止めるので、監視タイマーも効かない。これはブラウザ側で止める（応答なしの警告）しかない。公開直後にサーバのジョブが決定論ハーネスで 1 回実行し（`mcp.md` A.9）、入力なしで固まるゲームを新作枠に出さない（`calibration = invalid`）ことで頻度を下げる
 - 音は「タップしてスタート」で有効化する。初回訪問はミュートで始める（暫定）。Host の音量が `GF.audio.gain` の上限
 - iframe の生成は手番の確定（A.5 の 6）で行う。スクロールや予測では作らない
 
