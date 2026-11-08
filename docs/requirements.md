@@ -53,6 +53,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-5.4-6 | Host は `X-Frame-Options: DENY` を返す | integration + manual | `app.request("/")` のヘッダ。PT-5.4-14 | `apps/api/test/integration/headers.spec.ts`、同上 | todo |
 | R-5.4-7 | Host は `event.source === iframe.contentWindow`、Guest は `event.source === window.parent` で送り元を照合し、他からのメッセージを捨てる | contract + manual | PT-5.4-9, PT-5.4-10。第三者ページからの `end` / `init` で状態が動かない | `packages/sdk/test/contract/schema.spec.ts`、同上 | todo |
 | R-5.4-8 | 無限ループ・巨大 canvas・音量爆弾で Host のページが巻き込まれない | manual | PT-5.4-11〜13 | `docs/manual-tests/sandbox-pentest.md` | todo |
+| R-5.4-9 | Guest が自分の iframe を遷移させたら、Host は 2 回目以降の `load` で即 `destroy` し、手番を `via: error` で終える（se#A.3） | e2e + manual | PT-5.4-16。`location.href` と `meta refresh` の 2 通りで、`load` の後に iframe が消え、セッションが ENDED(error) | `apps/web/e2e/sandbox.spec.ts`、同上 | todo |
 
 ## security A.5 / A.6 / A.8 / A.9 配信可否・試遊トークン・アプリのヘッダ・ライブラリ（新規）
 

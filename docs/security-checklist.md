@@ -21,6 +21,7 @@
 - [ ] `allow` を付けない（tilt は保留）、`referrerpolicy="no-referrer"`、`credentialless`（PT-5.2-7〜9, R-5.2-2）
 - [ ] 試遊トークンは `draft` の作者にだけ発行され（`GET /api/posts/{id}/play-token`）、URL の組み立ては `gameUrl()` の 1 関数（R-se.A5-2, R-5.1-3）
 - [ ] Host が描く UI（幕間・結果・ヘッダー）は iframe の上のレイヤで、ゲームが偽装できない（PT-5.4-8, R-5.4-5）
+- [ ] Host は iframe の 2 回目以降の `load` で即 `destroy` する（PT-5.4-16, R-5.4-9）
 - [ ] Host は `X-Frame-Options: DENY`（PT-5.4-14, R-5.4-6）
 
 ## 実行時（se#A.7）

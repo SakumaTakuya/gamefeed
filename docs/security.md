@@ -56,6 +56,8 @@ Host は次の属性でだけ Guest を埋め込む。
 
 Host が描く UI（幕間・結果フラッシュ・ヘッダー・「タップしてスタート」）は iframe より上のレイヤに置き、ゲームが全画面を偽装できないようにする（`run.md` A.4）。
 
+`sandbox` は親とトップの遷移を禁じるが、iframe 自身の遷移（`location` への代入、`<meta http-equiv="refresh">`、`<a>` のクリック）は禁じず、CSP にもこれを止める指令がない。Host は iframe の **2 回目以降の `load` イベント**（最初の読み込みの後に来るものはすべて遷移）で即座に `destroy` し、その手番を `via: error` で終える（`protocol.md` A.7、`run.md` A.6 の skip）。遷移先が外部なら 1 リクエストは出るが、Guest が持つのは自分の状態・`seed`・入力ログだけで、Host のデータは何も持っていない（A.7）。
+
 ## A.4 配信レスポンスのヘッダ
 
 配信 Worker は `/p/<post_id>/` 配下の全レスポンス（HTML、アセット、404、405）に次を付ける。`<post_id>` だけを差し替えた同一形で、ゲーム側は `<meta http-equiv>` で緩められない（ヘッダが優先され、`sandbox` は meta で指定できない）。
@@ -137,7 +139,8 @@ Referrer-Policy: no-referrer
 | --- | --- | --- |
 | Host の Cookie・トークンの窃取 | 別サイト + 不透明オリジン + `HttpOnly` | なし |
 | 他のユーザー・他のゲームへの干渉 | 投稿ごとのパス + CSP `sandbox` + パス指定の CSP。配信オリジンは Cookie もストレージも持たない | ブラウザのバグで `sandbox` が破られると、同じ配信オリジンの他の投稿（公開済みの静的ファイル）に触れうる。実害は小さい。必要ならサブドメイン方式へ戻す（A.2） |
-| 外部へのデータ送信 | `connect-src` は自投稿パスと `/lib/` だけ。`img-src` 等も同じ。`worker-src 'none'`。`referrerpolicy=no-referrer`。静的検査が `fetch` 等を拒否（補助） | DNS プリフェッチ等の副作用は `default-src 'none'` で抑止。画像に情報を描いて作者が後で見る帯域外の経路は残る（通報で対処） |
+| 外部へのデータ送信 | `connect-src` は自投稿パスと `/lib/` だけ。`img-src` 等も同じ。`worker-src 'none'`。`referrerpolicy=no-referrer`。静的検査が `fetch` 等と `location` への代入を拒否（補助） | DNS プリフェッチ等の副作用は `default-src 'none'` で抑止。画像に情報を描いて作者が後で見る帯域外の経路は残る（通報で対処） |
+| iframe 自身の遷移（外部 URL へ `location` を書く、`meta refresh`、`<a>`） | `sandbox` と CSP では止められない。Host が 2 回目以降の `load` で即 `destroy`（A.3）。`allow-popups` / `allow-top-navigation` なしで親・トップ・別窓には行けない | 遷移先に 1 リクエストが届き、`destroy` までの数十 ms だけ外部ページが iframe に描かれる。持ち出せるのは Guest 自身の状態と `?t=`（`draft` の試遊トークン）だけ。トークンが指すのは作者自身の下書きで、それを読めるのは作者が自分で動かしたゲームだけなので、漏れても作者の意思の範囲（B.5） |
 | `postMessage` の偽装 | Host は `event.source === iframe.contentWindow`、Guest は `event.source === window.parent`。内容はスキーマで検証し、違反は即破棄（`protocol.md` A.1, A.2） | なし |
 | フィッシング（偽ログイン画面） | `allow-forms` なし、`form-action 'none'`、Host の UI が常に上のレイヤ（A.3） | 画面内に偽 UI を描くことはできる。通報で対処 |
 | 点数の改ざん | Guest の点数は主張として扱い、サーバが 3 段階で検証する（`scoring.md` A.3）。`speed` と `seed` はサーバが発行した値を信じる | リプレイごと偽造する改ざんは検知できない。上位・外れ値だけ再実行 |
@@ -183,6 +186,7 @@ Referrer-Policy: no-referrer
 | X5 | 配信 Worker はリダイレクトを返さない | R-5.3-4 |
 | X6 | Host の iframe は A.3 の属性だけ（`allow` なし） | R-5.2-1, R-5.2-2 |
 | X7 | Guest から Host の DOM・Cookie・他 iframe・外部に触れない | R-5.4-1〜4 |
+| X11 | Guest が自分の iframe を遷移させたら Host が即 `destroy` し、手番は error で終わる | R-5.4-9, PT-5.4-16 |
 | X8 | `limited` / `public` 以外の投稿は配信されない。`draft` は有効な試遊トークンでだけ | R-se.A5-1, R-se.A5-2 |
 | X9 | 状態遷移のたびに KV が書かれ、日次の突き合わせでずれが直る | R-se.A5-3 |
 | X10 | `manifest.json` にないライブラリは配信も投稿もされない | R-se.A9-1 |
@@ -209,7 +213,7 @@ iframe の `sandbox` 属性だけでは、ゲーム URL をトップレベルで
 
 ## B.5 下書きの試遊に署名付きトークンを使う理由
 
-配信オリジンは Cookie を持たないので、「作者だけ」を Cookie で判定できない。選択肢は (a) 下書きをアプリのオリジンから配信する、(b) 推測できない URL（`draft` 用の乱数パス）、(c) 短命の署名付きトークン。(a) は「アプリのオリジンでゲームを実行しない」（A.2）を破る。(b) は URL がそのまま永続の鍵になり、公開後に同じパスが残ると漏洩が永続する。(c) は 10 分で失効し、`post_id` に縛られ、Worker は共有秘密だけで検証できる（API に問い合わせない）。`referrerpolicy=no-referrer` と不透明オリジンにより、Guest の中からもトークンは外に出ない。
+配信オリジンは Cookie を持たないので、「作者だけ」を Cookie で判定できない。選択肢は (a) 下書きをアプリのオリジンから配信する、(b) 推測できない URL（`draft` 用の乱数パス）、(c) 短命の署名付きトークン。(a) は「アプリのオリジンでゲームを実行しない」（A.2）を破る。(b) は URL がそのまま永続の鍵になり、公開後に同じパスが残ると漏洩が永続する。(c) は 10 分で失効し、`post_id` に縛られ、Worker は共有秘密だけで検証できる（API に問い合わせない）。`referrerpolicy=no-referrer` と不透明オリジンにより、`Referer` と `postMessage` からはトークンが出ない。iframe 自身の遷移（A.3）で持ち出す経路は残るが、トークンが開くのは作者自身の下書きで、その下書きを動かせるのも作者だけなので、漏洩は「作者が自分の下書きの URL を 10 分だけ人に渡した」のと同じ。
 
 ## B.6 `allow` を付けない理由
 
