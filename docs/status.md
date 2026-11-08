@@ -3,9 +3,9 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-07）
-- **文書分割（#43）は 8 本まで済み、残り 1 本**。`main` にあるのは `product.md`（未決なし）、`game-contract.md`（#48）、`protocol.md`（#51）、`run.md`（#54）、`scoring.md`（#56、`verification/scoring_check.py` 69/69）、`data-model.md`（#58）、`moderation.md`（#61。#42 の 2 を確定。`limited` は新作枠に入り校正済みで `public` に昇格、`unpublish` は可逆、自動制限の監査行は `moderator_id = NULL`。`requirements.md` に `R-mo.*` 16 行。閾値は 2026-11-08 にオーナー承認、`unban_user` を列挙に追加、`sessions.post_id` は `ON DELETE CASCADE`）、`security.md`（#63。配信可否は KV `serve:<post_id>`、`draft` の試遊は署名付きトークン、CORP は `cross-origin`、iframe の `allow` なし、`/lib/` は `manifest.json`。`requirements.md` に `R-se.*` 6 行）。残りは `mcp.md`（旧 9 章は `git show d3146af^:docs/spec.md` で読める）。その後 `verification/`（`Session.tla` を pr#A.12 の P3 再定義と P11〜P13 に、`Run.tla` を run#A.15 F1〜F9 に、`Lifecycle.tla` 新規、`Moderation.tla` 据え置き、`README.md` に性質と要件 ID の対応）、`plan.md` の改訂（MVP 完了条件が勝敗前提のまま）、`requirements.md` の棚卸し（`product.md` の決定ごとに行があるか、`red` 行と追従 Issue の 1 対 1、各文書の節→行の対応表）、契約・e2e テストのハーネス Issue、`docs/manual-tests/`。
+- **文書分割（#43）は 9 本すべて済み**。`main` にあるのは `product.md`（未決なし）、`game-contract.md`（#48）、`protocol.md`（#51）、`run.md`（#54）、`scoring.md`（#56、`verification/scoring_check.py` 69/69）、`data-model.md`（#58）、`moderation.md`（#61。#42 の 2 を確定。`limited` は新作枠に入り校正済みで `public` に昇格、`unpublish` は可逆、自動制限の監査行は `moderator_id = NULL`。`requirements.md` に `R-mo.*` 16 行。閾値は 2026-11-08 にオーナー承認、`unban_user` を列挙に追加、`sessions.post_id` は `ON DELETE CASCADE`）、`security.md`（#63。配信可否は KV `serve:<post_id>`、`draft` の試遊は署名付きトークン、CORP は `cross-origin`、iframe の `allow` なし、`/lib/` は `manifest.json`。`requirements.md` に `R-se.*` 6 行）、`mcp.md`（#65。#42 を閉じた: `users` 行は初回ツール呼び出しで `ensureUser`、`handle` は `auth_user.name` の slug、同一内容は `reused`、R2 は SigV4 の `PutObject`。サムネは公開直後のジョブが作り I4 は `published_at` だけに、`thumb_key` が入るまで新作枠に入らない。`requirements.md` に `R-mc.*` 7 行）。旧文書は `git show d3146af^:docs/spec.md` で読める。次は `verification/`（`Session.tla` を pr#A.12 の P3 再定義と P11〜P13 に、`Run.tla` を run#A.15 F1〜F9 に、`Lifecycle.tla` 新規、`Moderation.tla` 据え置き、`README.md` に性質と要件 ID の対応）、`plan.md` の改訂（MVP 完了条件が勝敗前提のまま）、`requirements.md` の棚卸し（`product.md` の決定ごとに行があるか、`red` 行と追従 Issue の 1 対 1、各文書の節→行の対応表）、契約・e2e テストのハーネス Issue、`docs/manual-tests/`。
 - 追従の実装 Issue: #49（静的検査）、#52（SDK スキーマと状態機械）、#59（DB スキーマ）。#25（静的解析の警告）は #49 に含めてよい。
-- 文書の書き方（守る）: A 部＝規約、B 部＝理由と却下した案。理由は規則の隣に、別文書で決めた不在は書かない。決定の記録ファイルは持たない（経緯は Issue と PR 本文）。暫定値は定数として持つ。各文書末尾に「未解決」。`requirements.md` の新規行は `R-<略号>.<節>-<n>`（gc / pr / run / sc / dm / mo / se）。`spec#x.y` を参照する Issue・要件 ID・計画書の記述は、その記述を正として実装してはいけない（対応表は Issue #43 のコメント）。大きな変更: 勝敗→点数＋順位ベースの偏差値、お題固定ラン→エンドレス主戦場（山札を周回して速度が上がる）、Showcase 廃止（サーバ描画のプレビュー）、`publish_game` は下書き→試遊→公開の 3 段、長さ 3〜10 秒。既存の静的解析（勝敗契約・180〜480 フレーム）と `games.theme_id` 等は追従が要る（追従 Issue は各文書の PR で切る）。
+- 文書の書き方（守る）: A 部＝規約、B 部＝理由と却下した案。理由は規則の隣に、別文書で決めた不在は書かない。決定の記録ファイルは持たない（経緯は Issue と PR 本文）。暫定値は定数として持つ。各文書末尾に「未解決」。`requirements.md` の新規行は `R-<略号>.<節>-<n>`（gc / pr / run / sc / dm / mo / se / mc）。`spec#x.y` を参照する Issue・要件 ID・計画書の記述は、その記述を正として実装してはいけない（対応表は Issue #43 のコメント）。大きな変更: 勝敗→点数＋順位ベースの偏差値、お題固定ラン→エンドレス主戦場（山札を周回して速度が上がる）、Showcase 廃止（サーバ描画のプレビュー）、`publish_game` は下書き→試遊→公開の 3 段、長さ 3〜10 秒。既存の静的解析（勝敗契約・180〜480 フレーム）と `games.theme_id` 等は追従が要る（追従 Issue は各文書の PR で切る）。
 - 計画書 W1（11/3〜11/8）。ルール文書（#1）、スキャフォールド（#3）、CI（#11）、セッション状態機械（#6）、静的解析（#8）、メッセージスキーマ（#7、valibot）、侵入テスト手順書（#10）、DB スキーマ（#9）、MCP PoC のコード側（#5）が済み、`pnpm install && pnpm check` が緑。
 - #5 で `apps/api` に Better Auth（Google）＋ `@better-auth/mcp`（OAuth 2.1 認可サーバ）＋ MCP 公式 SDK v2 の `publish_game` ダミーが入った（`src/auth.ts`・`src/mcp.ts`・`src/app.ts`・`src/pages.ts`・`src/config.ts`）。R-9-1 と R-9-5（integration）は green。**2026-11-05 に本番で MC-0〜MC-2 が通り、Muse から OAuth 2.1 / DCR で接続して `publish_game` を呼べた（R-9-2 の Muse 側 green）。計画書最大のリスクは消えたので Better Auth のまま plan#9 へ。同日に Claude のカスタムコネクタ（MC-3）と再接続（MC-4）も通り R-9-2 は green。残りは 24h 後の MC-5 だけで Issue #5 は開いたまま。** Supabase には `0002` まで当たっている（Actions `db-migrate`、Secrets `SUPABASE_DIRECT_URL`）。
   - 計画書・Issue 作成時から前提が変わった点: Better Auth の `mcp` は `@better-auth/mcp`（`@better-auth/oauth-provider` ベース、`jwt()` 必須、エンドポイントは `/api/auth/oauth2/*`）になった。MCP 仕様 2026-07-28 は DCR を非推奨にし CIMD を推奨するので、両方を有効にしている（DCR は Better Auth で明示オプトイン）。MCP SDK は v2（`@modelcontextprotocol/server` / `client`）で、`createMcpHandler` が fetch 互換なので `@hono/mcp` は使わない。
@@ -26,10 +26,9 @@
 
 ## 次の一手（順番どおりに）
 1. **#5 の残り（オーナー）** — MC-5（2026-11-06 以降に Muse / Claude から再度ツール呼び出し、401 にならないこと）。結果を Issue #5 にコメントし、`muse-connect.md` の記録欄を埋めて #5 を閉じる。
-2. `mcp.md`（ツールは `publish_game{html, title?, prompt?, post_id?, publish?}` / `list_my_games` / `unpublish_game`、リソース `gf://guide` は `game-contract.md` A 部。試遊 URL、`missing` の扱い、OAuth は #5 の現状。#42 の 1・3・4（`users` 行、同一内容の上書き、R2 保存）をここで扱い #42 を閉じる。`unpublish_game` の振る舞いは mo#A.2 を参照するだけ）。
-3. `verification/` と `plan.md` の改訂、`requirements.md` の棚卸し、ハーネス Issue。
-4. 追従の実装は #49 → #52 → #59 の順（静的検査が先。SDK と DB は文書が揃ってから）。plan#9 のうち仕様が変わらない部分（OAuth、`list_my_games`、同意画面の SPA 化）は並行してよい。
-5. W1 が終わったら plan#2（W2）: `apps/games` の配信実装（se#A.4 / A.5。R-5.3-*、R-se.A5-*、`sandbox-pentest.md` の integration / e2e 項目を先にテストに落とす。KV の namespace と `GAMES_SIGNING_SECRET` はオーナー作業）。
+2. `verification/` と `plan.md` の改訂、`requirements.md` の棚卸し、ハーネス Issue。
+3. 追従の実装は #49 → #52 → #59 の順。plan#9（`publish_game` 本実装）は mc#A.6 の処理順と R-mc.* をテストに落としてから（静的検査が先。SDK と DB は文書が揃ってから）。plan#9 のうち仕様が変わらない部分（OAuth、`list_my_games`、同意画面の SPA 化）は並行してよい。
+4. W1 が終わったら plan#2（W2）: `apps/games` の配信実装（se#A.4 / A.5。R-5.3-*、R-se.A5-*、`sandbox-pentest.md` の integration / e2e 項目を先にテストに落とす。KV の namespace と `GAMES_SIGNING_SECRET` はオーナー作業）。
 
 `gh issue list --milestone W1` で残りを見る。`blocked` ラベルの Issue は本文の依存先が閉じるまで触らない。
 
@@ -49,7 +48,6 @@
 - SDK のバンドルは esbuild の実測（valibot 込みで 2.4 KB gz）のみ。SDK 本体のビルドを作るときに再計測する。
 
 ## オーナーに聞かないと決められないこと
-- `users` 行をいつ・どう作るか（Better Auth の `auth_user` 作成時に `handle` を生成するか、初回 `publish_game` 時か。`handle` の生成規則）。`mcp.md` の PR で聞く
 - iOS Safari で Guest の無限ループが Host を止める問題の実機確認（run#未解決）。侵入テストと一緒に
 
 ## AI の作業環境メモ（Claude のチャットからコンテナで作業するとき）

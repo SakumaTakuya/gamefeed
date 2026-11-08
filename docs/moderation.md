@@ -47,7 +47,7 @@ stateDiagram-v2
 | --- | --- | --- |
 | → `draft` | 作者（`publish_game`） | `users.status = active` であること（投稿制限中は error）。1 人 10 件まで（I11） |
 | `draft` → `draft` | 作者（`publish_game` に `post_id`） | 内容の置き換え。`draft` の間だけ（I10）。試遊ページの「公開」は `publish: true` と同じ |
-| `draft` → `limited` / `public` | 作者（公開） | 公開時点の `trust_score` で分岐。`TRUST_PUBLIC_THRESHOLD`（30、暫定）未満なら `limited`。ここで内容が不変になり、`published_at` と `thumb_key` が入る（I4）。`users` を `FOR SHARE` して `status` を再確認する（I3） |
+| `draft` → `limited` / `public` | 作者（公開） | 公開時点の `trust_score` で分岐。`TRUST_PUBLIC_THRESHOLD`（30、暫定）未満なら `limited`。ここで内容が不変になり、`published_at` が入る（I4）。サムネは公開直後のジョブが作り、できるまで新作枠に入らない（`mcp.md` A.9）。`users` を `FOR SHARE` して `status` を再確認する（I3） |
 | `draft` の削除 | 作者（サイト）、日次ジョブ | 行を消す。公開前なので系譜にもランにも痕跡がない（B.6） |
 | `limited` → `public` | 自動（校正） | `calibration` が `calibrated` になる遷移（`scoring.md` A.7）と同じトランザクションで昇格する。ただし `indiv_restricted` が立っている、または `upheld` の通報がある投稿は昇格しない（`limited` のまま。復帰は運営） |
 | `limited` / `public` → `unpublished` | 作者（`unpublish_game`、サイト） | 可逆の非公開。制限（`indiv_restricted`、`tree_locks`）と通報は触らない。`unpublished` / `draft` に対しては何もせず成功、`removed` は error `invalid_state`、他人の投稿は error `not_found`（存在を漏らさない） |

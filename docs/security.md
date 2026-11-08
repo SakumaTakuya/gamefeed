@@ -144,7 +144,7 @@ Referrer-Policy: no-referrer
 | `postMessage` の偽装 | Host は `event.source === iframe.contentWindow`、Guest は `event.source === window.parent`。内容はスキーマで検証し、違反は即破棄（`protocol.md` A.1, A.2） | なし |
 | フィッシング（偽ログイン画面） | `allow-forms` なし、`form-action 'none'`、Host の UI が常に上のレイヤ（A.3） | 画面内に偽 UI を描くことはできる。通報で対処 |
 | 点数の改ざん | Guest の点数は主張として扱い、サーバが 3 段階で検証する（`scoring.md` A.3）。`speed` と `seed` はサーバが発行した値を信じる | リプレイごと偽造する改ざんは検知できない。上位・外れ値だけ再実行 |
-| 資源の枯渇（無限ループ、巨大 canvas） | RUNNING は常に 1 枚、監視タイマー、500 ms の long task で skip（`run.md` A.13、`protocol.md` A.7）。公開前にサーバの決定論ハーネスで 1 回実行 | iOS Safari では Guest と Host が同じプロセスで、無限ループが Host も止める（`run.md` 未解決） |
+| 資源の枯渇（無限ループ、巨大 canvas） | RUNNING は常に 1 枚、監視タイマー、500 ms の long task で skip（`run.md` A.13、`protocol.md` A.7）。公開直後のジョブが決定論ハーネスで 1 回実行し、固まるゲームは新作枠に出さない（`mcp.md` A.9） | iOS Safari では Guest と Host が同じプロセスで、無限ループが Host も止める（`run.md` 未解決） |
 | 光過敏・音量 | 初回訪問はミュート（`run.md` A.13）、`GF.audio.gain` の上限、通報の `flashing` は係数 3（`moderation.md` A.4）。サーバ描画のフレーム列から輝度の変化を検知するのは Phase 2 | 検知前の露出 |
 | 不適切な画像・文字 | 公開時の静止サムネとプレビュー動画を運営がキューで目視（`moderation.md` A.4）、通報 | canvas に描くものは投稿時に検出できない |
 | クリックジャッキング | Host は `X-Frame-Options: DENY` と `frame-ancestors 'none'`（A.6） | なし |
