@@ -222,7 +222,7 @@ stateDiagram-v2
 
 ## A.10 検査する性質
 
-`verification/Moderation.tla`（旧 13.4 のモデル C。据え置き）と、API の integration テストで確かめる。
+`verification/Moderation.tla`（#68。旧 13.4 のモデル C を新文書に合わせて書き直したもの。結果は `verification/README.md`）と、API の integration テストで確かめる。
 
 | ID | 性質 | 担保 |
 | --- | --- | --- |
