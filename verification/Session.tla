@@ -90,7 +90,7 @@ GuestEnd ==
   /\ gState = "RUNNING" /\ ~gErrored /\ Len(g2h) < ChanLen
   /\ gState' = "ENDED"
   /\ gSentEnd' = gSentEnd \cup {gSid}
-  /\ g2h' = Append(g2h, [type |-> "end", sid |-> gSid, mode |-> gMode])
+  /\ g2h' = Append(g2h, [type |-> "end", sid |-> gSid])   \* no mode on the wire (pr#A.3)
   /\ UNCHANGED << hostVars, gSid, gMode, gErrored, h2g >>
 
 \* An exception in a callback (onInit in INITED, onTick/onDraw/onInput in
@@ -208,7 +208,8 @@ HostRecv ==
              IF AcceptEnd(m)
              THEN /\ hState' = "ENDED"
                   /\ hAccepted' = [hAccepted EXCEPT ![m.sid] = @ + 1]
-                  /\ hScored' = IF m.mode = "play" THEN hScored \cup {m.sid} ELSE hScored
+                  \* the Host classifies by the mode it saved for its own session
+                  /\ hScored' = IF hMode = "play" THEN hScored \cup {m.sid} ELSE hScored
                   /\ hVia' = [hVia EXCEPT ![m.sid] = "guest"]
                   /\ hMismatch' = hMismatch \/ m.sid # hSid
                   /\ UNCHANGED << hSid, hMode, hTimer, hExpired, hDropped, hModeOf, hExpireFrom >>
@@ -242,7 +243,9 @@ TypeOK ==
 P1 == \A s \in Sids : hAccepted[s] <= 1
 
 \* P2: an accepted `end` belongs to the Host's current session, and only
-\* play sessions become records (replay results never score).
+\* play sessions become records (replay results never score). The wire `end`
+\* carries no mode (pr#A.3); the Host decides from hMode, and P2 checks that
+\* against the mode given in init for that sid.
 P2 == ~hMismatch /\ \A s \in hScored : hModeOf[s] = "play"
 
 \* P3: the Host drops an `end` of the *current* session only after expiry

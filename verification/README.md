@@ -67,7 +67,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | cfg | 設計 | 結果 | 状態数（distinct） |
 | --- | --- | --- | --- |
 | `Session.cfg` | 採用（sid 照合あり、PAUSED で `end` 受理）。MaxSid 3、チャネル長 3、タイマー 2 | **反例なし** | 105,984 |
-| `Session_noSid.cfg` | sid 照合なし | **P2 / P12 違反**（11 手）。満了で ENDED → `init(2)` の後、遅れて届いた `end(1)` を現在セッションとして受理 | — |
+| `Session_noSid.cfg` | sid 照合なし | **P2 / P12 違反**（13 手）。満了で ENDED → `init(2)` の後、遅れて届いた `end(1)` を現在セッションとして受理 | — |
 | `Session_noPaused.cfg` | RUNNING でだけ `end` 受理 | **P3 違反**（9 手）。Guest の `end` と Host の `pause` が交差し、PAUSED で届いた `end` を捨てる | — |
 | `Run.cfg` | 採用。Cap 6、Lives 2 | **反例なし**（F6 含む） | 153,724 |
 | `Run_cheat.cfg` | 残機 0 を無視する Host（F9 用） | **反例なし** | 223,769 |
