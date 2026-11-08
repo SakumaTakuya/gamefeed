@@ -222,7 +222,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | --- | --- | --- | --- |
 | I1 | `parent_id` を辿ると根に至る（閉路なし）。挿入後に `parent_id` は変わらない | トリガー | `moderation.md`、旧 P5 |
 | I2 | 子の `tree_id` は親と同じ、`depth` は親 + 1 | 挿入時に親を `FOR SHARE` | 同上 |
-| I3 | `users.status = banned` のユーザーの投稿はすべて `removed`（既に `removed` のものは除く） | BAN と更新を 1 トランザクション。投稿の挿入時は `users` を `FOR SHARE` で再確認 | `moderation.md`、旧 P6 |
+| I3 | `users.status = banned` のユーザーの投稿はすべて `removed`（既に `removed` のものは除く）。`draft` は BAN と同じトランザクションで削除され、残らない | BAN と更新を 1 トランザクション。投稿の挿入時は `users` を `FOR SHARE` で再確認 | `moderation.md`、旧 P6 |
 | I4 | `base_status IN (limited, public, unpublished)` なら `published_at` が非 NULL。`thumb_key` は公開直後のジョブが入れる（`mcp.md` A.9） | CHECK | `product.md` 7, 8 |
 | I5 | `removed` から出る遷移はない。`unpublished` からは `limited` / `public` にだけ戻れる | トリガー | `product.md` 9、`moderation.md` |
 | I6 | `restricted`（導出）から可視への復帰は `moderation_actions.kind = restore / restore_tree` を伴う | 同一トランザクション | `moderation.md` |

@@ -152,7 +152,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | `active` | 通常 | | |
 | `post_restricted` | 新規の `publish_game`（下書きの作成と公開）を error `post_restricted` で拒否する。既存の投稿・試遊・`unpublish_game`・`list_my_games` はそのまま | 運営の `restrict`（`user_id` 指定、A.7）。自動では `trust_score` が 0 になった時点 | 運営の `restore`（`user_id` 指定）。`trust_score` は変えない |
-| `banned` | 投稿制限に加え、`removed` でない投稿をすべて同じトランザクションで `removed` にし（I3）、ログインを無効にする。遊ぶ側としての `actor` は残る（匿名と区別がつかないため） | 運営の `ban_user` | 運営の `unban_user`。`status = active` に戻すだけで、`removed` にした投稿は戻らない（終端）。列挙は MVP で置き、操作の実装は Phase 2 |
+| `banned` | 投稿制限に加え、`removed` でない投稿をすべて同じトランザクションで `removed` にし（I3。`draft` は `removed` にせず同じトランザクションで削除する、A.2 / B.6）、ログインを無効にする。遊ぶ側としての `actor` は残る（匿名と区別がつかないため） | 運営の `ban_user` | 運営の `unban_user`。`status = active` に戻すだけで、`removed` にした投稿は戻らない（終端）。列挙は MVP で置き、操作の実装は Phase 2 |
 
 投稿の挿入は `users` を `FOR SHARE` して `status = active` を再確認する（I3）。BAN と挿入が競合しても、BAN 後に新しい投稿が残らない（旧 P6 の反例）。
 
