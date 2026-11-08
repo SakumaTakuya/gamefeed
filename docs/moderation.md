@@ -160,7 +160,7 @@ stateDiagram-v2
 
 `restrict_tree(root_post_id)` は `tree_locks` に 1 行入れる。効くのは `root_post_id` から `parent_id` を辿って届く子孫全体（根を含む）で、同じ `tree_id` の兄弟は巻き込まない。可視性はビューで導出するので、ロック中に挿入された子孫も `restricted` になる（旧 P10 の反例）。
 
-`restore_tree(root_post_id)` は `tree_locks` から行を消すだけで、子孫の `indiv_restricted` は触らない。一括制限の前後に個別制限を受けた投稿は、個別の `restore` まで `restricted` のまま（旧 P9 の反例）。入れ子（ロック中の根の子孫を別の根として `restrict_tree`）は許す。外側の `restore_tree` では内側は解けない。
+`restore_tree(root_post_id)` は `tree_locks` から行を消し、子孫（根を含む）のうち `limited` かつ `calibrated` で `upheld` の通報がなく `indiv_restricted` でないものを `public` に昇格させる（A.7、B.9）。子孫の `indiv_restricted` は触らない。一括制限の前後に個別制限を受けた投稿は、個別の `restore` まで `restricted` のまま（旧 P9 の反例）。入れ子（ロック中の根の子孫を別の根として `restrict_tree`）は許す。外側の `restore_tree` では内側は解けない。
 
 `removed` / `unpublished` / `draft` の投稿は、ツリー制限の対象でも投稿状態は変わらない（導出の優先順位、`data-model.md` A.4）。
 
