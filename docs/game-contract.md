@@ -184,6 +184,7 @@ BGM はアセットにない。ゲームは 10 秒以内に終わるので、ゲ
 | `META_INPUT` | 拒否 | `gf:input` がない・`tap` / `hold` / `swipe` / `drag` / `stick` 以外 |
 | `META_TARGET` | 拒否 | `gf:target` がない・1 以上の整数でない |
 | `FORBIDDEN_API` | 拒否 | A.5 の識別子を使っている（行番号つき） |
+| `FORBIDDEN_ELEMENT` | 拒否 | A.5 の要素（`<form>` / `<iframe>` / `<object>` / `<embed>`）を使っている（行番号つき） |
 | `EXTERNAL_REF` | 拒否 | A.2 の読み込み先以外を参照している |
 | `DIRECT_INPUT` | 警告 | 入力イベントを直接購読している |
 | `NO_SCORE` | 警告 | `GF.score` への代入も `GF.end()` もない |

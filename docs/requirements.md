@@ -13,9 +13,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-4.1-2 | gc#A.5 の禁止 API・時間・乱数の識別子を字句レベルで検出し拒否する。一覧はデータファイル（`forbidden-identifiers.ts`）に持ち、全項目にテスト例がある。コメント・文字列・プロパティ名・識別子の一部は誤検出しない。`<script>` と `on*` 属性を検査する | unit | 全項目の代表例、`location` の代入と参照の区別、誤検出 10 例、行番号 | 同上 | green |
 | R-4.1-3 | `<title>` 必須（空白のみは拒否） | unit | 欠落 / 空白のみ / 前後の空白除去 | 同上 | green |
 | R-4.1-4 | `src` / `href` / `url()` / `@import` は `./assets/<name>` と `/lib/<name>@<version>.min.js` のみ。外部 URL・`data:`・相対パス越えは拒否 | unit | 受理 6 例 / 拒否 10 例 | 同上 | green |
-| R-4.1-5 | 入力の直接購読（`DIRECT_INPUT`）、`GF.score` への代入も `GF.end()` もない（`NO_SCORE`）、自前の viewport（`VIEWPORT`）は警告（拒否しない）。gc#A.11 | unit | 各警告の有無 3 例ずつ | 同上 | todo |
-| R-gc.A3-1 | `gf:target` は 1 以上の整数。欠落・0・非数は `META_TARGET` で拒否 | unit | 欠落 / 0 / 1 / 非数 / 小数 | 同上 | todo |
-| R-gc.A2-1 | `<form>` / `<iframe>` / `<object>` / `<embed>` は拒否（gc#A.5） | unit | 各要素 1 例 | 同上 | todo |
+| R-4.1-5 | 入力の直接購読（`DIRECT_INPUT`）、`GF.score` への代入も `GF.end()` もない（`NO_SCORE`）、自前の viewport（`VIEWPORT`）は警告（拒否しない）。gc#A.11 | unit | 各警告の有無 3 例ずつ | 同上 | green（#49） |
+| R-gc.A3-1 | `gf:target` は 1 以上の整数。欠落・0・非数は `META_TARGET` で拒否 | unit | 欠落 / 0 / 1 / 非数 / 小数 | 同上 | green（#49） |
+| R-gc.A2-1 | `<form>` / `<iframe>` / `<object>` / `<embed>` は拒否（gc#A.5） | unit | 各要素 1 例 | 同上 | green（#49） |
 
 ## security A.2 オリジンと Cookie（旧 5.1）
 
@@ -94,9 +94,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.3-1 | `gf:duration` は 180〜600（gc#A.3）。範囲外・欠落は静的検査で拒否 | unit | 179 / 180 / 600 / 601 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | red（実装は 480 上限のまま） |
+| R-6.3-1 | `gf:duration` は 180〜600（gc#A.3）。範囲外・欠落は静的検査で拒否 | unit | 179 / 180 / 600 / 601 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | green（#49） |
 | R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | green |
-| R-6.3-3 | `gf:input` は tap / hold / swipe / drag / stick のいずれか（tilt は拒否）。gc#A.3 | unit | 各値と `tilt`、未知の値 | 同上 | red（実装は drag / stick を拒否する） |
+| R-6.3-3 | `gf:input` は tap / hold / swipe / drag / stick のいずれか（tilt は拒否）。gc#A.3 | unit | 各値と `tilt`、未知の値 | 同上 | green（#49） |
 | R-6.3-4 | 時間切れ時、SDK はそのときの `GF.score` で `end` を自動送信する。`GF.end()` は 1 回だけ効く（gc#A.4） | contract | 最小 Host で `time_limit` フレーム進め、`end{score}` が 1 回届く。`GF.end()` を 2 回呼んでも 1 回 | `packages/sdk/test/contract/timeout.spec.ts` | todo |
 | R-gc.A4-1 | `GF.score` は整数・0 以上・2^31−1 以下に SDK がクランプする（gc#A.10） | unit | 負・小数・上限超・文字列 | `packages/sdk/test/score.spec.ts` | todo |
 | R-gc.A4-2 | 入力イベントの座標は 0〜1 の正規化値。`tap` は `[x,y]`、`hold` は `[x,y,1|0]`、`swipe` は `[x0,y0,x1,y1]`、`drag` は `[x,y,1|0]` を 1/256 に量子化（gc#A.4） | contract | 実ブラウザで各入力を発生させ `onInput` の `data` を検証 | `packages/sdk/test/contract/input.spec.ts` | todo |

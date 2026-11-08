@@ -11,7 +11,7 @@ import {
   watchdogMs,
 } from "../src/session.ts";
 
-const meta: GameMeta = { title: "押せ", verb: "押せ！", input: "tap", duration: 300 };
+const meta: GameMeta = { title: "押せ", verb: "押せ！", input: "tap", duration: 300, target: 12 };
 const SID = "s1";
 
 /** 典型の経路を一気に進めるヘルパ。各ステップは ok であることを前提にする。 */
