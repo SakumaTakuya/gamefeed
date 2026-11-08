@@ -11,12 +11,12 @@ curl -sL -o tla2tools.jar https://github.com/tlaplus/tlaplus/releases/download/v
 cd verification
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Session.cfg Session.tla
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Run.cfg Run.tla
-java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Lifecycle_fix.cfg Lifecycle.tla
+java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Lifecycle.cfg Lifecycle.tla
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderation.tla
 ```
 
 - `-deadlock` は「デッドロックを誤りとしない」。遊ぶ側が止まれば進まない系なので、終端状態は誤りではない
-- 設計の分岐は cfg の定数で切り替える。`*_noSid` / `*_noPaused` / `*_literal` / `*_norecheck` は「素朴な設計」で、反例が出るのが正しい。`Lifecycle.cfg`（文書どおり）も反例が出る（下の「見つかった穴」2）
+- 設計の分岐は cfg の定数で切り替える。`*_noSid` / `*_noPaused` / `*_literal` / `*_norecheck` / `Lifecycle_asis` は「素朴な設計」や修正前の文言で、反例が出るのが正しい
 - TLC は `states/` と `*_TTrace_*` を書く。`.gitignore` 済み
 
 ## モデル → 性質 → 要件
@@ -45,11 +45,11 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | F6 | `<>finished`（`WF_vars(Next)`） | 活性 |
 | F7 | `missTurns` に `isNew` の手番がない | 不変条件 |
 | F8 | `~startedAfterZero`（残機 0 で `start` を送った履歴がない）。`Cheat = FALSE` でだけ検査 | 不変条件 |
-| F9 | `finish` 時、到達数は 3 回目のミスの手番で止まる（`Cheat = TRUE` でも）。ミスが 3 回未満なら発行数 | 不変条件 |
+| F9 | `finish` 時、サーバの到達本数は Host の 3 回目のミスの手番を超えない（結果を送らない `Withhold`、残機を無視する `Cheat` でも）。全部送れば 3 回目のミスの手番と一致し、ミスが 3 回未満なら最後に報告した手番。未提出の手番は run#A.7 / sc#A.9 の規則（最後の結果より後は数えず、前は `miss_below` ありならミス・なしなら skip） | 不変条件 |
 | L1 | `invalid` は終端 | アクション性質 |
 | L2 | `uncalibrated → calibrated` は `n >= 20`（`enough`）でだけ | アクション性質 |
 | L3 | `normal` ⇒ `public ∧ calibrated`、`new` ⇒ `limited/public ∧ uncalibrated ∧ thumb`、それ以外は `none`（dm#A.4） | 不変条件 |
-| L4 | 可視の `limited ∧ calibrated` は `upheld` を持つ（mo#A.8 表の「起きない」の言い換え） | 不変条件。**文書どおりでは不成立** |
+| L4 | 可視の `limited ∧ calibrated` は `upheld` を持つ（mo#A.8 表） | 不変条件。#71 より前の文言（`Lifecycle_asis.cfg`）では不成立 |
 | L5 | 昇格が制限中の投稿を可視にしない（M8 の 1 投稿版） | アクション性質 |
 | L6 | 記録が分布に入るのは `new` 枠のときだけ | アクション性質 |
 | M1 | `parent < id`、`parent` は挿入後不変 | 不変条件＋アクション性質 |
@@ -70,10 +70,12 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | `Session_noSid.cfg` | sid 照合なし | **P2 / P12 違反**（13 手）。満了で ENDED → `init(2)` の後、遅れて届いた `end(1)` を現在セッションとして受理 | — |
 | `Session_noPaused.cfg` | RUNNING でだけ `end` 受理 | **P3 違反**（9 手）。Guest の `end` と Host の `pause` が交差し、PAUSED で届いた `end` を捨てる | — |
 | `Run.cfg` | 採用。Cap 6、Lives 2 | **反例なし**（F6 含む） | 153,724 |
+| `Run_withhold.cfg` | `result` を送らないことがある Host（run#A.7 の `abandoned` 規則、#74） | **反例なし** | 3,681,729 |
 | `Run_cheat.cfg` | 残機 0 を無視する Host（F9 用） | **反例なし** | 223,769 |
+| `Run_cheat_withhold.cfg` | 残機無視＋未提出 | **反例なし** | 6,155,229 |
 | `Run_literal.cfg` | A.5 step 6 / 7 を文字どおり（`cur + 2` より先を発行しない） | **F6 違反**。`start(1)` → `end` → 2 を skip → 3 を skip で候補が尽き、発行規則がなく停止 | — |
-| `Lifecycle.cfg` | `moderation.md` どおり（`RestorePromotes = FALSE`） | **L4 違反**（6 手）。下の穴 2 | — |
-| `Lifecycle_fix.cfg` | `restore` で昇格（提案） | **反例なし** | 1,723 |
+| `Lifecycle.cfg` | `moderation.md` A.7 どおり（`restore` で昇格、#71） | **反例なし** | 1,723 |
+| `Lifecycle_asis.cfg` | #71 より前の文言（`RestorePromotes = FALSE`） | **L4 違反**（6 手）。下の穴 2 | — |
 | `Moderation_norecheck.cfg` | 挿入時に `users.status` を再確認しない | **M2 違反**（3 手）。`Check(u1)` → `Ban(u1)` → `Insert(u1)`。旧反例 4 | — |
 | `Moderation_2u2p.cfg` | 採用。2 ユーザー・投稿 2 件 | **反例なし** | 2,712,272（3 分 53 秒） |
 | `Moderation_1u3p.cfg` | 採用。1 ユーザー・投稿 3 件 | **未完走**。20 分で 1.4 億状態生成 / 1,290 万 distinct でキューが増え続け、以後進まなくなった（メモリ 3 GB の限界） | — |
@@ -81,12 +83,12 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 
 旧 13 章の 6 つの欠陥との対応: 反例 1・2・4 は上のとおり「素朴」設定で再現し、採用設計では出ない。反例 3（`paused` ACK）は新プロトコルに ACK がなく、PAUSED からの `init` も `HostInit` に含めていないので構造的に起きない。反例 5・6（可視性の導出）は `Moderation.tla` の `Status` が導出値で、M4 / M5 が成立することで確認している。
 
-## モデルが指した仕様の穴（文書は直していない。#68 で提案）
+## モデルが指した仕様の穴（2026-11-08 にオーナー承認、#71 / #75 / #76 / #77 で文書を直した。以下は発見時の記述）
 
 1. **run#A.5 step 6 / 7: 先読み 2 枚が続けて skip になると次の手番を発行する規則がない。** step 7 は「`start` を送ったら新しい N+2 を取る」とだけ書き、step 6 の skip の後に補充する記述がない。A.15 F3「N〜N+2 の部分集合」を手番番号で読むと、skip の後に `cur + 3` を発行できず、`Run_literal.cfg` で F6（ランは必ず終わる）が破れる。`Run.tla` はスロットを「表示中＋先読み 2 枚」の位置と読み、skip で空いた位置に次の手番を発行する。文書に「skip で空いたスロットは `next` で埋める」を足し、F3 を「生存 iframe は表示中の手番と、その次に出す手番 2 本まで」と言い換えることを提案する。
 2. **mo#A.2 / A.7 / A.8: `limited` かつ `calibrated` の投稿が永久に `limited` に取り残される。** 経路: 自動制限（`indiv_restricted`、通報は `open` のまま）→ 校正済みになる（制限中なので昇格しない）→ 運営の `restore`（`indiv` を下ろし、通報は `dismissed`）。このとき投稿は可視・`calibrated`・`upheld` なし・制限なしだが `limited` のままで、A.7 の操作一覧に昇格させる操作がない（A.2 の「復帰は運営」に対応する操作が存在しない）。A.8 表の「起きていれば制限か `upheld` がある投稿」は成り立たない（`Lifecycle.cfg` の L4 違反）。提案: `restore`（と `restore_tree`）で、対象が `limited ∧ calibrated ∧ upheld なし` なら同じトランザクションで `public` に昇格する（`Lifecycle_fix.cfg`、`RestorePromotes = TRUE` で全性質成立）。`calibration_confirm`（`review → calibrated`）が昇格するかは A.2 の「`calibrated` になる遷移」に含まれると読み、モデルはそう書いた。文書に明記したい。
 3. **mo#A.5 の BAN「`removed` でない投稿をすべて `removed`」は `draft` を含むか。** A.2 / B.6 は `draft` を `removed` にしないので、`Moderation.tla` は BAN で `draft` を削除（行を消す）として扱った。I3 の文言（「投稿はすべて `removed`」）とどちらかに揃えたい。
-4. **run#A.7 / sc#A.9 の `finish`: `result` を送らなかった手番の扱い。** 到達手番数は「3 回目のミスが起きた手番まで」だが、3 回目のミスの `result` を送らず遊び続けるクライアントではその手番が `open`（期限切れ後は `abandoned`）のまま残る。`abandoned` を到達数に含めるか、ミスとみなすかが書かれていない。`Run.tla` の F9 は「結果はすべて届く」前提で検査している（`Cheat = TRUE` は残機の無視だけ）。
+4. **run#A.7 / sc#A.9 の `finish`: `result` を送らなかった手番の扱い。** 到達手番数は「3 回目のミスが起きた手番まで」だが、3 回目のミスの `result` を送らず遊び続けるクライアントではその手番が `open`（期限切れ後は `abandoned`）のまま残る。`abandoned` を到達数に含めるか、ミスとみなすかが書かれていない。`Run.tla` の F9 は「結果はすべて届く」前提で検査している（`Cheat = TRUE` は残機の無視だけ）。 → #77 で規則を決め、`Run_withhold.cfg` で再検査した（#78）。
 
 ## 境界と限界
 
@@ -94,5 +96,6 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 - `Session.tla` は `log` を運ばない（状態を変えないので、`from_frame` の検査は単体テスト）。Guest の壁時計は「`end` を送る／送らない」の非決定で表す
 - `Run.tla` は pause / resume（run#A.9）と速度を持たない。Session 側で検査している
 - `Moderation.tla` は通報の重みを持たない。自動制限は「サインイン主体の `open` な通報があるとき起きうる」非決定で、閾値の値は検査しない。信頼スコアは「30 以上か」の 2 値
+- `Run.tla` は Host が `result` の応答を待ってから `finish` を呼ぶ（run#A.7）を原子的に扱い、`result` と `finish` の到着順の入れ替わりは検査しない
 - 活性は F6 だけ。他は安全性
 - モデルと実装は別物。反例トレース（上の表の手数）は実装の integration テストのシナリオにできる
