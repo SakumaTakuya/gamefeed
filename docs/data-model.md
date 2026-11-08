@@ -34,7 +34,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `run_mode` | `endless`, `daily` | `run.md` A.2 |
 | `run_end` | `lives`, `limit`, `abandoned` | `run.md` A.7, A.9 |
 | `report_resolution` | `open`, `upheld`, `dismissed` | `moderation.md` |
-| `moderation_kind` | `restrict`, `restore`, `remove`, `restrict_tree`, `restore_tree`, `ban_user`, `calibration_confirm`, `calibration_invalidate` | `moderation.md`、`scoring.md` A.7 |
+| `moderation_kind` | `restrict`, `restore`, `remove`, `restrict_tree`, `restore_tree`, `ban_user`, `unban_user`, `calibration_confirm`, `calibration_invalidate` | `moderation.md` A.7、`scoring.md` A.7。`unban_user` の操作は Phase 2 |
 | `device_kind` | `ios`, `android`, `other` | `scoring.md` A.7（端末差） |
 | `asset_type`（Phase 2） | `image`, `sfx`, `model`, `font` | `game-contract.md` A.6（BGM なし） |
 | `asset_source`（Phase 2） | `library`, `user` | `game-contract.md` A.6 |
@@ -125,7 +125,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | 列 | 型 | 制約 |
 | --- | --- | --- |
 | `id` | text pk | |
-| `post_id` | text | fk posts |
+| `post_id` | text | fk posts、`ON DELETE CASCADE`。行が消えるのは `draft` だけなので、消えるセッションは試遊のもの（`moderation.md` B.6） |
 | `game_hash` | text | fk games。発行時の `posts.game_hash` を写す（下書きの試遊で内容が変わっても再現できる） |
 | `actor_id` | text | fk actors |
 | `device_kind` | `device_kind` | 発行時の User-Agent から |
@@ -186,7 +186,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 
 | 表 | 列 | 制約 |
 | --- | --- | --- |
-| `moderation_actions` | `id`, `moderator_id`（fk users。運営）, `kind`, `post_id null`, `user_id null`, `reason`, `created_at` | 追記のみ |
+| `moderation_actions` | `id`, `moderator_id null`（fk users。運営。NULL は自動制限、`moderation.md` A.4）, `kind`, `post_id null`, `user_id null`, `reason`, `created_at` | 追記のみ。`restrict` / `restore` は `post_id` と `user_id` のどちらか一方（CHECK） |
 | `tree_locks` | `root_post_id` pk, `action_id` fk moderation_actions, `created_at` | |
 
 ### Phase 2（定義だけ先に置く）
@@ -213,7 +213,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | ビュー | 定義 |
 | --- | --- |
 | `post_status` | `removed` / `unpublished` / `draft` はそのまま。`indiv_restricted` または祖先（自身を含む）が `tree_locks` にあれば `restricted`。それ以外は `base_status` |
-| `post_eligibility` | ランに出せるか: `post_status = public` かつ `calibration` で `normal` / `new` / `none`（`scoring.md` A.8） |
+| `post_eligibility` | ランに出せるか: `post_status = public` かつ `calibration = calibrated` なら `normal`、`post_status IN (limited, public)` かつ `calibration = uncalibrated` なら `new`、それ以外は `none`（`scoring.md` A.8、`moderation.md` A.3 / A.8） |
 
 ## A.5 不変条件
 
@@ -229,7 +229,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | I8 | `verdict = accepted` は検証ワーカーだけが書く | コードの経路（MVP）。ロール分離は Phase 2 | `scoring.md` A.3 |
 | I9 | `post_assets` の上限（Phase 2） | トランザクションで集計 | `game-contract.md` A.6 |
 | I10 | `game_hash`, `title`, `prompt` は `base_status = draft` の間だけ更新できる | トリガー | `product.md` 9 |
-| I11 | 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日触られていない `draft` は削除される | 挿入時に件数を数える。日次ジョブ | `product.md` 9 |
+| I11 | 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日触られていない `draft` は削除される（行を消す。試遊セッションはカスケードで消え、R2 の `replays/` は日次ジョブで掃除） | 挿入時に件数を数える。日次ジョブ | `product.md` 9、`moderation.md` B.6 |
 | I12 | `theme_posts` は `status = open` のお題でちょうど 10 行、`position` は 0〜9 で重複なし。`sessions.speed` は 5 値のどれか。`miss_below` が非 NULL なら `run_id` が非 NULL かつそのランが `endless` かつ `is_new = false` | CHECK と発行時の検査 | `run.md` A.3, A.8 |
 | I13 | `(run_id, turn)` は一意。`ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は変わらない | unique、トリガー | `scoring.md` A.9 |
 | I14 | `likes` / `reports` は 1 投稿につき 1 主体 1 回。主体が匿名なら通報の `weight = 0` | unique、受理時の検査（`actors.user_id` を見る） | `moderation.md`、`product.md` 3 |
@@ -258,11 +258,11 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | --- | --- |
 | `games` | `theme_id`, `verb`, `input`, `duration_frames`, `thumb_key` を削除し `meta jsonb` に。`duration_frames` の CHECK は `meta` の検査として API 側に |
 | `posts` | `controls`, `showcase_key`, `deterministic` を削除（`deterministic` は `meta` へ）。`calibration`, `calibration_flags`, `thumb_key`, `preview_key`, `published_at`, `updated_at` を追加。`base_status` を `draft / limited / public / unpublished / removed` に（`pending`, `expired` を廃止）。I4 の CHECK を `published_at` と `thumb_key` に |
-| `sessions` | `user_id` を `actor_id` に。`game_hash`, `device_kind`, `run_id`, `turn`, `speed`, `time_limit`, `miss_below`, `is_new`, `author`, `via`, `deviation` を追加。`checkpoint`, `opened_at`（→ `issued_at`）を削除。`state` に `skipped` |
+| `sessions` | `user_id` を `actor_id` に。`post_id` を `ON DELETE CASCADE` に。`game_hash`, `device_kind`, `run_id`, `turn`, `speed`, `time_limit`, `miss_below`, `is_new`, `author`, `via`, `deviation` を追加。`checkpoint`, `opened_at`（→ `issued_at`）を削除。`state` に `skipped` |
 | `runs` | `seed`, `game_ids`, `results`, `cleared`, `total` を削除。`user_id` を `actor_id` に。`mode`, `date`, `deck`, `new_index`, `from_run`, `lives`, `reached`, `avg_deviation`, `symbols`, `ended`, `recorded` を追加。ビュー `run_results` は廃止 |
 | `reports` | `reporter_id` を `actor_id`（fk actors）に。匿名は受理時に `weight = 0` |
 | `actors`, `theme_posts`, `likes`, `post_stats` | 新設 |
-| `moderation_kind` | `calibration_confirm`, `calibration_invalidate` を追加 |
+| `moderation_kind` | `calibration_confirm`, `calibration_invalidate`, `unban_user` を追加 |
 | `asset_type` | `bgm` を削除 |
 | `themes` | 10 本は `theme_posts` に。`themes` 自体は列を足さない |
 
