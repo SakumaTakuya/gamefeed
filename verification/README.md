@@ -76,7 +76,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | `Lifecycle_fix.cfg` | `restore` で昇格（提案） | **反例なし** | 1,723 |
 | `Moderation_norecheck.cfg` | 挿入時に `users.status` を再確認しない | **M2 違反**（3 手）。`Check(u1)` → `Ban(u1)` → `Insert(u1)`。旧反例 4 | — |
 | `Moderation_2u2p.cfg` | 採用。2 ユーザー・投稿 2 件 | **反例なし** | 2,712,272（3 分 53 秒） |
-| `Moderation_1u3p.cfg` | 採用。1 ユーザー・投稿 3 件 | **未完走**。15 分で 1 億状態生成 / 1,050 万 distinct、キューが増え続けていた（PR 作成時点でまだ実行中。完走したら追記） | — |
+| `Moderation_1u3p.cfg` | 採用。1 ユーザー・投稿 3 件 | **未完走**。20 分で 1.4 億状態生成 / 1,290 万 distinct でキューが増え続け、以後進まなくなった（メモリ 3 GB の限界） | — |
 | `Moderation.cfg` | 採用。2 ユーザー・投稿 3 件 | **未完走**。1 CPU で 1,400 万状態生成 / 260 万 distinct の時点で中断。別環境（複数 CPU・メモリ 8 GB 以上）か、`open` を 2 値にする・`RestrictUser` を外すなどの削減が要る | — |
 
 旧 13 章の 6 つの欠陥との対応: 反例 1・2・4 は上のとおり「素朴」設定で再現し、採用設計では出ない。反例 3（`paused` ACK）は新プロトコルに ACK がなく、PAUSED からの `init` も `HostInit` に含めていないので構造的に起きない。反例 5・6（可視性の導出）は `Moderation.tla` の `Status` が導出値で、M4 / M5 が成立することで確認している。
