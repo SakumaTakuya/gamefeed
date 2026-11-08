@@ -3,7 +3,7 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-07）
-- **文書分割（#43）は 7 本まで済み、残り 2 本**。`main` にあるのは `product.md`（未決なし）、`game-contract.md`（#48）、`protocol.md`（#51）、`run.md`（#54）、`scoring.md`（#56、`verification/scoring_check.py` 69/69）、`data-model.md`（#58）、`moderation.md`（#61。#42 の 2 を確定。`limited` は新作枠に入り校正済みで `public` に昇格、`unpublish` は可逆、自動制限の監査行は `moderator_id = NULL`。`requirements.md` に `R-mo.*` 16 行）。残りは `security.md`（旧 5 章の流用。旧文書は `git show d3146af^:docs/spec.md` で読める）→ `mcp.md`。その後 `verification/`（`Session.tla` を pr#A.12 の P3 再定義と P11〜P13 に、`Run.tla` を run#A.15 F1〜F9 に、`Lifecycle.tla` 新規、`Moderation.tla` 据え置き、`README.md` に性質と要件 ID の対応）、`plan.md` の改訂（MVP 完了条件が勝敗前提のまま）、`requirements.md` の棚卸し（`product.md` の決定ごとに行があるか、`red` 行と追従 Issue の 1 対 1、各文書の節→行の対応表）、契約・e2e テストのハーネス Issue、`docs/manual-tests/`。
+- **文書分割（#43）は 7 本まで済み、残り 2 本**。`main` にあるのは `product.md`（未決なし）、`game-contract.md`（#48）、`protocol.md`（#51）、`run.md`（#54）、`scoring.md`（#56、`verification/scoring_check.py` 69/69）、`data-model.md`（#58）、`moderation.md`（#61。#42 の 2 を確定。`limited` は新作枠に入り校正済みで `public` に昇格、`unpublish` は可逆、自動制限の監査行は `moderator_id = NULL`。`requirements.md` に `R-mo.*` 16 行。閾値は 2026-11-08 にオーナー承認、`unban_user` を列挙に追加、`sessions.post_id` は `ON DELETE CASCADE`）。残りは `security.md`（旧 5 章の流用。旧文書は `git show d3146af^:docs/spec.md` で読める）→ `mcp.md`。その後 `verification/`（`Session.tla` を pr#A.12 の P3 再定義と P11〜P13 に、`Run.tla` を run#A.15 F1〜F9 に、`Lifecycle.tla` 新規、`Moderation.tla` 据え置き、`README.md` に性質と要件 ID の対応）、`plan.md` の改訂（MVP 完了条件が勝敗前提のまま）、`requirements.md` の棚卸し（`product.md` の決定ごとに行があるか、`red` 行と追従 Issue の 1 対 1、各文書の節→行の対応表）、契約・e2e テストのハーネス Issue、`docs/manual-tests/`。
 - 追従の実装 Issue: #49（静的検査）、#52（SDK スキーマと状態機械）、#59（DB スキーマ）。#25（静的解析の警告）は #49 に含めてよい。
 - 文書の書き方（守る）: A 部＝規約、B 部＝理由と却下した案。理由は規則の隣に、別文書で決めた不在は書かない。決定の記録ファイルは持たない（経緯は Issue と PR 本文）。暫定値は定数として持つ。各文書末尾に「未解決」。`requirements.md` の新規行は `R-<略号>.<節>-<n>`（gc / pr / run / sc / dm / mo）。`spec#x.y` を参照する Issue・要件 ID・計画書の記述は、その記述を正として実装してはいけない（対応表は Issue #43 のコメント）。大きな変更: 勝敗→点数＋順位ベースの偏差値、お題固定ラン→エンドレス主戦場（山札を周回して速度が上がる）、Showcase 廃止（サーバ描画のプレビュー）、`publish_game` は下書き→試遊→公開の 3 段、長さ 3〜10 秒。既存の静的解析（勝敗契約・180〜480 フレーム）と `games.theme_id` 等は追従が要る（追従 Issue は各文書の PR で切る）。
 - 計画書 W1（11/3〜11/8）。ルール文書（#1）、スキャフォールド（#3）、CI（#11）、セッション状態機械（#6）、静的解析（#8）、メッセージスキーマ（#7、valibot）、侵入テスト手順書（#10）、DB スキーマ（#9）、MCP PoC のコード側（#5）が済み、`pnpm install && pnpm check` が緑。
@@ -51,7 +51,6 @@
 
 ## オーナーに聞かないと決められないこと
 - `users` 行をいつ・どう作るか（Better Auth の `auth_user` 作成時に `handle` を生成するか、初回 `publish_game` 時か。`handle` の生成規則）。`mcp.md` の PR で聞く
-- 通報カテゴリの重みと自動制限の閾値（旧 11.2 の値を mo#A.9 の定数にした。尺度は「信頼スコア ÷ 10 × 係数」）。#61 の PR で聞いている
 - iOS Safari で Guest の無限ループが Host を止める問題の実機確認（run#未解決）。侵入テストと一緒に
 
 ## AI の作業環境メモ（Claude のチャットからコンテナで作業するとき）

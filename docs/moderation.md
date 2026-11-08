@@ -20,7 +20,7 @@
 | 信頼スコア | 作る側の `users.trust_score`（0〜100）。投稿の初期状態、通報の重み、投稿の上限を決める |
 | 処分 | 作る側への措置。投稿制限（`users.status = post_restricted`）と BAN（`banned`） |
 | 運営 | モデレーター。`moderation_actions.moderator_id` に入る `users` 行。MVP ではオーナーだけ |
-| 操作 | 運営の操作。`moderation_kind` 8 種（A.7）。すべて `moderation_actions` に 1 行残る |
+| 操作 | 運営の操作。`moderation_kind` 9 種（A.7）。すべて `moderation_actions` に 1 行残る |
 
 ## A.2 投稿状態機械
 
@@ -74,6 +74,7 @@ stateDiagram-v2
 - ランの山札は開始時に確定する（`run.md` A.3）。`next` は発行時に `post_eligibility` を見直し、出せなくなった投稿は手番を消費せず山札の次に進む。ラン開始後に制限・非公開・削除になった投稿は、そのランではもう出ない。発行済みの手番はそのまま遊べ、結果も受理する
 - 「見える」直リンクでも、`restricted` / `unpublished` / `removed` のゲーム HTML は配信しない（`security.md`）。`draft` の試遊は作者のセッションでだけ配信する
 - `not_found` の文言は「存在しない」と「見られない」で変えない
+- お題の 10 本（`theme_posts`）に含まれる投稿が出せなくなったときも同じ規則で飛ばす。その日のデイリーは 9 手番になり、記号列は 10 文字のまま（飛ばした位置は skip の記号、`run.md` A.11）。10 本に埋め直すのは運営の手作業で、埋め直しは翌日から効く（同じ日の順序は変えない。`run.md` A.2）
 
 ## A.4 通報
 
@@ -115,9 +116,9 @@ stateDiagram-v2
 | 全カテゴリの重みの合計 | `AUTO_RESTRICT_SUM = 10` 以上 |
 | `sexual` / `flashing` だけの重みの合計 | `AUTO_RESTRICT_SEVERE = 5` 以上 |
 
-新規ユーザー（信頼係数 1.0）の通報なら、`sexual` は 2 人（3 + 3 ≥ 5）、`spam` は 10 人で制限がかかる。信頼スコア 17 以上のユーザーの `sexual` 通報は 1 件で制限になる。匿名（重み 0）は何人いても自動制限にならず、キューの材料にだけなる。
+新規ユーザー（信頼係数 1.0）の通報なら、`sexual` は 2 人（3 + 3 ≥ 5）、`spam` は 10 人で制限がかかる（この水準で始めることは 2026-11-08 にオーナーが承認。#62）。信頼スコア 17 以上のユーザーの `sexual` 通報は 1 件で制限になる。匿名（重み 0）は何人いても自動制限にならず、キューの材料にだけなる。
 
-自動制限は `moderation_actions` に `kind = restrict`、`moderator_id = NULL`、`reason` に重みの内訳を書いた行を残す（`data-model.md` A.3、B.4）。自動制限は通報を解決せず（`open` のまま）、信頼スコアも変えない。通報の解決と信頼スコアの変化は運営の操作（`moderator_id` が非 NULL）でだけ起きる（A.7、B.5）。作者には「制限中」と通報カテゴリの集計を見せる（`list_my_games`、「作る」ページ）。通報者は誰か見せない。
+自動制限は `moderation_actions` に `kind = restrict`、`moderator_id = NULL`、`reason` に重みの内訳を書いた行を残す（`data-model.md` A.3、B.4）。自動制限は通報を解決せず（`open` のまま）、信頼スコアも変えない。通報の解決と信頼スコアの変化は運営の操作（`moderator_id` が非 NULL）でだけ起きる（A.7、B.5）。作者には「制限中」と通報カテゴリの集計だけを見せる（`list_my_games`、「作る」ページ）。`moderation_actions.reason` は運営の内部メモで作者には返さず、通報者が誰かも見せない（件数が少ないときにコメントから通報者が割れるため）。
 
 ### キュー
 
@@ -151,7 +152,7 @@ stateDiagram-v2
 | --- | --- | --- | --- |
 | `active` | 通常 | | |
 | `post_restricted` | 新規の `publish_game`（下書きの作成と公開）を error `post_restricted` で拒否する。既存の投稿・試遊・`unpublish_game`・`list_my_games` はそのまま | 運営の `restrict`（`user_id` 指定、A.7）。自動では `trust_score` が 0 になった時点 | 運営の `restore`（`user_id` 指定）。`trust_score` は変えない |
-| `banned` | 投稿制限に加え、`removed` でない投稿をすべて同じトランザクションで `removed` にし（I3）、ログインを無効にする。遊ぶ側としての `actor` は残る（匿名と区別がつかないため） | 運営の `ban_user` | MVP ではない（解除の操作は Phase 2 で列挙に足す） |
+| `banned` | 投稿制限に加え、`removed` でない投稿をすべて同じトランザクションで `removed` にし（I3）、ログインを無効にする。遊ぶ側としての `actor` は残る（匿名と区別がつかないため） | 運営の `ban_user` | 運営の `unban_user`。`status = active` に戻すだけで、`removed` にした投稿は戻らない（終端）。列挙は MVP で置き、操作の実装は Phase 2 |
 
 投稿の挿入は `users` を `FOR SHARE` して `status = active` を再確認する（I3）。BAN と挿入が競合しても、BAN 後に新しい投稿が残らない（旧 P6 の反例）。
 
@@ -177,6 +178,7 @@ stateDiagram-v2
 | `restrict` | `user_id`（`post_id` NULL） | `users.status = post_restricted` | 変えない | 変えない |
 | `restore` | `user_id`（`post_id` NULL） | `users.status = active` | 変えない | 変えない |
 | `ban_user` | `user_id` | `users.status = banned`、全投稿を `removed`（A.5） | その作者の投稿の `open` → `upheld` | 変えない |
+| `unban_user`（Phase 2） | `user_id` | `users.status = active`。投稿は `removed` のまま | 変えない | 変えない |
 | `calibration_confirm` | `post_id` | `calibration: review → calibrated`（`scoring.md` A.7） | 変えない | 変えない |
 | `calibration_invalidate` | `post_id` | `calibration: review → invalid` | 変えない | 変えない |
 
@@ -269,7 +271,7 @@ stateDiagram-v2
 
 ## B.6 `draft` を `removed` にせず消す理由
 
-`draft` は公開前で、一覧にもランにも系譜にも出ていない。消しても誰の表示も壊れない。残すと I11 の上限（10 件）の数え方と「削除した下書きが 30 日後にまた消える」の二重管理が要る。試遊セッション（`sessions.run_id` が NULL でその `post_id` を指す行）は、下書きの行と一緒に消す（`data-model.md` の未解決に追記）。
+`draft` は公開前で、一覧にもランにも系譜にも出ていない。消しても誰の表示も壊れない。残すと I11 の上限（10 件）の数え方と「削除した下書きが 30 日後にまた消える」の二重管理が要る。試遊セッション（`sessions.run_id` が NULL でその `post_id` を指す行）は `sessions.post_id` の `ON DELETE CASCADE` で一緒に消える。公開後の投稿は行を消さない（`removed` は状態）ので、カスケードが効くのは下書きだけ。R2 の `replays/{session_id}` は孤児になるが、試遊のログは検証に使わないので日次ジョブで掃除する（`data-model.md` A.3）。
 
 ## B.7 通報の重みを受付時に凍結する理由
 
@@ -283,9 +285,6 @@ stateDiagram-v2
 
 ## 未解決
 
-- 通報の係数と閾値（A.4、A.9）を暫定の定数として置いてよいか（オーナー。`status.md` の「オーナーに聞くこと」）
-- `draft` の物理削除に伴う試遊セッションの扱い（`sessions.post_id` の FK。一緒に消すか、`ON DELETE CASCADE` にするか）。#59 の前に `data-model.md` に書く
-- BAN の解除（`moderation_kind` に `unban_user` を足すか）。Phase 2
-- 異議申し立ての導線。Phase 2
-- 「制限中」の理由を作者にどこまで見せるか（カテゴリの集計だけか、運営のコメントも返すか）。運営画面の実装時に決める
-- `restricted` の投稿を `/t/<slug>/<date>` のお題に入れていた場合の扱い（`theme_posts` から外して 10 本を埋め直すのは運営の手作業）。お題の運用手順と一緒に決める
+- 自動制限の閾値（A.9）を運営のキューの実績で見直す時期。制限が月に数件以下なら下げ、誤制限が続くなら上げる
+- 異議申し立ての導線（Phase 2。MVP は作者が運営に連絡する、A.7）
+- `unban_user` の操作の実装（Phase 2。列挙は置いてある）
