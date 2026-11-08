@@ -189,6 +189,22 @@ describe("R-gc.A3-1 gf:target", () => {
     expect(e?.fix).toContain('<meta name="gf:target"');
   });
 
+  it("R-gc.A3-1 Number で表せない桁数は拒否する", () => {
+    expect(codesOf(html({ target: "9".repeat(400) }))).toContain("META_TARGET");
+    expect(codesOf(html({ target: "9007199254740993" }))).toContain("META_TARGET");
+  });
+
+  it('R-gc.A3-1 script 内の文字列に書かれた <meta name="gf:target"> は宣言ではない', () => {
+    const r = staticCheck(
+      html({
+        target: null,
+        script: `const ex = '<meta name="gf:target" content="12">'; GF.score = 1;`,
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.map((e) => e.code)).toContain("META_TARGET");
+  });
+
   it("R-gc.A3-1 受理した target は meta に入る", () => {
     const r = staticCheck(html({ target: "7" }));
     expect(r.ok && r.meta.target).toBe(7);

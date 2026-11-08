@@ -101,7 +101,7 @@ function checkSize(html: string, errors: Finding[]): void {
 }
 
 function checkTitle(html: string, errors: Finding[]): string | undefined {
-  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(markupOnly(html));
   const title = m?.[1]?.trim();
   if (!title) {
     errors.push({
@@ -117,7 +117,7 @@ function checkTitle(html: string, errors: Finding[]): string | undefined {
 /** `<meta name=... content=...>` を name → content の表にする。属性の順序と引用符の有無を問わない */
 function readMetas(html: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const tag of blankHtmlComments(html).match(/<meta\b[^>]*>/gi) ?? []) {
+  for (const tag of markupOnly(html).match(/<meta\b[^>]*>/gi) ?? []) {
     const attrs = readAttrs(tag);
     const name = attrs.get("name");
     const content = attrs.get("content");
@@ -243,7 +243,7 @@ function checkTarget(raw: string | undefined, errors: Finding[]): number | undef
     return undefined;
   }
   const t = raw.trim();
-  if (!/^\d+$/.test(t) || Number(t) < TARGET_MIN) {
+  if (!/^\d+$/.test(t) || !Number.isSafeInteger(Number(t)) || Number(t) < TARGET_MIN) {
     errors.push({
       code: "META_TARGET",
       message: `gf:target の値「${raw}」は ${TARGET_MIN} 以上の整数ではありません。`,
