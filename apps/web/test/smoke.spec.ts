@@ -3,6 +3,6 @@ import { describe, expect, it } from "vitest";
 
 describe("smoke", () => {
   it("web から workspace パッケージを解決できる", () => {
-    expect(SDK_PROTOCOL_VERSION).toBe("1.1");
+    expect(SDK_PROTOCOL_VERSION).toBe("2.0");
   });
 });
