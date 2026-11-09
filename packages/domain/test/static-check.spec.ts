@@ -282,9 +282,10 @@ describe("R-gc.A2-1 使えない要素（gc#A.5）", () => {
     expect(r.ok && r.meta.verb).toBe("右へ>");
   });
 
-  it("R-gc.A2-1 <textarea> / <template> / <title> の中に書かれた <form> は要素ではないので拒否しない", () => {
+  it("R-gc.A2-1 <textarea> / <template> / <noscript> / <title> の中に書かれた <form> は要素ではないので拒否しない", () => {
     expect(staticCheck(html({ body: "<textarea><form></form></textarea>" })).ok).toBe(true);
     expect(staticCheck(html({ body: "<template><form></form></template>" })).ok).toBe(true);
+    expect(staticCheck(html({ body: "<noscript><form></form></noscript>" })).ok).toBe(true);
     const r = staticCheck(html({ title: "Demo <form>" }));
     expect(r.ok && r.meta.title).toBe("Demo <form>");
   });
@@ -356,6 +357,9 @@ describe("R-4.1-5 警告（拒否しない）", () => {
     "if (hit) GF.end()",
     "GF.score >>= 1;",
     "GF.score **= 2;",
+    "GF.score ||= 0;",
+    "GF.score &&= 1;",
+    "GF.score ??= 0;",
   ])("R-4.1-5 NO_SCORE なし: %s", (script) => {
     expect(warningsOf(html({ script }))).toEqual([]);
   });

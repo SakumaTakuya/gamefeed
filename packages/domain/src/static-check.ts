@@ -372,6 +372,7 @@ const INERT_ELEMENTS = [
   "xmp",
   "noembed",
   "noframes",
+  "noscript",
   "title",
   "template",
 ] as const;
@@ -477,9 +478,9 @@ export function blankComments(code: string): string {
 }
 
 const SCORE_RE =
-  /(?<![\w$.])GF\s*\.\s*score\s*(?:[-+*/%|&^]|\*\*|<<|>>>?)?=(?!=)|(?<![\w$.])GF\s*\.\s*score\s*(?:\+\+|--)|(?:\+\+|--)\s*GF\s*\.\s*score(?![\w$])|(?<![\w$.])GF\s*\.\s*end\s*\(/;
+  /(?<![\w$.])GF\s*\.\s*score\s*(?:[-+*/%|&^]|\*\*|<<|>>>?|\|\||&&|\?\?)?=(?!=)|(?<![\w$.])GF\s*\.\s*score\s*(?:\+\+|--)|(?:\+\+|--)\s*GF\s*\.\s*score(?![\w$])|(?<![\w$.])GF\s*\.\s*end\s*\(/;
 
-/** 点が動かない（gc#A.5）。GF.score への代入（複合代入・インクリメント含む）も GF.end( もない */
+/** 点が動かない（gc#A.5）。GF.score への代入（複合代入・論理代入・インクリメント含む）も GF.end( もない */
 function checkNoScore(html: string, warnings: Finding[]): void {
   for (const chunk of collectCode(html)) {
     if (SCORE_RE.test(blankCommentsAndStrings(chunk.code))) return;
