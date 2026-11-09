@@ -1,13 +1,13 @@
 /**
- * Host↔Guest メッセージスキーマ（spec#6.1）。
+ * Host↔Guest メッセージスキーマ（protocol#A.2、A.3）。
  *
- * 10 種のメッセージを valibot で定義し、Host と Guest の両側で同じ検証を使う。
- * 違反は呼び出し側（Host ブリッジ / Guest SDK）が即セッション破棄にする（spec#6）。
+ * 9 種のメッセージ（Guest 4 種、Host 5 種）を valibot で定義し、Host と Guest の両側で同じ検証を使う。
+ * 違反は呼び出し側（Host ブリッジ / Guest SDK）が即セッション破棄にする（protocol#A.2）。
  *
- * ワイヤ形式は `{type, ...payload}` のフラットな JSON。キーは spec#6.1 どおり snake_case。
+ * ワイヤ形式は `{type, ...payload}` のフラットな JSON。キーは snake_case（protocol#A.2、B.8）。
  * domain の `SessionEvent`（camelCase）への変換は `toSessionEvent` が担う。
  *
- * zod ではなく valibot を使う理由: SDK は全ゲームの <head> に注入されるため（spec#4.4）、
+ * zod ではなく valibot を使う理由: SDK は全ゲームの <head> に注入されるため（gc#A.4）、
  * バンドルサイズが効く。同じスキーマで valibot ≈ 2.4 KB gz、zod/mini ≈ 8.5 KB gz、zod ≈ 54 KB gz（#7）。
  */
 
@@ -17,34 +17,34 @@ import {
   DURATION_MIN,
   graphemeCount,
   type InputKind,
-  MEDIA_MAX_BYTES,
-  type MediaKind,
   type Mode,
-  type Outcome,
   type SessionEvent,
+  SPEEDS,
   TARGET_MIN,
   VERB_MAX_CHARS,
 } from "@gamefeed/domain";
 import * as v from "valibot";
 
-export const SDK_PROTOCOL_VERSION = "1.1";
+/** protocol#A.2。Host は自分が知らないメジャーを拒否する */
+export const SDK_PROTOCOL_VERSION = "2.0";
+export const SDK_PROTOCOL_MAJOR = 2;
 
-/** spec#10.4: 0 ≤ score ≤ 2^31−1 */
+/** gc#A.4 / protocol#A.3: 0 ≤ score ≤ 2^31−1 */
 export const SCORE_MAX = 2 ** 31 - 1;
 
-/** 入力ログの種別（spec#6.2 の onInput 4 種 ＋ spec#7.1 の key） */
-export const INPUT_LOG_KINDS = ["tap", "hold", "swipe", "tilt", "key"] as const;
+/** 入力ログに現れる種別（protocol#A.3）。`stick` は `drag` 列から解釈し、`tilt` は予約 */
+export const INPUT_LOG_KINDS = ["tap", "hold", "swipe", "drag"] as const;
+export type InputLogKind = (typeof INPUT_LOG_KINDS)[number];
 
 export const MESSAGE_TYPES = [
   "ready",
+  "log",
+  "end",
+  "error",
   "init",
   "start",
   "pause",
   "resume",
-  "log",
-  "end",
-  "media",
-  "error",
   "destroy",
 ] as const;
 export type MessageType = (typeof MESSAGE_TYPES)[number];
@@ -53,12 +53,33 @@ export type MessageType = (typeof MESSAGE_TYPES)[number];
 
 const nonNegativeInt = v.pipe(v.number(), v.integer(), v.minValue(0));
 const positiveInt = v.pipe(v.number(), v.integer(), v.minValue(1));
-const nonEmptyString = v.pipe(v.string(), v.nonEmpty());
 const sessionId = v.pipe(v.string(), v.nonEmpty("session_id が空です"));
+/** 画面に対する 0〜1 の正規化座標（gc#A.4） */
+const coord = v.pipe(v.number(), v.minValue(0), v.maxValue(1));
+/** hold / drag の押下（1）・離し（0） */
+const pressed = v.picklist([0, 1]);
 
-/** `[frame, kind, ...data]`（spec#7.1）。data は JSON 値ならなんでもよい */
-const inputLogEntry = v.tupleWithRest([nonNegativeInt, v.picklist(INPUT_LOG_KINDS)], v.unknown());
+/**
+ * `log.inputs` の 1 要素（protocol#A.3）。kind ごとに長さと型が決まっている。
+ * tap `[frame, "tap", x, y]`、hold / drag `[frame, kind, x, y, 1|0]`、swipe `[frame, "swipe", x0, y0, x1, y1]`
+ */
+const inputLogEntry = v.union([
+  v.strictTuple([nonNegativeInt, v.literal("tap"), coord, coord]),
+  v.strictTuple([nonNegativeInt, v.literal("hold"), coord, coord, pressed]),
+  v.strictTuple([nonNegativeInt, v.literal("swipe"), coord, coord, coord, coord]),
+  v.strictTuple([nonNegativeInt, v.literal("drag"), coord, coord, pressed]),
+]);
 export type InputLogEntry = v.InferOutput<typeof inputLogEntry>;
+
+/** `"<major>.<minor>"`。メジャーが一致するものだけ受理する（protocol#A.2） */
+const sdkVersion = v.pipe(
+  v.string(),
+  v.regex(/^\d+\.\d+$/, "sdk は <major>.<minor> 形式"),
+  v.check(
+    (s) => Number(s.split(".")[0]) === SDK_PROTOCOL_MAJOR,
+    `sdk のメジャーは ${SDK_PROTOCOL_MAJOR} のみ`,
+  ),
+);
 
 const verb = v.pipe(
   v.string(),
@@ -75,16 +96,11 @@ const duration = v.pipe(
   v.maxValue(DURATION_MAX),
 );
 
-const mediaBlob = v.pipe(
-  v.instance(Blob),
-  v.check((b) => b.size > 0, "blob が空です"),
-);
-
 // ---- Guest → Host --------------------------------------------------------
 
 const ready = v.strictObject({
   type: v.literal("ready"),
-  sdk: v.literal(SDK_PROTOCOL_VERSION),
+  sdk: sdkVersion,
   title: v.pipe(v.string(), v.trim(), v.nonEmpty("title が空です")),
   verb,
   input: v.picklist(ACCEPTED_INPUTS as readonly InputKind[]),
@@ -102,33 +118,9 @@ const log = v.strictObject({
 const end = v.strictObject({
   type: v.literal("end"),
   session_id: sessionId,
-  result: v.picklist(["win", "lose"] satisfies readonly Outcome[]),
-  score: v.optional(v.pipe(nonNegativeInt, v.maxValue(SCORE_MAX))),
+  score: v.pipe(nonNegativeInt, v.maxValue(SCORE_MAX)),
   frames: nonNegativeInt,
-  checkpoint: v.optional(v.string()),
 });
-
-const MEDIA_MIME: Record<MediaKind, (mime: string) => boolean> = {
-  thumb: (m) => m === "image/png",
-  video: (m) => m === "video/webm" || m.startsWith("video/webm;"),
-};
-
-const media = v.pipe(
-  v.strictObject({
-    type: v.literal("media"),
-    session_id: sessionId,
-    kind: v.picklist(["thumb", "video"] satisfies readonly MediaKind[]),
-    blob: mediaBlob,
-  }),
-  v.check(
-    (m) => m.blob.size <= MEDIA_MAX_BYTES[m.kind],
-    (i) => {
-      const kb = MEDIA_MAX_BYTES[i.input.kind] / 1024;
-      return `${i.input.kind} は ${kb} KB まで（${i.input.blob.size} バイト）`;
-    },
-  ),
-  v.check((m) => MEDIA_MIME[m.kind](m.blob.type), "thumb は image/png、video は video/webm"),
-);
 
 const error = v.strictObject({
   type: v.literal("error"),
@@ -136,7 +128,7 @@ const error = v.strictObject({
   message: v.string(),
 });
 
-export const GuestToHostSchema = v.variant("type", [ready, log, end, media, error]);
+export const GuestToHostSchema = v.variant("type", [ready, log, end, error]);
 export type GuestToHost = v.InferOutput<typeof GuestToHostSchema>;
 
 // ---- Host → Guest --------------------------------------------------------
@@ -148,8 +140,9 @@ const init = v.pipe(
     seed: nonNegativeInt,
     mode: v.picklist(["play", "replay"] satisfies readonly Mode[]),
     time_limit: positiveInt,
+    /** protocol#A.8: 1.0〜1.5 の 1/8 刻み */
+    speed: v.picklist(SPEEDS),
     inputs: v.optional(v.array(inputLogEntry)),
-    record: v.optional(v.boolean()),
   }),
   v.check((m) => m.mode !== "replay" || m.inputs !== undefined, "replay では inputs が必須"),
 );
@@ -192,8 +185,8 @@ export function parseHostMessage(raw: unknown): ParseResult<HostToGuest> {
 // ---- domain への橋渡し -----------------------------------------------------
 
 /**
- * 検証済みメッセージを Host 状態機械のイベント（spec#6.4）に変換する。
- * `media` は Blob そのものではなくバイト数だけを渡す（domain は I/O を持たない）。
+ * 検証済みメッセージを Host 状態機械のイベント（protocol#A.5）に変換する。
+ * `log` は入力の中身ではなくフレーム番号だけを渡す（順序の検査に使う。protocol#A.9）。
  */
 export function toSessionEvent(m: Message): SessionEvent {
   switch (m.type) {
@@ -209,22 +202,22 @@ export function toSessionEvent(m: Message): SessionEvent {
         },
       };
     case "init":
-      return { type: "init", sessionId: m.session_id, mode: m.mode, timeLimit: m.time_limit };
-    case "log":
-      return { type: "log", sessionId: m.session_id };
-    case "end": {
-      const ev: Extract<SessionEvent, { type: "end" }> = {
-        type: "end",
+      return {
+        type: "init",
         sessionId: m.session_id,
-        result: m.result,
-        frames: m.frames,
+        mode: m.mode,
+        timeLimit: m.time_limit,
+        speed: m.speed,
       };
-      if (m.score !== undefined) ev.score = m.score;
-      if (m.checkpoint !== undefined) ev.checkpoint = m.checkpoint;
-      return ev;
-    }
-    case "media":
-      return { type: "media", sessionId: m.session_id, kind: m.kind, bytes: m.blob.size };
+    case "log":
+      return {
+        type: "log",
+        sessionId: m.session_id,
+        fromFrame: m.from_frame,
+        inputFrames: m.inputs.map((e) => e[0]),
+      };
+    case "end":
+      return { type: "end", sessionId: m.session_id, score: m.score, frames: m.frames };
     case "error":
       return { type: "error", sessionId: m.session_id, message: m.message };
     case "start":

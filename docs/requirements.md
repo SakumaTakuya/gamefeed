@@ -85,10 +85,10 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | todo |
 | R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | todo |
 | R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | green |
-| R-6.1-4 | `media` は廃止（pr#B.1）。Guest からバイナリを受け取る経路を持たない | unit | スキーマが `media` を未知の type として拒否する | `packages/sdk/test/messages.spec.ts` | red（実装は `media` を受理する） |
-| R-6.1-5 | pr#A.3 の 9 種（Guest: ready / log / end / error、Host: init / start / pause / resume / destroy）を方向別のスキーマで検証する。余計なフィールド・型違い・未知の type・方向違いを拒否。`ready` の `verb` / `input` / `duration` / `target` は静的検査と同じ定数、`end.score` は 0〜2^31−1、`end.frames` ≤ `time_limit`、`init.speed` は 1.0〜1.5。`log.inputs` の kind は tap / hold / swipe / drag（`key` と `tilt` は拒否）。検証済み Guest メッセージは `SessionEvent` に 1 対 1 で変換できる | unit | 各型の正例 1 つ、余計なフィールド、型違い、未知の type、境界値（duration 179/180/600/601、verb 0/8/9 文字、target 0/1、score −1/0/2^31−1/+1、speed 0.99/1.0/1.5/1.51）、replay で inputs 欠落、`end.result` があると拒否 | `packages/sdk/test/messages.spec.ts` | red（実装は 10 種・result・key のまま） |
-| R-pr.A2-1 | `ready.sdk` は `"2.0"`。Host は知らないメジャーを拒否してセッション破棄 | unit | `"1.1"` / `"2.0"` / `"3.0"` | 同上 | todo |
-| R-pr.A9-1 | `log.from_frame` は厳密に増加。減る・重なる `log` は捨て、セッションを `flagged` にする。`end` 受理時に `log` の最大フレームが `end.frames` を超えないこと | unit | 増加 / 同値 / 減少の 3 列、`frames` 超えの `log` | `packages/domain/test/session.spec.ts` | todo |
+| R-6.1-4 | `media` は廃止（pr#B.1）。Guest からバイナリを受け取る経路を持たない | unit | スキーマが `media` を未知の type として拒否する | `packages/sdk/test/messages.spec.ts` | green（#52） |
+| R-6.1-5 | pr#A.3 の 9 種（Guest: ready / log / end / error、Host: init / start / pause / resume / destroy）を方向別のスキーマで検証する。余計なフィールド・型違い・未知の type・方向違いを拒否。`ready` の `verb` / `input` / `duration` / `target` は静的検査と同じ定数、`end.score` は 0〜2^31−1、`end.frames` ≤ `time_limit`、`init.speed` は 1.0〜1.5。`log.inputs` の kind は tap / hold / swipe / drag（`key` と `tilt` は拒否）。検証済み Guest メッセージは `SessionEvent` に 1 対 1 で変換できる | unit | 各型の正例 1 つ、余計なフィールド、型違い、未知の type、境界値（duration 179/180/600/601、verb 0/8/9 文字、target 0/1、score −1/0/2^31−1/+1、speed 0.99/1.0/1.5/1.51）、replay で inputs 欠落、`end.result` があると拒否 | `packages/sdk/test/messages.spec.ts` | green（#52。`log.inputs` は kind ごとの長さと 0〜1 の座標も検査、`init.speed` は 5 値の列挙） |
+| R-pr.A2-1 | `ready.sdk` は `"2.0"`。Host は知らないメジャーを拒否してセッション破棄 | unit | `"1.1"` / `"2.0"` / `"3.0"` | 同上 | green（#52。`"2.1"` も受理） |
+| R-pr.A9-1 | `log.from_frame` は厳密に増加。減る・重なる `log` は捨て、セッションを `flagged` にする。`end` 受理時に `log` の最大フレームが `end.frames` を超えないこと | unit | 増加 / 同値 / 減少の 3 列、`frames` 超えの `log` | `packages/domain/test/session.spec.ts` | green（#52。違反は `flagged_log_order` / `flagged_log_over_frames` で捨て、state の `flagged` を立てて結果に残す） |
 
 ## game-contract A.3 / A.4 / A.10 メタ宣言と SDK（旧 6.3）
 
@@ -108,9 +108,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.4-1 | 監視タイマー満了で RUNNING → ENDED（`via: timeout`、`score: 0`、`frames: time_limit`）。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | red（unit は red: 実装は lose を返し、speed を見ない。formal は green: `Session.tla` P11, P12、#68） |
+| R-6.4-1 | 監視タイマー満了で RUNNING → ENDED（`via: timeout`、`score: 0`、`frames: time_limit`）。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | green（unit: #52。formal: `Session.tla` P11, P12、#68） |
 | R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | green |
-| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅。`error` の結果に `score: 0` が入る | 同上 | red（実装は `error` に score を入れない） |
+| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅。`error` の結果に `score: 0` が入る | 同上 | green（#52） |
 | R-pr.A4-1 | SDK は `start` から `time_limit ÷ (60 × speed)` 秒の壁時計が経過したら、フレームが足りなくても `end` を送る（`frames < time_limit`）。5 tick の追いつき上限は維持する（pr#A.4） | contract | rAF を 12 回/秒に絞った環境で speed 1.5・600 フレームのゲームを動かし、監視タイマー満了前に `end` が届き `frames < 600` | `packages/sdk/test/contract/slow-device.spec.ts` | todo |
 | R-pr.A5-1 | PAUSED からの `init` は受理しない。ENDED からの `init` は受理する（pr#A.6） | unit | 遷移表の網羅 | 同上 | green |
 | R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | todo |
