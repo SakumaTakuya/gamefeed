@@ -117,7 +117,8 @@ function checkTitle(html: string, errors: Finding[]): string | undefined {
 /** `<meta name=... content=...>` を name → content の表にする。属性の順序と引用符の有無を問わない */
 function readMetas(html: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const tag of markupOnly(html).match(/<meta\b[^>]*>/gi) ?? []) {
+  for (const tag of blankElementBodies(markupOnly(html), ["title"]).match(/<meta\b[^>]*>/gi) ??
+    []) {
     const attrs = readAttrs(tag);
     const name = attrs.get("name");
     const content = attrs.get("content");
@@ -352,13 +353,20 @@ function blankHtmlComments(html: string): string {
 const ELEMENT_FIX =
   "ゲームは canvas や通常の要素で作ってください。フォーム送信や埋め込みは使えません。";
 
-/** 要素の検査用に、コメントと <script> / <style> の中身を空白にする（文字列中の "<form>" は要素ではない） */
-function markupOnly(html: string): string {
-  return blankHtmlComments(html).replace(
-    /(<(script|style)\b[^>]*>)([\s\S]*?)(<\/\2>)/gi,
+/** 中身がタグとして解釈されない要素（raw text / escapable raw text）。<title> は checkTitle が別に読む */
+const RAW_TEXT_ELEMENTS = ["script", "style", "textarea", "xmp", "noembed", "noframes"] as const;
+
+function blankElementBodies(html: string, names: readonly string[]): string {
+  return html.replace(
+    new RegExp(`(<(${names.join("|")})\\b[^>]*>)([\\s\\S]*?)(<\\/\\2\\s*>)`, "gi"),
     (_, open: string, _n: string, body: string, close: string) =>
       `${open}${body.replace(/[^\n]/g, " ")}${close}`,
   );
+}
+
+/** 要素の検査用に、コメントと raw text 要素（<script> / <style> / <textarea> など）の中身を空白にする（文字列中の "<form>" は要素ではない） */
+function markupOnly(html: string): string {
+  return blankElementBodies(blankHtmlComments(html), RAW_TEXT_ELEMENTS);
 }
 
 function checkForbiddenElements(html: string, errors: Finding[]): void {

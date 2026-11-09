@@ -205,6 +205,32 @@ describe("R-gc.A3-1 gf:target", () => {
     if (!r.ok) expect(r.errors.map((e) => e.code)).toContain("META_TARGET");
   });
 
+  it('R-gc.A3-1 <textarea> など raw text 要素の中の <meta name="gf:target"> は宣言ではない', () => {
+    for (const el of ["textarea", "xmp", "noembed", "noframes"]) {
+      const r = staticCheck(
+        html({ target: null, body: `<${el}><meta name="gf:target" content="12"></${el}>` }),
+      );
+      expect(r.ok, el).toBe(false);
+      if (!r.ok)
+        expect(
+          r.errors.map((e) => e.code),
+          el,
+        ).toContain("META_TARGET");
+    }
+  });
+
+  it('R-gc.A3-1 <title> の中の <meta name="gf:target"> は宣言ではない', () => {
+    const r = staticCheck(
+      html({
+        title: null,
+        target: null,
+        head: '<title><meta name="gf:target" content="12"></title>',
+      }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.map((e) => e.code)).toContain("META_TARGET");
+  });
+
   it("R-gc.A3-1 受理した target は meta に入る", () => {
     const r = staticCheck(html({ target: "7" }));
     expect(r.ok && r.meta.target).toBe(7);
@@ -235,6 +261,10 @@ describe("R-gc.A2-1 使えない要素（gc#A.5）", () => {
 
   it("R-gc.A2-1 HTML コメントの中と似た名前（<formation>）は拒否しない", () => {
     expect(staticCheck(html({ body: "<!-- <form> --><formation></formation>" })).ok).toBe(true);
+  });
+
+  it("R-gc.A2-1 <textarea> の中に書かれた <form> は要素ではないので拒否しない", () => {
+    expect(staticCheck(html({ body: "<textarea><form></form></textarea>" })).ok).toBe(true);
   });
 
   it("R-gc.A2-1 コード中の文字列に書かれた <form> は要素ではないので拒否しない", () => {
@@ -284,6 +314,12 @@ describe("R-4.1-5 警告（拒否しない）", () => {
     "GF.score; GF.onDraw(() => {});",
     "// GF.score = 1\nGF.onTick(() => {});",
     "const s = 'GF.end()'; GF.onTick(() => {});",
+    "GF.onTick(() => { if (GF.score === 0) {} });",
+    "GF.onTick(() => { if (GF.score == 0) {} });",
+    "GF.onTick(() => { if (GF.score >= 10) {} });",
+    "GF.onTick(() => { if (GF.score <= 10) {} });",
+    "GF.onTick(() => { if (GF.score !== 0) {} });",
+    "GF.onTick(() => { if (GF.score!=0) {} });",
   ])("R-4.1-5 NO_SCORE: %s", (script) => {
     expect(warningsOf(html({ script }))).toEqual(["NO_SCORE"]);
   });
@@ -296,6 +332,8 @@ describe("R-4.1-5 警告（拒否しない）", () => {
     "GF.end();",
     "GF . score = 2;",
     "if (hit) GF.end()",
+    "GF.score >>= 1;",
+    "GF.score **= 2;",
   ])("R-4.1-5 NO_SCORE なし: %s", (script) => {
     expect(warningsOf(html({ script }))).toEqual([]);
   });
