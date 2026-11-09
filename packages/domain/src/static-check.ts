@@ -101,7 +101,9 @@ function checkSize(html: string, errors: Finding[]): void {
 }
 
 function checkTitle(html: string, errors: Finding[]): string | undefined {
-  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(markupOnly(html));
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(
+    blankElementBodies(blankHtmlComments(html), ["script", "style"]),
+  );
   const title = m?.[1]?.trim();
   if (!title) {
     errors.push({
@@ -117,7 +119,7 @@ function checkTitle(html: string, errors: Finding[]): string | undefined {
 /** `<meta name=... content=...>` を name → content の表にする。属性の順序と引用符の有無を問わない */
 function readMetas(html: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const { name: el, tag } of startTags(blankElementBodies(markupOnly(html), ["title"]))) {
+  for (const { name: el, tag } of startTags(markupOnly(html))) {
     if (el !== "meta") continue;
     const attrs = readAttrs(tag);
     const name = attrs.get("name");
@@ -362,8 +364,17 @@ function blankHtmlComments(html: string): string {
 const ELEMENT_FIX =
   "ゲームは canvas や通常の要素で作ってください。フォーム送信や埋め込みは使えません。";
 
-/** 中身がタグとして解釈されない要素（raw text / escapable raw text）。<title> は checkTitle が別に読む */
-const RAW_TEXT_ELEMENTS = ["script", "style", "textarea", "xmp", "noembed", "noframes"] as const;
+/** 中身が文書の要素にならない要素: raw text / escapable raw text（<title> を含む）と、不活性な <template> */
+const INERT_ELEMENTS = [
+  "script",
+  "style",
+  "textarea",
+  "xmp",
+  "noembed",
+  "noframes",
+  "title",
+  "template",
+] as const;
 
 function blankElementBodies(html: string, names: readonly string[]): string {
   return html.replace(
@@ -373,9 +384,9 @@ function blankElementBodies(html: string, names: readonly string[]): string {
   );
 }
 
-/** 要素の検査用に、コメントと raw text 要素（<script> / <style> / <textarea> など）の中身を空白にする（文字列中の "<form>" は要素ではない） */
+/** 要素の検査用に、コメントと raw text / 不活性な要素（<script> / <style> / <textarea> / <title> / <template> など）の中身を空白にする（文字列中の "<form>" は要素ではない） */
 function markupOnly(html: string): string {
-  return blankElementBodies(blankHtmlComments(html), RAW_TEXT_ELEMENTS);
+  return blankElementBodies(blankHtmlComments(html), INERT_ELEMENTS);
 }
 
 function checkForbiddenElements(html: string, errors: Finding[]): void {

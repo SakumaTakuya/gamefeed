@@ -219,6 +219,14 @@ describe("R-gc.A3-1 gf:target", () => {
     }
   });
 
+  it('R-gc.A3-1 <template> の中の <meta name="gf:target"> は不活性なので宣言ではない', () => {
+    const r = staticCheck(
+      html({ target: null, body: '<template><meta name="gf:target" content="12"></template>' }),
+    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.errors.map((e) => e.code)).toContain("META_TARGET");
+  });
+
   it('R-gc.A3-1 <title> の中の <meta name="gf:target"> は宣言ではない', () => {
     const r = staticCheck(
       html({
@@ -274,8 +282,11 @@ describe("R-gc.A2-1 使えない要素（gc#A.5）", () => {
     expect(r.ok && r.meta.verb).toBe("右へ>");
   });
 
-  it("R-gc.A2-1 <textarea> の中に書かれた <form> は要素ではないので拒否しない", () => {
+  it("R-gc.A2-1 <textarea> / <template> / <title> の中に書かれた <form> は要素ではないので拒否しない", () => {
     expect(staticCheck(html({ body: "<textarea><form></form></textarea>" })).ok).toBe(true);
+    expect(staticCheck(html({ body: "<template><form></form></template>" })).ok).toBe(true);
+    const r = staticCheck(html({ title: "Demo <form>" }));
+    expect(r.ok && r.meta.title).toBe("Demo <form>");
   });
 
   it("R-gc.A2-1 コード中の文字列に書かれた <form> は要素ではないので拒否しない", () => {
