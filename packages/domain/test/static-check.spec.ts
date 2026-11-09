@@ -263,6 +263,17 @@ describe("R-gc.A2-1 使えない要素（gc#A.5）", () => {
     expect(staticCheck(html({ body: "<!-- <form> --><formation></formation>" })).ok).toBe(true);
   });
 
+  it("R-gc.A2-1 属性値に書かれた <form> は要素ではないので拒否しない", () => {
+    expect(
+      staticCheck(html({ body: `<div data-template="<form>" title='<iframe>'></div>` })).ok,
+    ).toBe(true);
+  });
+
+  it('R-gc.A3-1 属性値に ">" を含む <meta> も読める', () => {
+    const r = staticCheck(html({ verb: null, head: '<meta name="gf:verb" content="右へ>">' }));
+    expect(r.ok && r.meta.verb).toBe("右へ>");
+  });
+
   it("R-gc.A2-1 <textarea> の中に書かれた <form> は要素ではないので拒否しない", () => {
     expect(staticCheck(html({ body: "<textarea><form></form></textarea>" })).ok).toBe(true);
   });

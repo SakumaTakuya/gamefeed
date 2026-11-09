@@ -117,8 +117,8 @@ function checkTitle(html: string, errors: Finding[]): string | undefined {
 /** `<meta name=... content=...>` を name → content の表にする。属性の順序と引用符の有無を問わない */
 function readMetas(html: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const tag of blankElementBodies(markupOnly(html), ["title"]).match(/<meta\b[^>]*>/gi) ??
-    []) {
+  for (const { name: el, tag } of startTags(blankElementBodies(markupOnly(html), ["title"]))) {
+    if (el !== "meta") continue;
     const attrs = readAttrs(tag);
     const name = attrs.get("name");
     const content = attrs.get("content");
@@ -128,6 +128,15 @@ function readMetas(html: string): Map<string, string> {
 }
 
 const ATTR_RE = /([^\s"'<>\/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+
+/** 開始タグ（引用符の中の `>` や `<form>` でタグは終わらないし始まらない） */
+const START_TAG_RE = /<([a-zA-Z][\w:-]*)(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+
+function* startTags(text: string): Generator<{ name: string; tag: string; index: number }> {
+  for (const m of text.matchAll(START_TAG_RE)) {
+    yield { name: (m[1] ?? "").toLowerCase(), tag: m[0], index: m.index };
+  }
+}
 
 function readAttrs(tag: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -370,12 +379,10 @@ function markupOnly(html: string): string {
 }
 
 function checkForbiddenElements(html: string, errors: Finding[]): void {
-  const text = markupOnly(html);
-  const re = new RegExp(`<(${FORBIDDEN_ELEMENTS.join("|")})\\b`, "gi");
+  const forbidden: readonly string[] = FORBIDDEN_ELEMENTS;
   const seen = new Map<string, number>();
-  for (const m of text.matchAll(re)) {
-    const name = (m[1] ?? "").toLowerCase();
-    if (!seen.has(name) && m.index !== undefined) seen.set(name, m.index);
+  for (const { name, index } of startTags(markupOnly(html))) {
+    if (forbidden.includes(name) && !seen.has(name)) seen.set(name, index);
   }
   if (seen.size === 0) return;
   const names = [...seen.keys()].map((n) => `<${n}>`).join("、");
