@@ -327,6 +327,14 @@ describe("R-pr.A9-1 log の from_frame は厳密に増加し、入力は end.fra
     expect(r).toMatchObject({ ok: false, reason: "flagged_log_order" });
   });
 
+  it("batch 内で frame が減る入力を含む log は捨てて flagged にする（sc#A.2 の単調非減少）", () => {
+    const r = transition(toRunning(), log(0, [10, 5]), 1);
+    expect(r).toMatchObject({ ok: false, reason: "flagged_log_order" });
+    expect(r.state).toMatchObject({ flagged: true });
+    // 同じ frame の連続（同じ tick に 2 入力）は受理する
+    expect(transition(toRunning(), log(0, [10, 10, 12]), 1).ok).toBe(true);
+  });
+
   it("from_frame より前の入力を含む log は捨てて flagged にする", () => {
     const r = transition(toRunning(), log(64, [63]), 1);
     expect(r).toMatchObject({ ok: false, reason: "flagged_log_order" });

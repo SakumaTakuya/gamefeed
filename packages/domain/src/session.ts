@@ -170,7 +170,7 @@ export type RejectReason =
   | "invalid_speed"
   /** `end.frames` > `time_limit`（protocol#A.8） */
   | "frames_over_limit"
-  /** `log.from_frame` が減った・重なった、または入力が `from_frame` より前（protocol#A.9）。セッションは flagged */
+  /** `log.from_frame` が減った・重なった、入力が `from_frame` より前、または入力の frame が batch 内で減った（protocol#A.9、sc#A.2）。セッションは flagged */
   | "flagged_log_order"
   /** `log` の最大フレームが `end.frames` を超えている（protocol#A.9）。セッションは flagged */
   | "flagged_log_over_frames";
@@ -265,10 +265,13 @@ export function transition(
       if (state.kind !== "RUNNING" && state.kind !== "PAUSED") return reject(state, "not_allowed");
       if (event.sessionId !== state.sessionId) return reject(state, "stale_session");
       const { lastFrom, maxFrame } = state.log;
+      // from_frame は前の log より後ろ。入力は from_frame 以上で、batch 内で単調非減少（sc#A.2）
       const ordered =
         (lastFrom === null || event.fromFrame > lastFrom) &&
         event.fromFrame > maxFrame &&
-        event.inputFrames.every((f) => f >= event.fromFrame);
+        event.inputFrames.every(
+          (f, i) => f >= event.fromFrame && (i === 0 || f >= (event.inputFrames[i - 1] as number)),
+        );
       if (!ordered) return reject({ ...state, flagged: true }, "flagged_log_order");
       const newMax = event.inputFrames.reduce((m, f) => Math.max(m, f), maxFrame);
       return ok({ ...state, log: { lastFrom: event.fromFrame, maxFrame: newMax } });
