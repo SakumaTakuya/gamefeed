@@ -27,6 +27,7 @@ const ready = {
   verb: "押せ！",
   input: "tap",
   duration: 300,
+  target: 12,
 } as const;
 const init = {
   type: "init",
@@ -171,6 +172,22 @@ describe("R-6.1-5 ready のメタ制約は静的解析と同じ定数を使う�
     expect(parseGuestMessage({ ...ready, input }).ok).toBe(ok);
   });
 
+  it.each([
+    [1, true],
+    [12, true],
+    [0, false],
+    [-1, false],
+    [1.5, false],
+    ["12", false],
+  ])("target=%j → 受理=%s", (target, ok) => {
+    expect(parseGuestMessage({ ...ready, target }).ok).toBe(ok);
+  });
+
+  it("target の欠落は拒否する", () => {
+    const { target: _t, ...noTarget } = ready;
+    expectReject(parseGuestMessage(noTarget));
+  });
+
   it("sdk は 1.1 固定", () => {
     expectReject(parseGuestMessage({ ...ready, sdk: "1.0" }));
   });
@@ -285,7 +302,7 @@ describe("R-6.1-5 Guest メッセージは domain の SessionEvent に 1 対 1 �
     const readyEv = step(expectOk(parseGuestMessage(ready)));
     expect(readyEv).toEqual({
       type: "ready",
-      meta: { title: "押せ！", verb: "押せ！", input: "tap", duration: 300 },
+      meta: { title: "押せ！", verb: "押せ！", input: "tap", duration: 300, target: 12 },
     });
     const initEv = step(expectOk(parseHostMessage(init)));
     expect(initEv).toEqual({ type: "init", sessionId: SID, mode: "play", timeLimit: 300 });

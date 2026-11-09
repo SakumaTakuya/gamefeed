@@ -434,7 +434,7 @@ dbSuite("spec#12 データモデル", () => {
 
   // ---- R-12.4 ミクロゲーム対応の追加分 ----------------------------------------------
 
-  describe("R-12.4-1 games.duration_frames ∈ [180, 480]（CHECK）", () => {
+  describe("R-12.4-1 games.duration_frames ∈ [180, 600]（CHECK）", () => {
     it.each([DURATION_MIN, DURATION_MAX])("%i は受理", async (n) => {
       await rolledBack(async (tx) => {
         await seedGame(tx, `h-${n}`, { durationFrames: n });

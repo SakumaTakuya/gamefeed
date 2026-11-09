@@ -96,10 +96,10 @@ export const games = pgTable(
     createdAt: createdAt(),
   },
   (t) => [
-    // R-12.4-1: 180〜480。静的解析前は NULL でよい
+    // R-12.4-1: 180〜600（gc#A.3）。静的解析前は NULL でよい。#59 で games.meta に移る
     check(
       "games_duration_frames_range",
-      sql`${t.durationFrames} IS NULL OR ${t.durationFrames} BETWEEN 180 AND 480`,
+      sql`${t.durationFrames} IS NULL OR ${t.durationFrames} BETWEEN 180 AND 600`,
     ),
   ],
 );

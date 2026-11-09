@@ -7,17 +7,19 @@
  */
 
 export type Mode = "play" | "replay";
-export type InputKind = "tap" | "hold" | "swipe" | "tilt";
+export type InputKind = "tap" | "hold" | "swipe" | "drag" | "stick" | "tilt";
 export type Outcome = "win" | "lose";
 export type MediaKind = "thumb" | "video";
 
-/** `ready` に乗る、ゲームのメタ宣言（spec#6.3）。範囲検査は静的解析（#8）が行う。 */
+/** `ready` に乗る、ゲームのメタ宣言（gc#A.3）。範囲検査は静的解析が行う。 */
 export interface GameMeta {
   title: string;
   verb: string;
   input: InputKind;
   /** 論理フレーム数 */
   duration: number;
+  /** 目標点。1 以上 */
+  target: number;
 }
 
 export interface SessionResult {

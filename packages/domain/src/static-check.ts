@@ -1,34 +1,44 @@
-// publish_game が受け取る HTML の静的解析（spec#4.1, spec#4.4, spec#6.3, spec#9）。
-// 字句レベルの検査で、難読化は見抜かない。本当の防御線はサンドボックス（spec#5）。
+// publish_game が受け取る HTML の静的解析（game-contract.md A.2, A.3, A.5, A.11）。
+// 字句レベルの検査で、難読化は見抜かない。本当の防御線はサンドボックス（security.md）。
 // 役割は、善意の作者が契約に合わないゲームを投稿するのを防ぎ、直し方を伝えること。
 
 import { FORBIDDEN_IDENTIFIERS } from "./forbidden-identifiers.ts";
 import type { GameMeta, InputKind } from "./session.ts";
 
-/** コードの上限（gzip 前、UTF-8 バイト数）。spec#4.1 */
+/** コードの上限（gzip 前、UTF-8 バイト数）。gc#A.2 */
 export const CODE_MAX_BYTES = 128 * 1024;
-/** gf:duration の範囲（論理フレーム）。spec#6.3 */
+/** gf:duration の範囲（論理フレーム。60 フレーム = 1 秒）。gc#A.3 */
 export const DURATION_MIN = 180;
-export const DURATION_MAX = 480;
-/** gf:verb の長さ（書記素クラスタ数）。spec#6.3 */
+export const DURATION_MAX = 600;
+/** gf:verb の長さ（書記素クラスタ数）。gc#A.3 */
 export const VERB_MAX_CHARS = 8;
-/** MVP で受理する入力種別。tilt は spec#6.3 により拒否 */
-export const ACCEPTED_INPUTS: readonly InputKind[] = ["tap", "hold", "swipe"];
+/** gf:target の下限。gc#A.3 */
+export const TARGET_MIN = 1;
+/** 受理する入力種別。tilt は gc#A.3 により現在拒否 */
+export const ACCEPTED_INPUTS: readonly InputKind[] = ["tap", "hold", "swipe", "drag", "stick"];
+/** 使わない要素。gc#A.5 */
+export const FORBIDDEN_ELEMENTS: readonly string[] = ["form", "iframe", "object", "embed"];
 
+/** gc#A.11 の表 */
 export type FindingCode =
   | "SIZE"
   | "META_TITLE"
   | "META_DURATION"
   | "META_VERB"
   | "META_INPUT"
+  | "META_TARGET"
   | "FORBIDDEN_API"
-  | "EXTERNAL_REF";
+  | "FORBIDDEN_ELEMENT"
+  | "EXTERNAL_REF"
+  | "DIRECT_INPUT"
+  | "NO_SCORE"
+  | "VIEWPORT";
 
 export interface Finding {
   code: FindingCode;
   /** 何が問題か。作者（と作者を使う AI）が読む日本語 */
   message: string;
-  /** どう直せばよいか。空にしない（spec#9） */
+  /** どう直せばよいか。空にしない（gc#A.11） */
   fix: string;
   /** 最初に見つかった行（1 始まり）。位置が特定できるものだけ */
   line?: number;
@@ -58,19 +68,25 @@ export function staticCheck(html: string): StaticCheckResult {
   const duration = checkDuration(metas.get("gf:duration"), errors);
   const verb = checkVerb(metas.get("gf:verb"), errors);
   const input = checkInput(metas.get("gf:input"), errors);
+  const target = checkTarget(metas.get("gf:target"), errors);
   checkForbiddenIdentifiers(html, errors);
+  checkForbiddenElements(html, errors);
   checkExternalRefs(html, errors);
+  checkDirectInput(html, warnings);
+  checkNoScore(html, warnings);
+  checkViewport(html, metas, warnings);
 
   if (
     errors.length > 0 ||
     title === undefined ||
     duration === undefined ||
     verb === undefined ||
-    input === undefined
+    input === undefined ||
+    target === undefined
   ) {
     return { ok: false, errors, warnings };
   }
-  return { ok: true, meta: { title, verb, input, duration }, warnings };
+  return { ok: true, meta: { title, verb, input, duration, target }, warnings };
 }
 
 function checkSize(html: string, errors: Finding[]): void {
@@ -85,7 +101,9 @@ function checkSize(html: string, errors: Finding[]): void {
 }
 
 function checkTitle(html: string, errors: Finding[]): string | undefined {
-  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(html);
+  const m = /<title[^>]*>([\s\S]*?)<\/title>/i.exec(
+    blankElementBodies(blankHtmlComments(html), ["script", "style"]),
+  );
   const title = m?.[1]?.trim();
   if (!title) {
     errors.push({
@@ -101,7 +119,8 @@ function checkTitle(html: string, errors: Finding[]): string | undefined {
 /** `<meta name=... content=...>` を name → content の表にする。属性の順序と引用符の有無を問わない */
 function readMetas(html: string): Map<string, string> {
   const out = new Map<string, string>();
-  for (const tag of html.match(/<meta\b[^>]*>/gi) ?? []) {
+  for (const { name: el, tag } of startTags(markupOnly(html))) {
+    if (el !== "meta") continue;
     const attrs = readAttrs(tag);
     const name = attrs.get("name");
     const content = attrs.get("content");
@@ -111,6 +130,15 @@ function readMetas(html: string): Map<string, string> {
 }
 
 const ATTR_RE = /([^\s"'<>\/=]+)\s*=\s*(?:"([^"]*)"|'([^']*)'|([^\s"'=<>`]+))/g;
+
+/** 開始タグ（引用符の中の `>` や `<form>` でタグは終わらないし始まらない） */
+const START_TAG_RE = /<([a-zA-Z][\w:-]*)(?:[^>"']|"[^"]*"|'[^']*')*>/g;
+
+function* startTags(text: string): Generator<{ name: string; tag: string; index: number }> {
+  for (const m of text.matchAll(START_TAG_RE)) {
+    yield { name: (m[1] ?? "").toLowerCase(), tag: m[0], index: m.index };
+  }
+}
 
 function readAttrs(tag: string): Map<string, string> {
   const out = new Map<string, string>();
@@ -147,7 +175,7 @@ function checkDuration(raw: string | undefined, errors: Finding[]): number | und
   if (n < DURATION_MIN || n > DURATION_MAX) {
     errors.push({
       code: "META_DURATION",
-      message: `gf:duration の値 ${n} は範囲外です。${range} フレーム（3〜8 秒）にしてください。`,
+      message: `gf:duration の値 ${n} は範囲外です。${range} フレーム（3〜10 秒）にしてください。`,
       fix: DURATION_FIX,
     });
     return undefined;
@@ -215,6 +243,29 @@ function checkInput(raw: string | undefined, errors: Finding[]): InputKind | und
   return hit;
 }
 
+const TARGET_FIX = `<head> に <meta name="gf:target" content="12"> のように、目標点を ${TARGET_MIN} 以上の整数で書いてください。`;
+
+function checkTarget(raw: string | undefined, errors: Finding[]): number | undefined {
+  if (raw === undefined) {
+    errors.push({
+      code: "META_TARGET",
+      message: "gf:target がありません。目標点の宣言が必要です。",
+      fix: TARGET_FIX,
+    });
+    return undefined;
+  }
+  const t = raw.trim();
+  if (!/^\d+$/.test(t) || !Number.isSafeInteger(Number(t)) || Number(t) < TARGET_MIN) {
+    errors.push({
+      code: "META_TARGET",
+      message: `gf:target の値「${raw}」は ${TARGET_MIN} 以上の整数ではありません。`,
+      fix: TARGET_FIX,
+    });
+    return undefined;
+  }
+  return Number(t);
+}
+
 /** 検査対象のコード片（script の中身と on* 属性の値）。行番号は HTML 全体での位置 */
 interface CodeChunk {
   code: string;
@@ -241,7 +292,7 @@ function collectCode(html: string): CodeChunk[] {
 
 /**
  * コメントと文字列リテラルを同じ長さの空白に置き換える（行番号を保つ）。
- * テンプレートリテラルの ${} の中身は検査しない（割り切り。spec#4.4）。
+ * テンプレートリテラルの ${} の中身は検査しない（割り切り。gc#A.11「字句レベル」）。
  */
 export function blankCommentsAndStrings(code: string): string {
   let out = "";
@@ -303,6 +354,156 @@ function checkForbiddenIdentifiers(html: string, errors: Finding[]): void {
     }
   }
   errors.push(...seen.values());
+}
+
+/** HTML のコメントを同じ長さの空白にする（要素検査で行番号を保つ） */
+function blankHtmlComments(html: string): string {
+  return html.replace(/<!--[\s\S]*?-->/g, (c) => c.replace(/[^\n]/g, " "));
+}
+
+const ELEMENT_FIX =
+  "ゲームは canvas や通常の要素で作ってください。フォーム送信や埋め込みは使えません。";
+
+/** 中身が文書の要素にならない要素: raw text / escapable raw text（<title> を含む）と、不活性な <template> */
+const INERT_ELEMENTS = [
+  "script",
+  "style",
+  "textarea",
+  "xmp",
+  "noembed",
+  "noframes",
+  "noscript",
+  "title",
+  "template",
+] as const;
+
+function blankElementBodies(html: string, names: readonly string[]): string {
+  return html.replace(
+    new RegExp(`(<(${names.join("|")})\\b[^>]*>)([\\s\\S]*?)(<\\/\\2\\s*>)`, "gi"),
+    (_, open: string, _n: string, body: string, close: string) =>
+      `${open}${body.replace(/[^\n]/g, " ")}${close}`,
+  );
+}
+
+/** 要素の検査用に、コメントと raw text / 不活性な要素（<script> / <style> / <textarea> / <title> / <template> など）の中身を空白にする（文字列中の "<form>" は要素ではない） */
+function markupOnly(html: string): string {
+  return blankElementBodies(blankHtmlComments(html), INERT_ELEMENTS);
+}
+
+function checkForbiddenElements(html: string, errors: Finding[]): void {
+  const forbidden: readonly string[] = FORBIDDEN_ELEMENTS;
+  const seen = new Map<string, number>();
+  for (const { name, index } of startTags(markupOnly(html))) {
+    if (forbidden.includes(name) && !seen.has(name)) seen.set(name, index);
+  }
+  if (seen.size === 0) return;
+  const names = [...seen.keys()].map((n) => `<${n}>`).join("、");
+  const first = Math.min(...seen.values());
+  errors.push({
+    code: "FORBIDDEN_ELEMENT",
+    message: `使えない要素があります: ${names}。`,
+    fix: ELEMENT_FIX,
+    line: lineAt(html, first),
+  });
+}
+
+const DIRECT_INPUT_RE = /addEventListener\s*\(\s*['"`](?:pointer|touch|mouse|key)[a-z]*['"`]/i;
+const ON_ATTR_RE = /\son(?:pointer|touch|mouse|key)[a-z]*\s*=/i;
+
+/** 入力イベントの直接購読（gc#A.5）。文字列中のイベント名を見るので blank 前のコードで探す */
+function checkDirectInput(html: string, warnings: Finding[]): void {
+  let offset: number | undefined;
+  for (const chunk of collectCode(html)) {
+    const code = blankComments(chunk.code);
+    const m = DIRECT_INPUT_RE.exec(code);
+    if (m) {
+      offset = chunk.offset + m.index;
+      break;
+    }
+  }
+  if (offset === undefined) {
+    for (const tag of blankHtmlComments(html).matchAll(/<[a-zA-Z][^>]*>/g)) {
+      if (tag.index === undefined) continue;
+      const m = ON_ATTR_RE.exec(tag[0]);
+      if (m) {
+        offset = tag.index + m.index;
+        break;
+      }
+    }
+  }
+  if (offset === undefined) return;
+  warnings.push({
+    code: "DIRECT_INPUT",
+    message: "入力イベントを直接購読しています。動きますが、リプレイに記録されません。",
+    fix: "pointer / touch / mouse / key のイベントは GF.onInput((ev) => …) で受け取ってください。",
+    line: lineAt(html, offset),
+  });
+}
+
+/** コメントだけを同じ長さの空白にする（文字列リテラルは残す。イベント名は文字列なので） */
+export function blankComments(code: string): string {
+  let out = "";
+  let i = 0;
+  const n = code.length;
+  const blank = (t: string) => t.replace(/[^\n]/g, " ");
+  while (i < n) {
+    const c = code[i] as string;
+    const next = code[i + 1];
+    if (c === "/" && next === "/") {
+      const end = code.indexOf("\n", i);
+      const stop = end === -1 ? n : end;
+      out += blank(code.slice(i, stop));
+      i = stop;
+    } else if (c === "/" && next === "*") {
+      const end = code.indexOf("*/", i + 2);
+      const stop = end === -1 ? n : end + 2;
+      out += blank(code.slice(i, stop));
+      i = stop;
+    } else if (c === '"' || c === "'" || c === "`") {
+      let j = i + 1;
+      while (j < n && code[j] !== c) {
+        if (code[j] === "\\") j++;
+        else if (c !== "`" && code[j] === "\n") break;
+        j++;
+      }
+      const stop = Math.min(j + 1, n);
+      out += code.slice(i, stop);
+      i = stop;
+    } else {
+      out += c;
+      i++;
+    }
+  }
+  return out;
+}
+
+const SCORE_RE =
+  /(?<![\w$.])GF\s*\.\s*score\s*(?:[-+*/%|&^]|\*\*|<<|>>>?|\|\||&&|\?\?)?=(?!=)|(?<![\w$.])GF\s*\.\s*score\s*(?:\+\+|--)|(?:\+\+|--)\s*GF\s*\.\s*score(?![\w$])|(?<![\w$.])GF\s*\.\s*end\s*\(/;
+
+/** 点が動かない（gc#A.5）。GF.score への代入（複合代入・論理代入・インクリメント含む）も GF.end( もない */
+function checkNoScore(html: string, warnings: Finding[]): void {
+  for (const chunk of collectCode(html)) {
+    if (SCORE_RE.test(blankCommentsAndStrings(chunk.code))) return;
+  }
+  warnings.push({
+    code: "NO_SCORE",
+    message:
+      "GF.score への代入も GF.end() の呼び出しもありません。点数ゲームとして成立しない可能性が高いです。",
+    fix: "onTick や onInput の中で GF.score を更新し、早く終わるなら GF.end() を呼んでください。",
+  });
+}
+
+/** viewport（gc#A.2, A.5）。SDK が注入するので自分で書いたものは置き換えられる */
+function checkViewport(html: string, metas: Map<string, string>, warnings: Finding[]): void {
+  if (!metas.has("viewport")) return;
+  const m = /<meta\b[^>]*\bname\s*=\s*["']?viewport["']?[^>]*>/i.exec(blankHtmlComments(html));
+  const finding: Finding = {
+    code: "VIEWPORT",
+    message: '<meta name="viewport"> を自分で書いています。SDK のものに置き換えられます。',
+    fix: '<meta name="viewport"> は書かないでください。画面は 100vw × 100vh に収めれば足ります。',
+  };
+  if (m?.index !== undefined) finding.line = lineAt(html, m.index);
+  warnings.push(finding);
 }
 
 const ASSET_RE = /^\.\/assets\/[A-Za-z0-9][A-Za-z0-9._-]*$/;

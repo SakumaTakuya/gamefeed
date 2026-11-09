@@ -22,6 +22,7 @@ import {
   type Mode,
   type Outcome,
   type SessionEvent,
+  TARGET_MIN,
   VERB_MAX_CHARS,
 } from "@gamefeed/domain";
 import * as v from "valibot";
@@ -88,6 +89,7 @@ const ready = v.strictObject({
   verb,
   input: v.picklist(ACCEPTED_INPUTS as readonly InputKind[]),
   duration,
+  target: v.pipe(v.number(), v.integer(), v.minValue(TARGET_MIN)),
 });
 
 const log = v.strictObject({
@@ -198,7 +200,13 @@ export function toSessionEvent(m: Message): SessionEvent {
     case "ready":
       return {
         type: "ready",
-        meta: { title: m.title, verb: m.verb, input: m.input, duration: m.duration },
+        meta: {
+          title: m.title,
+          verb: m.verb,
+          input: m.input,
+          duration: m.duration,
+          target: m.target,
+        },
       };
     case "init":
       return { type: "init", sessionId: m.session_id, mode: m.mode, timeLimit: m.time_limit };
