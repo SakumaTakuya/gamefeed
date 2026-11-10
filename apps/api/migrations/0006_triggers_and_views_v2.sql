@@ -105,6 +105,19 @@ CREATE TRIGGER reports_anonymous_weight
   BEFORE INSERT ON reports
   FOR EACH ROW EXECUTE FUNCTION reports_anonymous_weight_zero();--> statement-breakpoint
 
+-- run#A.2: ランの mode は作成後に変わらない（変われば I12 の miss_below の前提が崩れる）
+CREATE FUNCTION runs_reject_mode_change() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.mode <> OLD.mode THEN
+    RAISE EXCEPTION 'runs.mode は変更できない（run#A.2、dm#A.5 I12）: % -> %', OLD.mode, NEW.mode
+      USING ERRCODE = 'check_violation';
+  END IF;
+  RETURN NEW;
+END $$;--> statement-breakpoint
+CREATE TRIGGER runs_mode_immutable
+  BEFORE UPDATE OF mode ON runs
+  FOR EACH ROW EXECUTE FUNCTION runs_reject_mode_change();--> statement-breakpoint
+
 -- I12: miss_below が非 NULL なら、そのランは endless（run_id と is_new = false は CHECK）
 CREATE FUNCTION sessions_check_miss_below_run() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE

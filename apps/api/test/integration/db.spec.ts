@@ -535,6 +535,22 @@ dbSuite("data-model.md データモデル", () => {
       });
     });
 
+    it("runs.mode は作成後に変えられない（endless のまま miss_below の前提を守る）", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        await seedRun(tx);
+        await tx.insert(s.themes).values({ id: "t-1", slug: "x", title: "x" });
+        await rejects(
+          tx,
+          (t) =>
+            t.execute(
+              sql`update runs set mode = 'daily', theme_id = 't-1', date = '2026-11-10', new_index = 0 where id = 'r-1'`,
+            ),
+          /runs.mode/,
+        );
+      });
+    });
+
     it("turn は run_id と同時にだけ入る", async () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
