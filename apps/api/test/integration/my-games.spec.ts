@@ -261,11 +261,37 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     expect(kvValues.get(l.post_id)?.status).toBe("no");
   });
 
-  it("mo#A.2 unpublished / draft には何もせず成功（状態も KV も変えない）", async () => {
+  it("se#A.5 KV に書けなかったら storage_failed（DB は unpublished のまま）。呼び直すと KV だけ書き直して成功する", async () => {
+    const p = await pub({ html: gameHtml(), publish: true });
+    const working = deps.kv;
+    let attempts = 0;
+    deps = {
+      ...deps,
+      kv: {
+        put: async () => {
+          attempts++;
+          throw new Error("KV に届かない（fake）");
+        },
+      },
+    };
+    const failed = await unpub(p.post_id);
+    expect(failed.ok ? null : failed.error.code).toBe("storage_failed");
+    expect(attempts).toBe(3);
+    expect(await baseStatus(p.post_id)).toBe("unpublished");
+    expect(kvValues.get(p.post_id)?.status).toBe("ok");
+
+    deps = { ...deps, ...(working ? { kv: working } : {}) };
+    expect(await unpub(p.post_id)).toEqual({
+      ok: true,
+      value: { post_id: p.post_id, status: "unpublished" },
+    });
+    expect(kvValues.get(p.post_id)?.status).toBe("no");
+  });
+
+  it("mo#A.2 unpublished / draft には何もせず成功（状態を変えず、KV は同じ値を書き直すだけ）", async () => {
     const d = await pub({ html: gameHtml({ salt: "d" }) });
     const p = await pub({ html: gameHtml({ salt: "p" }), publish: true });
     await unpub(p.post_id);
-    const puts = kvPuts;
     expect(await unpub(p.post_id)).toEqual({
       ok: true,
       value: { post_id: p.post_id, status: "unpublished" },
@@ -275,8 +301,9 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
       value: { post_id: d.post_id, status: "draft" },
     });
     expect(await baseStatus(d.post_id)).toBe("draft");
-    expect(kvPuts).toBe(puts);
+    expect(await baseStatus(p.post_id)).toBe("unpublished");
     expect(kvValues.get(d.post_id)?.status).toBe("draft");
+    expect(kvValues.get(p.post_id)?.status).toBe("no");
   });
 
   it("mo#A.2 制限中の投稿も unpublished にできる。制限（indiv_restricted）と通報は触らない", async () => {

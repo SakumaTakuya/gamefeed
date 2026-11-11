@@ -414,17 +414,20 @@ function errorOut(f: Finding): { code: string; message: string; fix: string; lin
 
 /**
  * KV `serve:<post_id>` を書く（se#A.5）。DB のコミット後に呼ぶ。
- * 失敗はリトライし、駄目なら日次の突き合わせに任せる（例外にしない）。
+ * 失敗はリトライし、それでも駄目なら false を返す（例外にしない）。
+ * 配信を始める側（publish_game）は false でも成功として返してよい（配信されないだけで、日次の突き合わせで直る）。
+ * 配信を止める側（unpublish_game など）は false を呼び出し元に伝える（古い `ok` が残ると配信が続く）。
  */
-export async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<void> {
+export async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<boolean> {
   for (let i = 0; i < KV_ATTEMPTS; i++) {
     try {
       await kv.put(postId, value);
-      return;
+      return true;
     } catch (e) {
       if (i === KV_ATTEMPTS - 1) console.error(`KV serve:${postId} の書き込みに失敗した`, e);
     }
   }
+  return false;
 }
 
 /** 投稿状態（dm#A.4 の `post_status` ビュー） */
