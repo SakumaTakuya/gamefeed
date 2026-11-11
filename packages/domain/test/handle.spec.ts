@@ -20,16 +20,12 @@ describe("R-mc.A5-1 handle の生成（mc#A.5）", () => {
     expect(handleBase(name, id)).toBe(expected);
   });
 
-  it.each([
-    ["佐久間"],
-    ["a"],
-    ["ab"],
-    [""],
-    ["!!!"],
-    ["佐 a 久"],
-  ])("R-mc.A5-1 %j は 3 文字未満・空なので user-<id 末尾 6 文字（小文字）>", (name) => {
-    expect(handleBase(name, id)).toBe("user-tvwxyz");
-  });
+  it.each([["佐久間"], ["a"], ["ab"], [""], ["!!!"], ["佐 a 久"]])(
+    "R-mc.A5-1 %j は 3 文字未満・空なので user-<id 末尾 6 文字（小文字）>",
+    (name) => {
+      expect(handleBase(name, id)).toBe("user-tvwxyz");
+    },
+  );
 
   it("R-mc.A5-1 20 文字に切り、切った後ろの - も除く", () => {
     expect(handleBase("abcdefghijklmnopqrstuvwxyz", id)).toBe("abcdefghijklmnopqrst");
