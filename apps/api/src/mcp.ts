@@ -1,59 +1,90 @@
 /**
- * MCP サーバ（spec#9）。#5 の PoC では `publish_game` のダミーだけを公開し、
- * 「OAuth 2.1 で接続したクライアントがツールを呼べる」ことを確かめる。
- * 本実装（静的解析・DB 書き込み・レート制限・list_my_games・unpublish_game・gf://guide）は plan#9（W5）。
+ * MCP サーバ（mcp.md）。ツールの入出力の形と説明文だけを持ち、処理は API の関数（publish.ts）を同じプロセスで呼ぶ。
+ * `list_my_games` / `unpublish_game` / `gf://guide` は #88。
  */
 
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
+import { type PublishDeps, publishGame, type ToolError } from "./publish.ts";
 
-export const MCP_SERVER_INFO = { name: "gamefeed", version: "0.0.0-poc" } as const;
+/** mc#A.2: `version` はデプロイのコミット短縮ハッシュ（Vercel が入れる環境変数。ローカルは dev） */
+export const MCP_SERVER_INFO = {
+  name: "gamefeed",
+  version: process.env.VERCEL_GIT_COMMIT_SHA?.slice(0, 7) ?? "dev",
+} as const;
 
-/** リクエストごとに新しい McpServer を作る（Vercel の無状態関数に合わせる）。 */
-export function createMcpServer(ctx: { userId?: string | undefined; baseURL: string }): McpServer {
+/** mc#A.4（暫定）。AI がこれだけを読んで正しく動けるように書く。変えるときは下書き → 試遊 → 公開の流れを変えない */
+export const PUBLISH_GAME_DESCRIPTION = [
+  "GameFeed にミクロゲームを投稿する。先にリソース `gf://guide` を読み、その規約（1 ファイルの HTML、`gf:*` メタ、`GF` SDK、使えない API）に沿って HTML を書くこと。",
+  "初回は下書きになり、`post_id` と試遊 URL が返る。作者に試遊 URL を開いて遊んでもらい、「診断をコピー」で貼られた文に従って直す。直したら同じ `post_id` を渡して再投稿する（内容が置き換わる）。",
+  "`rejected` で返ったら `errors[].fix` のとおりに直して再投稿する。`warnings` は通るが、作者に伝える。",
+  "作者が公開を望んだときだけ `publish: true` を付ける。公開後は内容を変えられない。直すなら新しい下書きにする。",
+  "投稿は GameFeed 上でのリミックス（改変と再投稿、元作者の表示つき）を許諾したものとして扱う。作者に伝えておくこと。",
+].join("\n");
+
+export interface McpContext {
+  /** アクセストークンの `sub`（= `auth_user.id` = `users.id`）。requireMcpAuth を通っていれば必ずある */
+  userId?: string | undefined;
+  publish: PublishDeps;
+}
+
+type ToolResult = {
+  content: { type: "text"; text: string }[];
+  structuredContent: Record<string, unknown>;
+  isError?: boolean;
+};
+
+/** 成功。`structuredContent` を読まないクライアントのために、同じ JSON を text にも入れる */
+const success = (value: object): ToolResult => ({
+  content: [{ type: "text", text: JSON.stringify(value) }],
+  structuredContent: value as Record<string, unknown>,
+});
+
+/** mc#A.10: ツールの失敗は `isError: true` と `structuredContent.{code, message, errors?, reason?}` */
+const failure = (error: ToolError): ToolResult => ({ ...success(error), isError: true });
+
+/** リクエストごとに新しい McpServer を作る（stateless。mc#B.6）。 */
+export function createMcpServer(ctx: McpContext): McpServer {
   const server = new McpServer(MCP_SERVER_INFO);
 
   server.registerTool(
     "publish_game",
     {
-      title: "Publish a game to GameFeed (PoC)",
-      description:
-        "【PoC・ダミー】GameFeed にミクロゲームを投稿する。この版は何も保存せず、受け取った title と" +
-        " HTML のサイズをそのまま返す。接続確認（#5）用。",
+      title: "GameFeed に投稿する",
+      description: PUBLISH_GAME_DESCRIPTION,
+      // 長さの検査は publishGame が行い、`invalid` として返す（mc#A.10）。ここは型だけ
       inputSchema: z.object({
-        html: z.string().describe("ゲームの index.html 全文（単一ファイル）"),
-        title: z.string().min(1).describe("ゲームのタイトル"),
-        prompt: z.string().describe("このゲームを作ったときのプロンプト"),
+        html: z.string().describe("ゲームの index.html 全文（1 ファイル、128 KB まで）"),
+        title: z.string().optional().describe("題。省略時は <title>。1〜40 文字"),
+        prompt: z.string().optional().describe("作者が AI に頼んだ文。1000 文字まで"),
+        post_id: z
+          .string()
+          .optional()
+          .describe("置き換える下書きの post_id。前回の publish_game が返したもの"),
+        publish: z.boolean().optional().describe("true でそのまま公開する。既定は false（下書き）"),
       }),
     },
-    async ({ html, title, prompt }) => {
-      const postId = `gf:poc-${Date.now().toString(36)}`;
-      const result = {
-        post_id: postId,
-        url: `${ctx.baseURL}/p/${encodeURIComponent(postId)}`,
-        warnings: ["この投稿はダミーです（#5 PoC）。保存されていません。"],
-        missing_assets: [],
-        echo: {
-          title,
-          html_bytes: new TextEncoder().encode(html).byteLength,
-          prompt_chars: prompt.length,
-        },
-        user_id: ctx.userId ?? null,
-      };
-      return {
-        content: [{ type: "text", text: JSON.stringify(result) }],
-        structuredContent: result,
-      };
+    async (input) => {
+      const result = await publishGame(ctx.publish, requireUser(ctx), input);
+      if (result.ok) return success(result.value);
+      // banned はツールの結果にしない（mc#A.2: トークンを無効として 401。HTTP 層の検査は moderation の実装で入れる）
+      if (result.error.code === "banned") throw new Error("unauthorized");
+      return failure(result.error);
     },
   );
 
   return server;
 }
 
+function requireUser(ctx: McpContext): string {
+  if (!ctx.userId) throw new Error("unauthorized");
+  return ctx.userId;
+}
+
 /** fetch 互換の MCP ハンドラ。2025 世代（セッション型）と 2026-07-28 の両方を無状態で受ける。 */
-export function createMcpFetchHandler(baseURL: string) {
+export function createMcpFetchHandler(publish: PublishDeps) {
   return createMcpHandler((req) =>
-    createMcpServer({ userId: userIdFromAuthInfo(req.authInfo), baseURL }),
+    createMcpServer({ userId: userIdFromAuthInfo(req.authInfo), publish }),
   );
 }
 

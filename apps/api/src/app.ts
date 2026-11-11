@@ -12,6 +12,7 @@ import { type ApiConfig, configFromEnv } from "./config.ts";
 import { createDb } from "./db/client.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
+import type { PublishDeps } from "./publish.ts";
 
 // REST API・Better Auth・MCP サーバはすべてこの app に載せる。
 // Vercel からは /api/index.ts 経由で、ローカルは src/dev.ts から起動する。
@@ -27,6 +28,8 @@ import { consentPage, signInPage } from "./pages.ts";
 export interface AppDeps {
   auth: Auth;
   baseURL: string;
+  /** `publish_game` が使うもの（DB・R2・KV・時計）。R2 / KV が無ければツールは `not_configured` を返す（mc#A.2） */
+  publish: PublishDeps;
 }
 
 export type AppInput = AppDeps | { missing: string[] };
@@ -45,7 +48,7 @@ export function createApp(input: AppInput): Hono {
     return app;
   }
 
-  const { auth, baseURL } = input;
+  const { auth, baseURL, publish } = input;
   const authHandler = (req: Request) => auth.handler(req);
 
   app.all(`${AUTH_BASE_PATH}/*`, (c) => authHandler(c.req.raw));
@@ -54,7 +57,7 @@ export function createApp(input: AppInput): Hono {
   app.get(SIGN_IN_PAGE, (c) => c.html(signInPage()));
   app.get(CONSENT_PAGE, (c) => c.html(consentPage()));
 
-  const mcpHandler = createMcpFetchHandler(baseURL);
+  const mcpHandler = createMcpFetchHandler(publish);
   const protectedMcp = requireMcpAuth(
     auth,
     (req, claims) =>
@@ -91,7 +94,10 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
     db,
     google: config.google,
   });
-  return { auth, baseURL: config.baseURL };
+  // SPA と API は同じ Vercel プロジェクトなので、試遊 URL・ゲームページの元（mc#A.9）は baseURL と同じ。
+  // R2 / KV の実体は #89 で繋ぐ。それまで publish_game は not_configured を返す
+  const publish: PublishDeps = { db, appOrigin: config.baseURL, now: () => new Date() };
+  return { auth, baseURL: config.baseURL, publish };
 }
 
 export const app = createAppFromEnv(process.env);
