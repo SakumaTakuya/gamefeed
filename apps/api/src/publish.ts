@@ -26,10 +26,7 @@ export const DRAFT_LIMIT = 10;
 /** `title` / `prompt` の上限（文字数。mc#A.3、暫定） */
 export const TITLE_MAX = 40;
 export const PROMPT_MAX = 1000;
-/**
- * 「当日」の境界。仕様に明記がないので JST の 0 時とする（暫定。#91 で提案中）。
- * 対象が日本の大学生で、デイリーのお題も同じ境界になる見込みのため。
- */
+/** 「当日」の境界は JST の 0 時（mc#A.6 の 4、B.8） */
 export const DAY_OFFSET_MS = 9 * 60 * 60 * 1000;
 /** KV の書き込みを試す回数（mc#A.6 の 12「失敗はリトライ」。それでも駄目なら日次の突き合わせに任せる） */
 export const KV_ATTEMPTS = 3;
@@ -109,19 +106,41 @@ export interface ToolError {
   reason?: "drafts" | "rate";
 }
 
-export type PublishResult = { ok: true; value: PublishOutput } | { ok: false; error: ToolError };
+export type ToolFailure = { ok: false; error: ToolError };
+export type ToolOutcome<T> = { ok: true; value: T } | ToolFailure;
+export type PublishResult = ToolOutcome<PublishOutput>;
 
-const fail = (
+export const fail = (
   code: ToolErrorCode,
   message: string,
   extra: Partial<ToolError> = {},
-): PublishResult => ({
+): ToolFailure => ({
   ok: false,
   error: { code, message, ...extra },
 });
 
-const NOT_FOUND =
+/** 他人の投稿と存在しない ID で同じ応答にする（C6） */
+export const NOT_FOUND =
   "その post_id の投稿は見つかりません。list_my_games で自分の投稿を確認してください。";
+
+/**
+ * ツールの先頭（mc#A.5、A.6 の 1）: `ensureUser` し、`users` を `FOR SHARE` して status を見る（I3: BAN と直列化）。
+ * `banned` は失敗を返す。`post_restricted` の扱いはツールごとに違うので呼び出し側が見る。
+ */
+export async function lockUser(
+  tx: Db,
+  userId: string,
+): Promise<{ status: "active" | "post_restricted"; trustScore: number } | ToolFailure> {
+  await ensureUser(tx, userId);
+  const [me] = await tx
+    .select({ status: users.status, trustScore: users.trustScore })
+    .from(users)
+    .where(eq(users.id, userId))
+    .for("share");
+  if (!me) throw new Error(`lockUser: users に ${userId} がいない`);
+  if (me.status === "banned") return fail("banned", "このアカウントは利用できません。");
+  return { status: me.status, trustScore: me.trustScore };
+}
 
 // ---- 本体 ---------------------------------------------------------------------------------
 
@@ -168,18 +187,12 @@ export async function publishGame(
     const tx = txn as unknown as Db;
 
     // 1. ensureUser と users.status（I3: FOR SHARE で BAN と直列化する）
-    await ensureUser(tx, userId);
+    const me = await lockUser(tx, userId);
+    if ("ok" in me) return me;
     // 同じユーザーの publish_game を直列にする。下書きの件数（I11）と同一内容の確認が並行して抜けないように
     await tx.execute(
       sql`select pg_advisory_xact_lock(hashtextextended(${`publish:${userId}`}, 0))`,
     );
-    const [me] = await tx
-      .select({ status: users.status, trustScore: users.trustScore })
-      .from(users)
-      .where(eq(users.id, userId))
-      .for("share");
-    if (!me) throw new Error(`publishGame: users に ${userId} がいない`);
-    if (me.status === "banned") return fail("banned", "このアカウントは利用できません。");
     if (me.status === "post_restricted") {
       return fail(
         "post_restricted",
@@ -361,17 +374,7 @@ export async function publishGame(
   }
 
   // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら日次の突き合わせに任せる
-  const value: ServeValue = { hash, status: serveStatus(committed.status) };
-  for (let i = 0; i < KV_ATTEMPTS; i++) {
-    try {
-      await kv.put(committed.postId, value);
-      break;
-    } catch (e) {
-      if (i === KV_ATTEMPTS - 1) {
-        console.error(`publishGame: KV serve:${committed.postId} の書き込みに失敗した`, e);
-      }
-    }
-  }
+  await writeServe(kv, committed.postId, { hash, status: serveStatus(committed.status) });
 
   return {
     ok: true,
@@ -404,8 +407,23 @@ function errorOut(f: Finding): { code: string; message: string; fix: string; lin
   };
 }
 
+/**
+ * KV `serve:<post_id>` を書く（se#A.5）。DB のコミット後に呼ぶ。
+ * 失敗はリトライし、駄目なら日次の突き合わせに任せる（例外にしない）。
+ */
+export async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<void> {
+  for (let i = 0; i < KV_ATTEMPTS; i++) {
+    try {
+      await kv.put(postId, value);
+      return;
+    } catch (e) {
+      if (i === KV_ATTEMPTS - 1) console.error(`KV serve:${postId} の書き込みに失敗した`, e);
+    }
+  }
+}
+
 /** 投稿状態（dm#A.4 の `post_status` ビュー） */
-async function statusOf(tx: Db, postId: string): Promise<PostStatus> {
+export async function statusOf(tx: Db, postId: string): Promise<PostStatus> {
   const rows = (await tx.execute(
     sql`select status from post_status where id = ${postId}`,
   )) as unknown as { status: PostStatus }[];

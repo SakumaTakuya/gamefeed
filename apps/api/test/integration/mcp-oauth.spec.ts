@@ -280,7 +280,11 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
     expect(provider.savedTokens?.expires_in).toBeGreaterThanOrEqual(ACCESS_TOKEN_EXPIRES_IN - 5);
 
     const tools = await client.listTools();
-    expect(tools.tools.map((t) => t.name)).toEqual(["publish_game"]);
+    expect(tools.tools.map((t) => t.name).sort()).toEqual([
+      "list_my_games",
+      "publish_game",
+      "unpublish_game",
+    ]);
 
     const result = await client.callTool({
       name: "publish_game",
@@ -314,7 +318,7 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
         authProvider: provider,
       }),
     );
-    expect((await again.listTools()).tools).toHaveLength(1);
+    expect((await again.listTools()).tools).toHaveLength(3);
     await again.close();
   }, 30_000);
 
