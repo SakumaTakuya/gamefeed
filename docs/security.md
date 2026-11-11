@@ -162,7 +162,7 @@ Referrer-Policy: no-referrer
 | トークンの検証 | `requireMcpAuth` が JWKS（`/api/auth/jwks`）で検証する。トークンなしは 401 と `WWW-Authenticate`（R-9-1） |
 | 運営 | `users.id` が `MODERATOR_IDS`（環境変数）に含まれるユーザーだけが運営画面と運営の操作を使える。MVP ではオーナーだけ。ロールの列は持たない |
 | 秘密情報 | `DATABASE_URL`、`BETTER_AUTH_SECRET`、`GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET`、`GAMES_SIGNING_SECRET`、`R2_*`、`CLOUDFLARE_API_TOKEN`。Vercel の環境変数と GitHub Secrets にだけ置く。リポジトリには `.env.example`（キー名だけ）。不足時は 503 `not_configured`（`status.md`） |
-| 内部 API | API → Worker の KV 書き込みは Cloudflare API（`CLOUDFLARE_API_TOKEN`、KV 限定）。Worker → API の呼び出しはない |
+| 内部 API | API → Worker の KV 書き込みは Cloudflare API（`CLOUDFLARE_API_TOKEN`、KV 限定。`CLOUDFLARE_ACCOUNT_ID` と `KV_NAMESPACE_ID` で namespace を指す。`mcp.md` A.8）。Worker → API の呼び出しはない |
 
 ## A.9 `/lib/` の運用
 

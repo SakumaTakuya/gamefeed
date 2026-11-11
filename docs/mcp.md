@@ -32,7 +32,7 @@
 | トークンなし | 401 と `WWW-Authenticate: Bearer resource_metadata=…`（R-9-1） |
 | `users.status` | `banned` はトークンを無効として 401。`post_restricted` は `publish_game` だけ error `post_restricted`（`moderation.md` A.5） |
 | サーバ情報 | `name: "gamefeed"`、`version` はデプロイのコミット短縮ハッシュ |
-| 未設定 | `DATABASE_URL` / `R2_*` がなければ `publish_game` は 503 `not_configured`。他は DB だけで動く |
+| 未設定 | `DATABASE_URL` / `R2_*` / KV の変数（A.8）がなければ `publish_game` は 503 `not_configured`（文面に足りない変数名を入れる。値は入れない）。他は DB だけで動く。`unpublish_game` は KV が未設定なら KV を書かずに成功する |
 
 ## A.3 ツールとリソース
 
@@ -56,7 +56,7 @@
 
 ### `list_my_games`
 
-入力なし。自分の投稿を `updated_at` の降順で最大 50 件。
+入力なし。自分の投稿を `updated_at` の降順で最大 50 件。MCP の `structuredContent` はオブジェクトでなければならないので、一覧は `{games: [...]}` の `games` に入れる。
 
 | 出力（1 件） | 意味 |
 | --- | --- |
@@ -64,7 +64,7 @@
 | `calibration` | `uncalibrated` / `calibrated` / `review` / `invalid` |
 | `plays`, `likes` | `post_stats.n` と、`likes` を `post_id` で数えた件数 |
 | `calibration_remaining` | 校正までの残りプレイ数（`uncalibrated` のとき。20 − `n`） |
-| `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}` |
+| `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}`。`resolution = dismissed` の通報は数えない（B.9） |
 | `published_at`, `updated_at` | ISO 8601 |
 
 ### `unpublish_game`
@@ -73,11 +73,11 @@
 | --- | --- |
 | `post_id` | string。振る舞いは `moderation.md` A.2 の `unpublish` の行（`limited` / `public` → `unpublished`、`draft` / `unpublished` は何もせず成功、`removed` は `invalid_state`、他人は `not_found`） |
 
-出力は `{post_id, status}`。
+出力は `{post_id, status}`。`posts.updated_at` は変えない（内容の更新ではなく、下書きの自動削除の基準なので）。
 
 ### リソース `gf://guide`
 
-`game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。ビルド時にリポジトリから取り込み、サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
+`game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。本文は `pnpm --filter @gamefeed/api gen:guide` がリポジトリから `apps/api/src/guide.gen.ts` に取り込み、コミットする。`game-contract.md` の A 部とずれていれば CI のテストが落ちる（B.9）。サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
 
 ## A.4 説明文（AI が読む。暫定）
 
@@ -161,7 +161,7 @@
 | --- | --- |
 | 保存先 | Cloudflare R2 `gamefeed-games`、キー `games/{hash}.html`（`data-model.md` A.6） |
 | 書き方 | S3 互換 API に SigV4 で `PutObject` だけ。AWS SDK は入れない（B.4）。`Content-Type: text/html; charset=utf-8`、`If-None-Match: *` は付けない（同じ内容の上書きは無害） |
-| 環境変数 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`（`https://<account_id>.r2.cloudflarestorage.com`）, `R2_BUCKET`。Vercel と GitHub Secrets にだけ置く |
+| 環境変数 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`（`https://<account_id>.r2.cloudflarestorage.com`）, `R2_BUCKET`。KV（`security.md` A.5）は `CLOUDFLARE_API_TOKEN`（Workers KV Storage の Edit だけ）, `CLOUDFLARE_ACCOUNT_ID`, `KV_NAMESPACE_ID`。Vercel と GitHub Secrets にだけ置く |
 | テスト | fake のストレージ（メモリ）で回す。R2 への実書き込みは plan#2 の配信と合わせて手動（manual） |
 | 読む側 | 配信 Worker は R2 バインディングで読む（`security.md` A.5）。API は読まない |
 
@@ -256,6 +256,12 @@ Vercel の関数は呼び出しごとに別のインスタンスで動きうる�
 件数を `posts.created_at` で数えるのは、新しい表も列も要らないため。置き換えは行が増えないので自然に数えない。穴は、下書きを消すと行が消えて枠が戻ること（未解決）。
 
 `title` を省略して `<title>` が 40 文字を超えるときに切り詰めないのは、黙って変えた題が一覧に並ぶより、AI に短い題を渡させる方が作者の意図に合うため。`<title>` 自体の長さは `game-contract.md` で縛らない（ゲーム内の表示は作者のもの）。文字数を書記素クラスタで数えるのは `gf:verb`（`game-contract.md` A.3）と揃えるため。
+
+## B.9 `restricted_reason` の数え方と `gf://guide` の取り込み方
+
+`restricted_reason` から `dismissed` を除くのは、運営が退けた通報を「制限の理由」として作者に見せると、直すべきでない点を直させてしまうため。`open` と `upheld` は数える（自動制限は `open` の重みで起きる）。
+
+`gf://guide` をビルド時に取り込む案（esbuild のローダで `.md` を束ねる）は、Vercel のビルド・vitest・tsx の 3 つで同じ設定が要り、どれかで外れると本文が空のまま動く。生成物をコミットして CI で文書との一致を見れば、どの実行環境でも同じ本文になり、ずれは PR で見つかる。代わりに、`game-contract.md` の A 部を直す PR は `gen:guide` の実行が要る。
 
 ---
 
