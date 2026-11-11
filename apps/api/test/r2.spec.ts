@@ -68,7 +68,9 @@ describe("createR2Storage（mc#A.8）", () => {
     const calls: { url: string; init: RequestInit }[] = [];
     const fetchImpl = async (url: string | URL | Request, init?: RequestInit) => {
       calls.push({ url: String(url), init: init ?? {} });
-      return new Response(status === 200 ? "" : "<Error><Code>AccessDenied</Code></Error>", { status });
+      return new Response(status === 200 ? "" : "<Error><Code>AccessDenied</Code></Error>", {
+        status,
+      });
     };
     return { calls, fetchImpl };
   }
@@ -81,7 +83,9 @@ describe("createR2Storage（mc#A.8）", () => {
 
     expect(calls).toHaveLength(1);
     const call = calls[0];
-    expect(call?.url).toBe("https://acct123.r2.cloudflarestorage.com/gamefeed-games/games/abc123.html");
+    expect(call?.url).toBe(
+      "https://acct123.r2.cloudflarestorage.com/gamefeed-games/games/abc123.html",
+    );
     expect(call?.init.method).toBe("PUT");
     expect(call?.init.body).toBe(html);
     const h = new Headers(call?.init.headers);
@@ -120,6 +124,8 @@ describe("createR2Storage（mc#A.8）", () => {
       "games/k.html",
       "x",
     );
-    expect(calls[0]?.url).toBe("https://acct123.r2.cloudflarestorage.com/gamefeed-games/games/k.html");
+    expect(calls[0]?.url).toBe(
+      "https://acct123.r2.cloudflarestorage.com/gamefeed-games/games/k.html",
+    );
   });
 });

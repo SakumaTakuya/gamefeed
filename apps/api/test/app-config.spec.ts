@@ -60,7 +60,11 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
       endpoint: "https://acct.r2.cloudflarestorage.com",
       bucket: "gamefeed-games",
     });
-    expect(full.ok && full.config.kv).toEqual({ apiToken: "token", accountId: "acct", namespaceId: "ns" });
+    expect(full.ok && full.config.kv).toEqual({
+      apiToken: "token",
+      accountId: "acct",
+      namespaceId: "ns",
+    });
     expect(full.ok && full.config.storageMissing).toEqual([]);
 
     const { R2_BUCKET: _b, KV_NAMESPACE_ID: _n, ...partial } = storageEnv;

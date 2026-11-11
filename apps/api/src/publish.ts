@@ -60,6 +60,8 @@ export interface PublishDeps {
   /** 未設定（`R2_*` なし）なら `not_configured`（mc#A.2） */
   storage?: GameStorage;
   kv?: ServeKv;
+  /** 未設定のときに足りない環境変数の名前（`not_configured` の文に入れる。値は入れない） */
+  storageMissing?: string[];
   /** 試遊 URL・ゲームページの元（末尾スラッシュなし）。mc#A.9 */
   appOrigin: string;
   now: () => Date;
@@ -159,9 +161,12 @@ export async function publishGame(
 ): Promise<PublishResult> {
   const { db, storage, kv } = deps;
   if (!storage || !kv) {
+    const names = deps.storageMissing?.length
+      ? `（未設定: ${deps.storageMissing.join(", ")}）`
+      : "";
     return fail(
       "not_configured",
-      "GameFeed の保存先がまだ設定されていません。運営に連絡してください。",
+      `GameFeed の保存先がまだ設定されていません。運営に連絡してください。${names}`,
     );
   }
 
