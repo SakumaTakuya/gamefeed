@@ -1,6 +1,6 @@
 /**
  * R-9-1: OAuth 2.1 の DCR・PKCE・`.well-known` を提供し、MCP 公式 SDK のクライアントで
- * DCR → 認可 → 同意 → トークン → `tools/list` → `publish_game`（ダミー）まで通る（spec#9、plan#9、#5）。
+ * DCR → 認可 → 同意 → トークン → `tools/list` → `publish_game` まで通る（mc#A.2、plan#9、#5）。
  *
  * 本物を使う範囲（docs/testing.md）: Postgres、Better Auth、@better-auth/mcp、MCP SDK v2 のクライアントは
  * すべて本物で、実際の HTTP（@hono/node-server、空きポート）を通す。差し替えるのは「人がブラウザで
@@ -20,6 +20,7 @@ import {
   UnauthorizedError,
 } from "@modelcontextprotocol/client";
 import { testUtils } from "better-auth/plugins";
+import { eq } from "drizzle-orm";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.ts";
 import {
@@ -31,6 +32,8 @@ import {
   SIGN_IN_PAGE,
 } from "../../src/auth.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
+import { posts, users } from "../../src/db/schema.ts";
+import { gameHtml } from "../helpers/game-html.ts";
 
 const url = process.env.DATABASE_URL;
 if (!url) {
@@ -119,7 +122,18 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
       db,
       extraPlugins: [testUtils()],
     });
-    const app = createApp({ auth, baseURL });
+    const app = createApp({
+      auth,
+      baseURL,
+      // R2 / KV は fake（mc#A.8）。ツールの中身は publish.spec.ts / mcp-tools.spec.ts で見る
+      publish: {
+        db,
+        storage: { put: async () => {} },
+        kv: { put: async () => {} },
+        appOrigin: baseURL,
+        now: () => new Date(),
+      },
+    });
     fetchImpl = async (req) => app.fetch(req);
 
     // Google ログインの代わり: 本物の Better Auth で user と session を作る
@@ -254,7 +268,7 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
     );
   });
 
-  it("公式 SDK クライアントで DCR → 認可 → 同意 → トークン → tools/list → publish_game（ダミー）が通る", async () => {
+  it("公式 SDK クライアントで DCR → 認可 → 同意 → トークン → tools/list → publish_game が通る", async () => {
     const provider = new TestOAuthProvider();
     const client = await connectWithOAuth(provider);
 
@@ -270,13 +284,22 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
 
     const result = await client.callTool({
       name: "publish_game",
-      arguments: { html: "<!doctype html><title>PoC</title>", title: "PoC", prompt: "接続確認" },
+      arguments: { html: gameHtml(), title: "PoC", prompt: "接続確認" },
     });
     expect(result.isError).toBeFalsy();
     const structured = result.structuredContent as Record<string, unknown>;
-    expect(structured.post_id).toMatch(/^gf:poc-/);
-    expect(structured.user_id).toBe(userId);
-    expect(structured.missing_assets).toEqual([]);
+    expect(structured).toMatchObject({
+      status: "draft",
+      url: `${baseURL}/draft/${structured.post_id}`,
+      reused: false,
+    });
+    // トークンの sub のユーザーの投稿として入り、users 行ができている（mc#A.2、A.5）
+    const [row] = await db
+      .select()
+      .from(posts)
+      .where(eq(posts.id, structured.post_id as string));
+    expect(row?.userId).toBe(userId);
+    expect(await db.select().from(users).where(eq(users.id, userId))).toHaveLength(1);
     await client.close();
   }, 30_000);
 

@@ -45,7 +45,13 @@ export interface Finding {
 }
 
 export type StaticCheckResult =
-  | { ok: true; meta: GameMeta; warnings: Finding[] }
+  | {
+      ok: true;
+      meta: GameMeta;
+      /** `gf:deterministic`。省略時は true。`false` と宣言したゲームは点数の検証対象外（gc#A.3、A.9） */
+      deterministic: boolean;
+      warnings: Finding[];
+    }
   | { ok: false; errors: Finding[]; warnings: Finding[] };
 
 /** UTF-8 でのバイト数。TextEncoder に依存しない（domain は lib を持たない） */
@@ -86,7 +92,8 @@ export function staticCheck(html: string): StaticCheckResult {
   ) {
     return { ok: false, errors, warnings };
   }
-  return { ok: true, meta: { title, verb, input, duration, target }, warnings };
+  const deterministic = metas.get("gf:deterministic")?.trim().toLowerCase() !== "false";
+  return { ok: true, meta: { title, verb, input, duration, target }, deterministic, warnings };
 }
 
 function checkSize(html: string, errors: Finding[]): void {

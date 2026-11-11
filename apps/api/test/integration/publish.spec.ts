@@ -93,7 +93,9 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
   async function addUser(id: string, name: string, trustScore?: number): Promise<void> {
     await db.insert(authUser).values({ id, name, email: `${id}@example.test` });
     if (trustScore !== undefined) {
-      await db.insert(s.users).values({ id, handle: `h-${id.slice(-6).toLowerCase()}`, trustScore });
+      await db
+        .insert(s.users)
+        .values({ id, handle: `h-${id.slice(-6).toLowerCase()}`, trustScore });
     }
   }
   const publish = (input: PublishInput, userId = ME) => publishGame(deps, userId, input);
@@ -125,7 +127,10 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
   };
   /** 下書きを直接入れる（上限のテスト用。publishGame を通さない） */
   async function seedDrafts(n: number, userId = ME, createdAt = new Date("2026-11-01T00:00:00Z")) {
-    await db.insert(s.users).values({ id: userId, handle: `seed-${userId.slice(-6).toLowerCase()}` }).onConflictDoNothing();
+    await db
+      .insert(s.users)
+      .values({ id: userId, handle: `seed-${userId.slice(-6).toLowerCase()}` })
+      .onConflictDoNothing();
     for (let i = 0; i < n; i++) {
       const hash = sha256(`seed-${userId}-${i}`);
       await db.insert(s.games).values({ hash, size: 10, r2Key: `games/${hash}.html`, meta: {} });
@@ -193,12 +198,24 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     await ok({ html: gameHtml() });
     const rows = await db.select().from(s.users);
     expect(rows).toHaveLength(1);
-    expect(rows[0]).toMatchObject({ id: ME, handle: "taku-sakuma", trustScore: 10, status: "active" });
+    expect(rows[0]).toMatchObject({
+      id: ME,
+      handle: "taku-sakuma",
+      trustScore: 10,
+      status: "active",
+    });
   });
 
   it("R-mc.A3-2 title / prompt を渡せばそれが入る", async () => {
-    const v = await ok({ html: gameHtml(), title: "  ぼくのゲーム ", prompt: "丸をタップするゲームを作って" });
-    expect(await post(v.post_id)).toMatchObject({ title: "ぼくのゲーム", prompt: "丸をタップするゲームを作って" });
+    const v = await ok({
+      html: gameHtml(),
+      title: "  ぼくのゲーム ",
+      prompt: "丸をタップするゲームを作って",
+    });
+    expect(await post(v.post_id)).toMatchObject({
+      title: "ぼくのゲーム",
+      prompt: "丸をタップするゲームを作って",
+    });
   });
 
   it("R-mc.A3-2 静的検査の警告は warnings に {code, message} で返り、games.meta.warnings にも残る（mc#A.6 の 9）", async () => {
@@ -293,7 +310,9 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     await addUser(OTHER, "Other", 30);
     expect((await ok({ html: gameHtml(), publish: true }, OTHER)).status).toBe("public");
     await db.update(s.users).set({ trustScore: 29 }).where(eq(s.users.id, OTHER));
-    expect((await ok({ html: gameHtml({ salt: "2" }), publish: true }, OTHER)).status).toBe("limited");
+    expect((await ok({ html: gameHtml({ salt: "2" }), publish: true }, OTHER)).status).toBe(
+      "limited",
+    );
   });
 
   it("R-mo.A2-1 下書きを post_id + publish: true で公開できる。公開後に trust_score が上がっても limited のまま", async () => {
@@ -320,7 +339,11 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(await count("posts")).toBe(1);
     expect(await count("games")).toBe(1);
     // 3 回目は title / prompt を省略したので既定値（<title> と空）
-    expect(await post(v1.post_id)).toMatchObject({ title: "まるタップ", prompt: "", updatedAt: now });
+    expect(await post(v1.post_id)).toMatchObject({
+      title: "まるタップ",
+      prompt: "",
+      updatedAt: now,
+    });
     // R2 には 1 回しか書かない（stored_at が入っている）
     expect(storage.puts).toBe(1);
   });
@@ -398,15 +421,20 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
   it("R-9-4 置き換え（post_id 指定）は数えない。6 回置き換えても通り、その後も新規を 4 件出せる", async () => {
     const v = await ok({ html: gameHtml({ salt: "base" }) });
-    for (let i = 0; i < 6; i++) await ok({ html: gameHtml({ salt: `rep${i}` }), post_id: v.post_id });
+    for (let i = 0; i < 6; i++)
+      await ok({ html: gameHtml({ salt: `rep${i}` }), post_id: v.post_id });
     for (let i = 0; i < 4; i++) await ok({ html: gameHtml({ salt: `more${i}` }) });
     expect((await err({ html: gameHtml({ salt: "over" }) })).reason).toBe("rate");
   });
 
   it("R-9-4 trust_score 30 以上は新規 30 件/日", async () => {
     await addUser(OTHER, "Other", 30);
-    for (let i = 0; i < 30; i++) await ok({ html: gameHtml({ salt: `p${i}` }), publish: true }, OTHER);
-    expect(await err({ html: gameHtml({ salt: "p30" }) }, OTHER)).toMatchObject({ code: "limit", reason: "rate" });
+    for (let i = 0; i < 30; i++)
+      await ok({ html: gameHtml({ salt: `p${i}` }), publish: true }, OTHER);
+    expect(await err({ html: gameHtml({ salt: "p30" }) }, OTHER)).toMatchObject({
+      code: "limit",
+      reason: "rate",
+    });
   });
 
   it("R-9-4 自分の下書きが 10 件あると新規は limit（reason: drafts）。置き換えと公開済みは数えない（I11）", async () => {
@@ -428,7 +456,9 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     await db.update(s.users).set({ status: "post_restricted" }).where(eq(s.users.id, ME));
     const before = storage.puts + kv.puts;
     expect((await err({ html: gameHtml({ salt: "x" }) })).code).toBe("post_restricted");
-    expect((await err({ html: gameHtml(), post_id: d.post_id, publish: true })).code).toBe("post_restricted");
+    expect((await err({ html: gameHtml(), post_id: d.post_id, publish: true })).code).toBe(
+      "post_restricted",
+    );
     expect(await count("posts")).toBe(1);
     expect((await post(d.post_id)).baseStatus).toBe("draft");
     expect(storage.puts + kv.puts).toBe(before);

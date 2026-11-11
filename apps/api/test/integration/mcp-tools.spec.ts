@@ -23,6 +23,13 @@ const APP = "https://app.example.test";
 const ME = "U00000000000000000000000ME";
 const OTHER = "U0000000000000000000OTHER1";
 
+/** ツール結果の最初の text ブロックを JSON として読む */
+function textJson(content: unknown): unknown {
+  const first = (content as { type: string; text?: string }[])[0];
+  if (first?.type !== "text" || first.text === undefined) throw new Error("text ブロックがない");
+  return JSON.parse(first.text);
+}
+
 dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
   let db: Db;
   let close: () => Promise<void>;
@@ -68,7 +75,9 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     expect(client.getServerVersion()?.name).toBe("gamefeed");
     const { tools } = await client.listTools();
     const tool = tools.find((t) => t.name === "publish_game");
-    expect(tool?.description).toMatch(/^GameFeed にミクロゲームを投稿する。先にリソース `gf:\/\/guide` を読み/);
+    expect(tool?.description).toMatch(
+      /^GameFeed にミクロゲームを投稿する。先にリソース `gf:\/\/guide` を読み/,
+    );
     expect(Object.keys(tool?.inputSchema.properties ?? {}).sort()).toEqual([
       "html",
       "post_id",
@@ -94,7 +103,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       reused: false,
     });
     // content のテキストにも同じ JSON が入る（structuredContent を読まないクライアント向け）
-    expect(JSON.parse((draft.content as [{ text: string }])[0].text)).toEqual(d);
+    expect(textJson(draft.content)).toEqual(d);
 
     const pub = await client.callTool({
       name: "publish_game",
@@ -123,7 +132,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     expect(e.errors).toEqual([
       expect.objectContaining({ code: "META_DURATION", fix: expect.stringContaining("180〜600") }),
     ]);
-    expect(JSON.parse((r.content as [{ text: string }])[0].text)).toEqual(e);
+    expect(textJson(r.content)).toEqual(e);
     await client.close();
   });
 
@@ -155,9 +164,15 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       return r.structuredContent as { code: string; reason?: string };
     };
     for (let i = 0; i < 5; i++) {
-      await client.callTool({ name: "publish_game", arguments: { html: gameHtml({ salt: `${i}` }) } });
+      await client.callTool({
+        name: "publish_game",
+        arguments: { html: gameHtml({ salt: `${i}` }) },
+      });
     }
-    expect(await call({ html: gameHtml({ salt: "6" }) })).toMatchObject({ code: "limit", reason: "rate" });
+    expect(await call({ html: gameHtml({ salt: "6" }) })).toMatchObject({
+      code: "limit",
+      reason: "rate",
+    });
 
     const pub = await client.callTool({
       name: "publish_game",
@@ -197,7 +212,10 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
 
     await db.execute(sql`update users set status = 'post_restricted' where id = ${ME}`);
     const client = await connect();
-    const p = await client.callTool({ name: "publish_game", arguments: { html: gameHtml({ salt: "n" }) } });
+    const p = await client.callTool({
+      name: "publish_game",
+      arguments: { html: gameHtml({ salt: "n" }) },
+    });
     expect(p.isError).toBe(true);
     expect((p.structuredContent as { code: string }).code).toBe("post_restricted");
     await client.close();
