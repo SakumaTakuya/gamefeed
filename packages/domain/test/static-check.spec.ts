@@ -572,3 +572,22 @@ describe("入力の前提", () => {
     });
   });
 });
+
+describe("gf:deterministic（gc#A.3）", () => {
+  const det = (head: string) => {
+    const r = staticCheck(html({ head }));
+    if (!r.ok) throw new Error("expected accept");
+    return r.deterministic;
+  };
+  it("省略すれば true", () => {
+    expect(det("")).toBe(true);
+  });
+  it('content="false" なら false（大文字・前後の空白は無視）', () => {
+    expect(det('<meta name="gf:deterministic" content="false">')).toBe(false);
+    expect(det('<meta name="gf:deterministic" content=" FALSE ">')).toBe(false);
+  });
+  it("false 以外の値は true", () => {
+    expect(det('<meta name="gf:deterministic" content="true">')).toBe(true);
+    expect(det('<meta name="gf:deterministic" content="">')).toBe(true);
+  });
+});
