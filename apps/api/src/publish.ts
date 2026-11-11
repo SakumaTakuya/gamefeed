@@ -28,7 +28,7 @@ export const TITLE_MAX = 40;
 export const PROMPT_MAX = 1000;
 /** 「当日」の境界は JST の 0 時（mc#A.6 の 4、B.8） */
 export const DAY_OFFSET_MS = 9 * 60 * 60 * 1000;
-/** KV の書き込みを試す回数（mc#A.6 の 12「失敗はリトライ」。それでも駄目なら日次の突き合わせに任せる） */
+/** KV の書き込みを試す回数（mc#A.6 の 12「失敗はリトライ」。それでも駄目なら `storage_failed`） */
 export const KV_ATTEMPTS = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -378,8 +378,14 @@ export async function publishGame(
       .where(and(eq(games.hash, hash), isNull(games.storedAt)));
   }
 
-  // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら日次の突き合わせに任せる
-  await syncServe(db, kv, committed.postId);
+  // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら storage_failed
+  if (!(await syncServe(db, kv, committed.postId))) {
+    // 投稿は DB と R2 にあるが、KV に無いので試遊も配信もできない。同じ入力の呼び直しで同じ投稿に戻り、KV だけ書き直す
+    return fail(
+      "storage_failed",
+      "ゲームは保存しましたが、配信の準備が終わっていません。同じ内容でもう一度 publish_game を呼んでください。",
+    );
+  }
 
   return {
     ok: true,
@@ -415,8 +421,7 @@ function errorOut(f: Finding): { code: string; message: string; fix: string; lin
 /**
  * KV `serve:<post_id>` を書く（se#A.5）。DB のコミット後に呼ぶ。
  * 失敗はリトライし、それでも駄目なら false を返す（例外にしない）。
- * 配信を始める側（publish_game）は false でも成功として返してよい（配信されないだけで、日次の突き合わせで直る）。
- * 配信を止める側（unpublish_game など）は false を呼び出し元に伝える（古い `ok` が残ると配信が続く）。
+ * 呼び出し側は false を `storage_failed` として返し、同じ入力の呼び直しで書き直せるようにする。
  */
 async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<boolean> {
   for (let i = 0; i < KV_ATTEMPTS; i++) {

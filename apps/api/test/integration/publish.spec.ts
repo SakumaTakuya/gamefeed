@@ -531,16 +531,26 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(html), status: "ok" });
   });
 
-  it("mc#A.6 の 12: KV の書き込みは失敗したらリトライする。3 回とも失敗しても投稿は成功として返す（日次の突き合わせで直る）", async () => {
+  it("mc#A.6 の 12: KV の書き込みは失敗したらリトライする。3 回とも失敗したら storage_failed で、同じ入力の呼び直しで KV だけ書き直す", async () => {
     kv.failures = 2;
     const v = await ok({ html: gameHtml() });
     expect(kv.puts).toBe(3);
     expect(kv.values.get(v.post_id)?.status).toBe("draft");
 
-    kv.failures = 99;
-    const w = await ok({ html: gameHtml({ salt: "2" }) });
-    expect(w.status).toBe("draft");
-    expect(kv.values.has(w.post_id)).toBe(false);
+    kv.failures = 3;
+    const html = gameHtml({ salt: "2" });
+    const e = await err({ html, publish: true });
+    expect(e.code).toBe("storage_failed");
+    expect(await count("posts")).toBe(2);
+    expect((await game(sha256(html))).storedAt).not.toBeNull();
+
+    const puts = storage.puts;
+    const w = await ok({ html, publish: true });
+    expect(w).toMatchObject({ status: "limited", reused: true });
+    expect(kv.values.get(w.post_id)).toEqual({ hash: sha256(html), status: "ok" });
+    // R2 は書き直さない（stored_at が入っている）
+    expect(storage.puts).toBe(puts);
+    expect(await count("posts")).toBe(2);
   });
 
   it("se#A.5 KV に書くのは書く時点で DB に確定している状態（並行する非公開の no を、古い ok で上書きしない）", async () => {
