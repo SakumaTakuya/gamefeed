@@ -75,7 +75,7 @@
 
 出力は `{post_id, status}`。`posts.updated_at` は変えない（内容の更新ではなく、下書きの自動削除の基準なので）。
 
-KV（`security.md` A.5）は状態が変わらなかったときも書き直す。KV に書けなかったら `storage_failed` を返す（DB は既に `unpublished`。呼び直すと KV だけ書き直す）。配信を止める操作なので、`publish_game` の 12（失敗しても成功として返す）とは逆に、古い `ok` を残したまま成功にしない。
+KV（`security.md` A.5）は状態が変わらなかったときも書き直す。KV に書けなかったら `storage_failed` を返す（DB は既に `unpublished`。呼び直すと KV だけ書き直す）。古い `ok` を残したまま成功にしない。
 
 ### リソース `gf://guide`
 
@@ -136,9 +136,9 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 9. `warnings` を組み立てる
 10. コミット
 11. `games.stored_at` が NULL なら HTML を R2 に置き（A.8）、成功したら `stored_at` を入れる。失敗したら `storage_failed`（12 を書かない）
-12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。失敗はリトライ、日次の突き合わせで直る
+12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。投稿ごとに直列化し、書く時点で DB に確定している状態を読み直して書く（並行する `unpublish_game` の `no` を古い `ok` で上書きしない）。失敗は 3 回までリトライし、それでも書けなければ `storage_failed`
 
-6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
+6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。12 が失敗したときも同じで、呼び直しは KV だけ書き直す（同一内容で戻ったときも 12 は毎回行う）。12 の失敗を成功として返さないのは、KV に無い投稿は試遊も配信もできず、呼び出し側に再試行のきっかけがないため（#95 のレビュー）。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
 
 ## A.7 同一内容
 
@@ -190,7 +190,7 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 | `invalid_state` | 409 | `post_id` が `draft` でない、`removed` の内容の再投稿、`unpublish_game` に `removed` | 新しい下書きとして出す |
 | `limit` | 429 | `reason: drafts`（10 件）/ `rate`（当日の件数） | 作者に伝える。`drafts` なら不要な下書きを「作る」ページで消してもらう |
 | `post_restricted` | 403 | `users.status = post_restricted` | 作者に伝える（運営に連絡） |
-| `storage_failed` | 503 | R2 への書き込み失敗（`publish_game`）、KV への書き込み失敗（`unpublish_game`） | 同じ入力でもう一度呼ぶ |
+| `storage_failed` | 503 | R2 または KV への書き込み失敗（`publish_game`）、KV への書き込み失敗（`unpublish_game`） | 同じ入力でもう一度呼ぶ |
 | `not_configured` | 503 | 環境変数不足 | 作者に伝える |
 | `invalid` | 400 | 入力の型・長さ違反 | 直す |
 
