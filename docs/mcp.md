@@ -32,7 +32,7 @@
 | トークンなし | 401 と `WWW-Authenticate: Bearer resource_metadata=…`（R-9-1） |
 | `users.status` | `banned` はトークンを無効として 401。`post_restricted` は `publish_game` だけ error `post_restricted`（`moderation.md` A.5） |
 | サーバ情報 | `name: "gamefeed"`、`version` はデプロイのコミット短縮ハッシュ |
-| 未設定 | `DATABASE_URL` / `R2_*` がなければ `publish_game` は 503 `not_configured`。他は DB だけで動く |
+| 未設定 | `DATABASE_URL` / `R2_*` / KV の変数（A.8）がなければ `publish_game` は 503 `not_configured`（文面に足りない変数名を入れる。値は入れない）。他は DB だけで動く。`unpublish_game` は KV が未設定なら KV を書かずに成功する |
 
 ## A.3 ツールとリソース
 
@@ -41,8 +41,8 @@
 | 入力 | 型 | 規則 |
 | --- | --- | --- |
 | `html` | string | 必須。128 KB まで（`game-contract.md` A.2） |
-| `title` | string? | 省略時は `<title>`。1〜40 文字 |
-| `prompt` | string? | 作者が AI に頼んだ文。1000 文字まで。省略時は空 |
+| `title` | string? | 省略時は `<title>`。前後の空白を除いて 1〜40 文字（書記素クラスタ数。`gf:verb` と同じ数え方）。省略して `<title>` が 40 文字を超えるなら `invalid`（切り詰めない。B.8） |
+| `prompt` | string? | 作者が AI に頼んだ文。1000 文字まで（書記素クラスタ数）。省略時は空 |
 | `post_id` | string? | 既存の下書きを置き換える。自分の `draft` 以外は error |
 | `publish` | boolean? | `true` でそのまま公開する。既定 `false` |
 
@@ -56,7 +56,7 @@
 
 ### `list_my_games`
 
-入力なし。自分の投稿を `updated_at` の降順で最大 50 件。
+入力なし。自分の投稿を `updated_at` の降順で最大 50 件。MCP の `structuredContent` はオブジェクトでなければならないので、一覧は `{games: [...]}` の `games` に入れる。
 
 | 出力（1 件） | 意味 |
 | --- | --- |
@@ -64,7 +64,7 @@
 | `calibration` | `uncalibrated` / `calibrated` / `review` / `invalid` |
 | `plays`, `likes` | `post_stats.n` と、`likes` を `post_id` で数えた件数 |
 | `calibration_remaining` | 校正までの残りプレイ数（`uncalibrated` のとき。20 − `n`） |
-| `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}` |
+| `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}`。`resolution = dismissed` の通報は数えない（B.9） |
 | `published_at`, `updated_at` | ISO 8601 |
 
 ### `unpublish_game`
@@ -73,11 +73,13 @@
 | --- | --- |
 | `post_id` | string。振る舞いは `moderation.md` A.2 の `unpublish` の行（`limited` / `public` → `unpublished`、`draft` / `unpublished` は何もせず成功、`removed` は `invalid_state`、他人は `not_found`） |
 
-出力は `{post_id, status}`。
+出力は `{post_id, status}`。`posts.updated_at` は変えない（内容の更新ではなく、下書きの自動削除の基準なので）。
+
+KV（`security.md` A.5）は状態が変わらなかったときも書き直す。KV に書けなかったら `storage_failed` を返す（DB は既に `unpublished`。呼び直すと KV だけ書き直す）。古い `ok` を残したまま成功にしない。
 
 ### リソース `gf://guide`
 
-`game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。ビルド時にリポジトリから取り込み、サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
+`game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。本文は `pnpm --filter @gamefeed/api gen:guide` がリポジトリから `apps/api/src/guide.gen.ts` に取り込み、コミットする。`game-contract.md` の A 部とずれていれば CI のテストが落ちる（B.9）。サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
 
 ## A.4 説明文（AI が読む。暫定）
 
@@ -125,8 +127,8 @@
 
 1. トークンから `sub` を取り、`ensureUser`（A.5）。`users` を `FOR SHARE` し、`status` が `active` でなければ error（`banned` → 401、`post_restricted` → `post_restricted`）
 2. `post_id` があれば、自分の `draft` であることを確かめる。他人・存在しない → `not_found`。自分の `draft` 以外 → `invalid_state`
-3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ
-4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない
+3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ（8 を通らないので、`publish: true` が付いていても公開しない。A.7）
+4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない。「当日」は JST の 0 時で区切り、`posts.created_at` が当日の自分の行を状態を問わず数える（B.8）
 5. 静的検査（`game-contract.md` A.11）。拒否が 1 つでもあれば `rejected`（`errors[]` に `code`, `message`, `fix`, `line?`）。何も書かない
 6. `games` に `ON CONFLICT (hash) DO NOTHING` で入れる（`meta` は検査結果、`stored_at` は NULL）
 7. `post_id` あり: `posts.game_hash`, `title`, `prompt`, `updated_at` を更新。なし: `posts` を `draft` で挿入（`tree_id` は新規。`parent_id` は NULL。リミックスは Phase 2）
@@ -134,9 +136,9 @@
 9. `warnings` を組み立てる
 10. コミット
 11. `games.stored_at` が NULL なら HTML を R2 に置き（A.8）、成功したら `stored_at` を入れる。失敗したら `storage_failed`（12 を書かない）
-12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。失敗はリトライ、日次の突き合わせで直る
+12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。投稿ごとに直列化し、書く時点で DB に確定している状態を読み直して書く（並行する `unpublish_game` の `no` を古い `ok` で上書きしない）。失敗は 3 回までリトライし、それでも書けなければ `storage_failed`
 
-6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
+6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。12 が失敗したときも同じで、呼び直しは KV だけ書き直す（同一内容で戻ったときも 12 は毎回行う）。12 の失敗を成功として返さないのは、KV に無い投稿は試遊も配信もできず、呼び出し側に再試行のきっかけがないため（#95 のレビュー）。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
 
 ## A.7 同一内容
 
@@ -144,9 +146,10 @@
 
 | 状況 | 規則 |
 | --- | --- |
-| `post_id` なしで、自分の `draft` に同じ `game_hash` がある | 新しい行を作らず、その下書きの `title` / `prompt` を更新して同じ `post_id` を返す（`reused: true`）。上限と当日の件数は消費しない |
+| `post_id` なしで、自分の `draft` に同じ `game_hash` がある | 新しい行を作らず、その下書きの `title` / `prompt` を更新して同じ `post_id` を返す（`reused: true`）。省略された項目も既定値（`<title>` / 空）で上書きする。`publish: true` が付いていても公開しない（`status: draft` のまま返る。公開するには `post_id` を付けて呼ぶ）。上限と当日の件数は消費しない |
 | `post_id` なしで、自分の `limited` / `public` / `unpublished` に同じ `game_hash` がある | 新しい行を作らず、その投稿を返す（`reused: true`、`status` はその投稿の状態）。`title` / `prompt` は変えない（公開後は不変）。`publish: true` が付いていても何もしない |
 | `post_id` なしで、自分の `removed` に同じ `game_hash` がある | 別投稿として扱わない。error `invalid_state`（運営が消した内容を再投稿させない） |
+| 自分の投稿の複数が同じ `game_hash` を持つ（置き換えは同一内容を確認しないので起こりうる） | `removed` が 1 つでもあれば `invalid_state`。なければ `updated_at` が最も新しい投稿を上の行の規則で返す |
 | `post_id` あり | 同一内容の確認はしない。置き換え先が決まっている |
 | 他人の投稿と同じ `game_hash` | 気にしない（`games` の行を共有するだけ。`data-model.md` B.1） |
 
@@ -160,7 +163,7 @@
 | --- | --- |
 | 保存先 | Cloudflare R2 `gamefeed-games`、キー `games/{hash}.html`（`data-model.md` A.6） |
 | 書き方 | S3 互換 API に SigV4 で `PutObject` だけ。AWS SDK は入れない（B.4）。`Content-Type: text/html; charset=utf-8`、`If-None-Match: *` は付けない（同じ内容の上書きは無害） |
-| 環境変数 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`（`https://<account_id>.r2.cloudflarestorage.com`）, `R2_BUCKET`。Vercel と GitHub Secrets にだけ置く |
+| 環境変数 | `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_ENDPOINT`（`https://<account_id>.r2.cloudflarestorage.com`）, `R2_BUCKET`。KV（`security.md` A.5）は `CLOUDFLARE_API_TOKEN`（Workers KV Storage の Edit だけ）, `CLOUDFLARE_ACCOUNT_ID`, `KV_NAMESPACE_ID`。Vercel と GitHub Secrets にだけ置く |
 | テスト | fake のストレージ（メモリ）で回す。R2 への実書き込みは plan#2 の配信と合わせて手動（manual） |
 | 読む側 | 配信 Worker は R2 バインディングで読む（`security.md` A.5）。API は読まない |
 
@@ -187,7 +190,7 @@
 | `invalid_state` | 409 | `post_id` が `draft` でない、`removed` の内容の再投稿、`unpublish_game` に `removed` | 新しい下書きとして出す |
 | `limit` | 429 | `reason: drafts`（10 件）/ `rate`（当日の件数） | 作者に伝える。`drafts` なら不要な下書きを「作る」ページで消してもらう |
 | `post_restricted` | 403 | `users.status = post_restricted` | 作者に伝える（運営に連絡） |
-| `storage_failed` | 503 | R2 への書き込み失敗 | 同じ入力でもう一度呼ぶ |
+| `storage_failed` | 503 | R2 または KV への書き込み失敗（`publish_game`）、KV への書き込み失敗（`unpublish_game`） | 同じ入力でもう一度呼ぶ |
 | `not_configured` | 503 | 環境変数不足 | 作者に伝える |
 | `invalid` | 400 | 入力の型・長さ違反 | 直す |
 
@@ -230,6 +233,8 @@ Better Auth の `databaseHooks.user.create.after` で作る案は、PoC で既�
 
 AI は同じ HTML を 2 回送ることがある（再試行、`post_id` を忘れた、会話が切れて再開した）。そのたびに下書きが増えると I11 の 10 件をすぐ食い潰す。`games` がハッシュで重複排除されるので、同じユーザーの同じ内容は同じ投稿とみなすのが自然。公開済みの投稿と同じ内容が来たときに新しい下書きを作らないのは、「同じゲームが 2 本一覧に並ぶ」状態を作らないため。別の投稿として出したいなら 1 バイトでも変える（`gf:target` でもよい）。
 
+同一内容の下書きに戻ったとき `publish: true` を無視するのは、「同じ内容の再送は既存の投稿に戻るだけ」という規則を 1 つに保つため（#91）。戻った先で公開まで進める案は、AI が `post_id` を忘れた「公開して」が 1 往復減るが、再試行のつもりの再送が公開（取り消せない不変化）を起こしうるので採らない。応答が `status: draft` なので、AI は `post_id` を付けて呼び直せる。省略された `title` / `prompt` を既定値で上書きするのは、入力の規則をそのまま適用すれば同じ呼び出しの再試行が冪等になるため。渡された項目だけ更新する案は、同じ入力でも前の状態によって結果が変わる。
+
 ## B.4 R2 に SDK なしで書く理由
 
 必要なのは `PutObject` 1 つで、AWS SDK v3 はそれだけのために Vercel の関数サイズとコールドスタートを増やす。SigV4 は 100 行で書ける。読む側は Worker のバインディングで、S3 API を使わない。
@@ -246,12 +251,27 @@ Vercel の関数は呼び出しごとに別のインスタンスで動きうる�
 
 旧 9.1 は `theme_id`（省略時はお題「フリー」）を受けていた。新しい `product.md` ではお題は運営が公開済みの投稿から 10 本を選ぶもので、作者が応募するものではない（`product.md` 8、`data-model.md` の `theme_posts`）。エンドレスは `theme_id` が NULL のランなので、投稿側にお題の列はない。
 
+## B.8 上限の数え方、当日の境界、文字数
+
+#91。「当日」を JST の 0 時で区切るのは、対象が日本の大学生で、デイリーのお題（`run.md` A.2）と同じ境界にすると「今日」の意味が 1 つで済むため。UTC の 0 時は JST の朝 9 時に枠が戻ることになり、直近 24 時間の移動窓は「いつ戻るか」を作者に説明しにくい。
+
+件数を `posts.created_at` で数えるのは、新しい表も列も要らないため。置き換えは行が増えないので自然に数えない。穴は、下書きを消すと行が消えて枠が戻ること（未解決）。
+
+`title` を省略して `<title>` が 40 文字を超えるときに切り詰めないのは、黙って変えた題が一覧に並ぶより、AI に短い題を渡させる方が作者の意図に合うため。`<title>` 自体の長さは `game-contract.md` で縛らない（ゲーム内の表示は作者のもの）。文字数を書記素クラスタで数えるのは `gf:verb`（`game-contract.md` A.3）と揃えるため。
+
+## B.9 `restricted_reason` の数え方と `gf://guide` の取り込み方
+
+`restricted_reason` から `dismissed` を除くのは、運営が退けた通報を「制限の理由」として作者に見せると、直すべきでない点を直させてしまうため。`open` と `upheld` は数える（自動制限は `open` の重みで起きる）。
+
+`gf://guide` をビルド時に取り込む案（esbuild のローダで `.md` を束ねる）は、Vercel のビルド・vitest・tsx の 3 つで同じ設定が要り、どれかで外れると本文が空のまま動く。生成物をコミットして CI で文書との一致を見れば、どの実行環境でも同じ本文になり、ずれは PR で見つかる。代わりに、`game-contract.md` の A 部を直す PR は `gen:guide` の実行が要る。
+
 ---
 
 ## 未解決
 
 - 説明文（A.4）の文面。Muse と Claude で読み方が違えば直す
 - `prompt` の上限（1000 文字）と `title` の上限（40 文字）。暫定
+- 当日の件数は `posts.created_at` で数えるので、下書きを消すと枠が戻る（5 件作る → 消す → また 5 件）。「作る」ページの下書き削除を実装するときに、削除で戻らない数え方（`users` に日付と件数を持つ等）にするか決める
 - `list_my_games` の 50 件。Phase 2 でページングを入れるか
 - 公開直後のジョブ（決定論ハーネスの実行環境）。Vercel の関数ではブラウザを動かせないので、Cloudflare の Browser Rendering か別のワーカーになる。plan#2 で決める
 - スコープを `games` の 1 つにしたが、CIMD で `scopes_supported` に何を出すか。`games` だけ

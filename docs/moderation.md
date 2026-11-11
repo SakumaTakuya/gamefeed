@@ -144,7 +144,7 @@ stateDiagram-v2
 | --- | --- |
 | 投稿の初期状態 | `TRUST_PUBLIC_THRESHOLD = 30` 以上で `public` から、未満で `limited` から（A.2）。既存の投稿には遡らない |
 | 通報の重み | 信頼係数 = `trust_score ÷ 10`（A.4） |
-| 投稿の上限 | 30 未満は `PUBLISH_LIMIT_NEW = 5` 件/日、以上は `PUBLISH_LIMIT = 30` 件/日（`publish_game` の新規下書き。置き換えは数えない。`mcp.md`、R-9-4） |
+| 投稿の上限 | 30 未満は `PUBLISH_LIMIT_NEW = 5` 件/日、以上は `PUBLISH_LIMIT = 30` 件/日（`publish_game` の新規下書き。置き換えは数えない。「日」は JST の 0 時で区切る。`mcp.md` A.6 / B.8、R-9-4） |
 
 ### 処分
 

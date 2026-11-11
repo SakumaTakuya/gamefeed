@@ -154,7 +154,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-9-2 | Muse のカスタムコネクタから接続し、`publish_game` が通る。Claude のカスタムコネクタでも同じ | manual | iPhone の Muse に接続プロンプトを貼る。計画書 W1 PoC（MC-1〜MC-4） | `docs/manual-tests/muse-connect.md` | green（Muse・Claude、2026-11-05） |
 | R-9-5 | アクセストークンは 24 時間以上、リフレッシュトークンは 30 日。ローテーション後の旧リフレッシュトークンは猶予内なら同じ応答を返す（計画書 第5節「トークン方針」） | integration + manual | `expires_in ≥ 86400`、`refresh_token` あり。旧トークンで 2 回目の refresh が 200 で同じ応答。24 時間以上空けた再接続は MC-5 | `apps/api/test/integration/mcp-oauth.spec.ts`、`docs/manual-tests/muse-connect.md` | green（integration）/ todo（manual） |
 | R-9-3 | 契約に合わない HTML は `publish_game` が `rejected` で拒否し、`errors[].fix` に修正方法を含める。拒否では何も書かない（mc#A.6） | integration | 範囲外 duration の HTML を送り、`fix` に「180〜600」が含まれ、`posts` / `games` に行が増えない | `apps/api/test/integration/publish.spec.ts` | green（#87） |
-| R-9-4 | 新規の下書きは `trust_score` 30 未満で 5 件/日、以上で 30 件/日まで。置き換え（`post_id` 指定）は数えない（mo#A.5） | integration | 6 件目が拒否される。日付境界は手動時計。置き換えを 6 回しても通る | 同上 | green（#87。日付の境界は JST 0 時で仮置き、#91） |
+| R-9-4 | 新規の下書きは `trust_score` 30 未満で 5 件/日、以上で 30 件/日まで。置き換え（`post_id` 指定）は数えない（mo#A.5） | integration | 6 件目が拒否される。日付境界は手動時計。置き換えを 6 回しても通る | 同上 | green（#87。日付の境界は JST 0 時、mc#A.6） |
 
 ## moderation A.2 / A.3 / A.4 / A.5 / A.6 / A.7 投稿状態・通報・信頼スコア・運営の操作（旧 11）
 
