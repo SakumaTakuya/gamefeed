@@ -379,7 +379,7 @@ export async function publishGame(
   }
 
   // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら日次の突き合わせに任せる
-  await writeServe(kv, committed.postId, { hash, status: serveStatus(committed.status) });
+  await syncServe(db, kv, committed.postId);
 
   return {
     ok: true,
@@ -418,7 +418,7 @@ function errorOut(f: Finding): { code: string; message: string; fix: string; lin
  * 配信を始める側（publish_game）は false でも成功として返してよい（配信されないだけで、日次の突き合わせで直る）。
  * 配信を止める側（unpublish_game など）は false を呼び出し元に伝える（古い `ok` が残ると配信が続く）。
  */
-export async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<boolean> {
+async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<boolean> {
   for (let i = 0; i < KV_ATTEMPTS; i++) {
     try {
       await kv.put(postId, value);
@@ -428,6 +428,25 @@ export async function writeServe(kv: ServeKv, postId: string, value: ServeValue)
     }
   }
   return false;
+}
+
+/**
+ * KV `serve:<post_id>` を、いま DB に確定している状態に合わせる（se#A.5）。DB のコミット後に呼ぶ。
+ *
+ * 呼び出し側が自分のトランザクションで見た状態をそのまま書くと、並行する操作と KV の書き込み順が入れ替わりうる
+ * （公開済みに戻った publish_game の `ok` が、後から確定した unpublish_game の `no` を上書きする）。
+ * 投稿ごとの advisory lock の中で状態を読み直して書くので、最後に書く者は必ず最新の確定状態を書く。
+ * 行がもう無い（下書きが消えた）なら何もしない。書けなかったら false。
+ */
+export async function syncServe(db: Db, kv: ServeKv, postId: string): Promise<boolean> {
+  return db.transaction(async (txn) => {
+    const tx = txn as unknown as Db;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`serve:${postId}`}, 0))`);
+    const [p] = await tx.select({ hash: posts.gameHash }).from(posts).where(eq(posts.id, postId));
+    if (!p) return true;
+    const status = serveStatus(await statusOf(tx, postId));
+    return writeServe(kv, postId, { hash: p.hash, status });
+  });
 }
 
 /** 投稿状態（dm#A.4 の `post_status` ビュー） */

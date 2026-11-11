@@ -13,10 +13,9 @@ import {
   NOT_FOUND,
   type PostStatus,
   type PublishDeps,
-  serveStatus,
   statusOf,
+  syncServe,
   type ToolOutcome,
-  writeServe,
 } from "./publish.ts";
 
 /** 一覧の上限（mc#A.3、暫定） */
@@ -136,7 +135,6 @@ export async function unpublishGame(
         id: posts.id,
         userId: posts.userId,
         baseStatus: posts.baseStatus,
-        gameHash: posts.gameHash,
       })
       .from(posts)
       .where(eq(posts.id, input.post_id))
@@ -152,14 +150,13 @@ export async function unpublishGame(
     if (p.baseStatus === "limited" || p.baseStatus === "public") {
       await tx.update(posts).set({ baseStatus: "unpublished" }).where(eq(posts.id, p.id));
     }
-    return { postId: p.id, hash: p.gameHash, status: await statusOf(tx, p.id) };
+    return { postId: p.id, status: await statusOf(tx, p.id) };
   });
   if ("ok" in done) return done;
 
   // KV は状態が変わらなかったときも書き直す。前回の呼び出しで KV だけ失敗した場合に、呼び直しで配信が止まるように
   if (deps.kv) {
-    const value = { hash: done.hash, status: serveStatus(done.status) };
-    if (!(await writeServe(deps.kv, done.postId, value))) {
+    if (!(await syncServe(deps.db, deps.kv, done.postId))) {
       return fail(
         "storage_failed",
         "非公開にしましたが、配信の停止がまだ反映されていません。もう一度 unpublish_game を呼んでください。",

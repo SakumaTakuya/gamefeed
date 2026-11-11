@@ -19,6 +19,7 @@ import {
   publishGame,
   type ServeKv,
   type ServeValue,
+  syncServe,
 } from "../../src/publish.ts";
 import { gameHtml } from "../helpers/game-html.ts";
 
@@ -540,6 +541,26 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const w = await ok({ html: gameHtml({ salt: "2" }) });
     expect(w.status).toBe("draft");
     expect(kv.values.has(w.post_id)).toBe(false);
+  });
+
+  it("se#A.5 KV に書くのは書く時点で DB に確定している状態（並行する非公開の no を、古い ok で上書きしない）", async () => {
+    const html = gameHtml();
+    const v = await ok({ html, publish: true });
+    expect(kv.values.get(v.post_id)?.status).toBe("ok");
+    // publish_game が「公開済み」と見た後、KV に書く前に unpublish が確定した状況を作る:
+    // DB だけ unpublished にしてから syncServe を呼ぶ
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, v.post_id));
+    expect(await syncServe(db, kv, v.post_id)).toBe(true);
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(html), status: "no" });
+
+    // 行が無い post_id は何も書かない
+    const puts = kv.puts;
+    expect(await syncServe(db, kv, "01JZZZZZZZZZZZZZZZZZZZZZZZ")).toBe(true);
+    expect(kv.puts).toBe(puts);
+
+    // 書けなければ false
+    kv.failures = 99;
+    expect(await syncServe(db, kv, v.post_id)).toBe(false);
   });
 
   it("mc#A.2 R2 / KV が未設定なら not_configured で、何も書かない", async () => {
