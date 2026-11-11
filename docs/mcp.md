@@ -75,6 +75,8 @@
 
 出力は `{post_id, status}`。`posts.updated_at` は変えない（内容の更新ではなく、下書きの自動削除の基準なので）。
 
+KV（`security.md` A.5）は状態が変わらなかったときも書き直す。KV に書けなかったら `storage_failed` を返す（DB は既に `unpublished`。呼び直すと KV だけ書き直す）。配信を止める操作なので、`publish_game` の 12（失敗しても成功として返す）とは逆に、古い `ok` を残したまま成功にしない。
+
 ### リソース `gf://guide`
 
 `game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。本文は `pnpm --filter @gamefeed/api gen:guide` がリポジトリから `apps/api/src/guide.gen.ts` に取り込み、コミットする。`game-contract.md` の A 部とずれていれば CI のテストが落ちる（B.9）。サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
@@ -188,7 +190,7 @@
 | `invalid_state` | 409 | `post_id` が `draft` でない、`removed` の内容の再投稿、`unpublish_game` に `removed` | 新しい下書きとして出す |
 | `limit` | 429 | `reason: drafts`（10 件）/ `rate`（当日の件数） | 作者に伝える。`drafts` なら不要な下書きを「作る」ページで消してもらう |
 | `post_restricted` | 403 | `users.status = post_restricted` | 作者に伝える（運営に連絡） |
-| `storage_failed` | 503 | R2 への書き込み失敗 | 同じ入力でもう一度呼ぶ |
+| `storage_failed` | 503 | R2 への書き込み失敗（`publish_game`）、KV への書き込み失敗（`unpublish_game`） | 同じ入力でもう一度呼ぶ |
 | `not_configured` | 503 | 環境変数不足 | 作者に伝える |
 | `invalid` | 400 | 入力の型・長さ違反 | 直す |
 
