@@ -41,8 +41,8 @@
 | 入力 | 型 | 規則 |
 | --- | --- | --- |
 | `html` | string | 必須。128 KB まで（`game-contract.md` A.2） |
-| `title` | string? | 省略時は `<title>`。1〜40 文字 |
-| `prompt` | string? | 作者が AI に頼んだ文。1000 文字まで。省略時は空 |
+| `title` | string? | 省略時は `<title>`。前後の空白を除いて 1〜40 文字（書記素クラスタ数。`gf:verb` と同じ数え方）。省略して `<title>` が 40 文字を超えるなら `invalid`（切り詰めない。B.8） |
+| `prompt` | string? | 作者が AI に頼んだ文。1000 文字まで（書記素クラスタ数）。省略時は空 |
 | `post_id` | string? | 既存の下書きを置き換える。自分の `draft` 以外は error |
 | `publish` | boolean? | `true` でそのまま公開する。既定 `false` |
 
@@ -125,8 +125,8 @@
 
 1. トークンから `sub` を取り、`ensureUser`（A.5）。`users` を `FOR SHARE` し、`status` が `active` でなければ error（`banned` → 401、`post_restricted` → `post_restricted`）
 2. `post_id` があれば、自分の `draft` であることを確かめる。他人・存在しない → `not_found`。自分の `draft` 以外 → `invalid_state`
-3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ
-4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない
+3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ（8 を通らないので、`publish: true` が付いていても公開しない。A.7）
+4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない。「当日」は JST の 0 時で区切り、`posts.created_at` が当日の自分の行を状態を問わず数える（B.8）
 5. 静的検査（`game-contract.md` A.11）。拒否が 1 つでもあれば `rejected`（`errors[]` に `code`, `message`, `fix`, `line?`）。何も書かない
 6. `games` に `ON CONFLICT (hash) DO NOTHING` で入れる（`meta` は検査結果、`stored_at` は NULL）
 7. `post_id` あり: `posts.game_hash`, `title`, `prompt`, `updated_at` を更新。なし: `posts` を `draft` で挿入（`tree_id` は新規。`parent_id` は NULL。リミックスは Phase 2）
@@ -144,9 +144,10 @@
 
 | 状況 | 規則 |
 | --- | --- |
-| `post_id` なしで、自分の `draft` に同じ `game_hash` がある | 新しい行を作らず、その下書きの `title` / `prompt` を更新して同じ `post_id` を返す（`reused: true`）。上限と当日の件数は消費しない |
+| `post_id` なしで、自分の `draft` に同じ `game_hash` がある | 新しい行を作らず、その下書きの `title` / `prompt` を更新して同じ `post_id` を返す（`reused: true`）。省略された項目も既定値（`<title>` / 空）で上書きする。`publish: true` が付いていても公開しない（`status: draft` のまま返る。公開するには `post_id` を付けて呼ぶ）。上限と当日の件数は消費しない |
 | `post_id` なしで、自分の `limited` / `public` / `unpublished` に同じ `game_hash` がある | 新しい行を作らず、その投稿を返す（`reused: true`、`status` はその投稿の状態）。`title` / `prompt` は変えない（公開後は不変）。`publish: true` が付いていても何もしない |
 | `post_id` なしで、自分の `removed` に同じ `game_hash` がある | 別投稿として扱わない。error `invalid_state`（運営が消した内容を再投稿させない） |
+| 自分の投稿の複数が同じ `game_hash` を持つ（置き換えは同一内容を確認しないので起こりうる） | `removed` が 1 つでもあれば `invalid_state`。なければ `updated_at` が最も新しい投稿を上の行の規則で返す |
 | `post_id` あり | 同一内容の確認はしない。置き換え先が決まっている |
 | 他人の投稿と同じ `game_hash` | 気にしない（`games` の行を共有するだけ。`data-model.md` B.1） |
 
@@ -230,6 +231,8 @@ Better Auth の `databaseHooks.user.create.after` で作る案は、PoC で既�
 
 AI は同じ HTML を 2 回送ることがある（再試行、`post_id` を忘れた、会話が切れて再開した）。そのたびに下書きが増えると I11 の 10 件をすぐ食い潰す。`games` がハッシュで重複排除されるので、同じユーザーの同じ内容は同じ投稿とみなすのが自然。公開済みの投稿と同じ内容が来たときに新しい下書きを作らないのは、「同じゲームが 2 本一覧に並ぶ」状態を作らないため。別の投稿として出したいなら 1 バイトでも変える（`gf:target` でもよい）。
 
+同一内容の下書きに戻ったとき `publish: true` を無視するのは、「同じ内容の再送は既存の投稿に戻るだけ」という規則を 1 つに保つため（#91）。戻った先で公開まで進める案は、AI が `post_id` を忘れた「公開して」が 1 往復減るが、再試行のつもりの再送が公開（取り消せない不変化）を起こしうるので採らない。応答が `status: draft` なので、AI は `post_id` を付けて呼び直せる。省略された `title` / `prompt` を既定値で上書きするのは、入力の規則をそのまま適用すれば同じ呼び出しの再試行が冪等になるため。渡された項目だけ更新する案は、同じ入力でも前の状態によって結果が変わる。
+
 ## B.4 R2 に SDK なしで書く理由
 
 必要なのは `PutObject` 1 つで、AWS SDK v3 はそれだけのために Vercel の関数サイズとコールドスタートを増やす。SigV4 は 100 行で書ける。読む側は Worker のバインディングで、S3 API を使わない。
@@ -246,12 +249,21 @@ Vercel の関数は呼び出しごとに別のインスタンスで動きうる�
 
 旧 9.1 は `theme_id`（省略時はお題「フリー」）を受けていた。新しい `product.md` ではお題は運営が公開済みの投稿から 10 本を選ぶもので、作者が応募するものではない（`product.md` 8、`data-model.md` の `theme_posts`）。エンドレスは `theme_id` が NULL のランなので、投稿側にお題の列はない。
 
+## B.8 上限の数え方、当日の境界、文字数
+
+#91。「当日」を JST の 0 時で区切るのは、対象が日本の大学生で、デイリーのお題（`run.md` A.2）と同じ境界にすると「今日」の意味が 1 つで済むため。UTC の 0 時は JST の朝 9 時に枠が戻ることになり、直近 24 時間の移動窓は「いつ戻るか」を作者に説明しにくい。
+
+件数を `posts.created_at` で数えるのは、新しい表も列も要らないため。置き換えは行が増えないので自然に数えない。穴は、下書きを消すと行が消えて枠が戻ること（未解決）。
+
+`title` を省略して `<title>` が 40 文字を超えるときに切り詰めないのは、黙って変えた題が一覧に並ぶより、AI に短い題を渡させる方が作者の意図に合うため。`<title>` 自体の長さは `game-contract.md` で縛らない（ゲーム内の表示は作者のもの）。文字数を書記素クラスタで数えるのは `gf:verb`（`game-contract.md` A.3）と揃えるため。
+
 ---
 
 ## 未解決
 
 - 説明文（A.4）の文面。Muse と Claude で読み方が違えば直す
 - `prompt` の上限（1000 文字）と `title` の上限（40 文字）。暫定
+- 当日の件数は `posts.created_at` で数えるので、下書きを消すと枠が戻る（5 件作る → 消す → また 5 件）。「作る」ページの下書き削除を実装するときに、削除で戻らない数え方（`users` に日付と件数を持つ等）にするか決める
 - `list_my_games` の 50 件。Phase 2 でページングを入れるか
 - 公開直後のジョブ（決定論ハーネスの実行環境）。Vercel の関数ではブラウザを動かせないので、Cloudflare の Browser Rendering か別のワーカーになる。plan#2 で決める
 - スコープを `games` の 1 つにしたが、CIMD で `scopes_supported` に何を出すか。`games` だけ
