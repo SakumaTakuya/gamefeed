@@ -11,6 +11,7 @@ import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { user as authUser } from "../../src/db/auth-schema.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
+import { GUIDE_MARKDOWN } from "../../src/guide.gen.ts";
 import { createMcpServer } from "../../src/mcp.ts";
 import type { PublishDeps } from "../../src/publish.ts";
 import { gameHtml } from "../helpers/game-html.ts";
@@ -87,6 +88,77 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     ]);
     expect(tool?.inputSchema.required).toEqual(["html"]);
     await client.close();
+  });
+
+  it("R-mc.A3-1 tools/list は 3 本、resources/list は gf://guide の 1 つだけ（C1）。本文は game-contract.md の A 部", async () => {
+    const client = await connect();
+    const { tools } = await client.listTools();
+    expect(tools.map((t) => t.name).sort()).toEqual(["list_my_games", "publish_game", "unpublish_game"]);
+    const descriptions = new Map(tools.map((t) => [t.name, t.description]));
+    expect(descriptions.get("list_my_games")).toMatch(/^自分の投稿の一覧。/);
+    expect(descriptions.get("unpublish_game")).toMatch(/^公開した投稿を非公開にする。取り消せる/);
+
+    const { resources } = await client.listResources();
+    expect(resources.map((r) => r.uri)).toEqual(["gf://guide"]);
+    expect(resources[0]).toMatchObject({
+      mimeType: "text/markdown",
+      description: "GameFeed のミクロゲーム規約。`publish_game` を呼ぶ前に読む。",
+    });
+    const read = await client.readResource({ uri: "gf://guide" });
+    expect(read.contents).toEqual([{ uri: "gf://guide", mimeType: "text/markdown", text: GUIDE_MARKDOWN }]);
+    expect(GUIDE_MARKDOWN).toContain("## A.13 ");
+    await client.close();
+  });
+
+  it("R-mc.A3-2 list_my_games は structuredContent.games に一覧を返す。unpublish_game は {post_id, status}", async () => {
+    const client = await connect();
+    const html = gameHtml();
+    const pub = await client.callTool({ name: "publish_game", arguments: { html, publish: true } });
+    const id = (pub.structuredContent as { post_id: string }).post_id;
+
+    const listed = await client.callTool({ name: "list_my_games", arguments: {} });
+    expect(listed.isError).toBeFalsy();
+    expect(listed.structuredContent).toEqual({
+      games: [
+        {
+          post_id: id,
+          title: "まるタップ",
+          status: "limited",
+          url: `${APP}/g/${id}`,
+          calibration: "uncalibrated",
+          plays: 0,
+          likes: 0,
+          calibration_remaining: 20,
+          published_at: "2026-11-11T03:00:00.000Z",
+          updated_at: "2026-11-11T03:00:00.000Z",
+        },
+      ],
+    });
+    expect(textJson(listed.content)).toEqual(listed.structuredContent);
+
+    const un = await client.callTool({ name: "unpublish_game", arguments: { post_id: id } });
+    expect(un.isError).toBeFalsy();
+    expect(un.structuredContent).toEqual({ post_id: id, status: "unpublished" });
+    await client.close();
+  });
+
+  it("R-mc.A10-1 unpublish_game: 他人の post_id と存在しない post_id は等しい not_found、removed は invalid_state", async () => {
+    const other = await connect(OTHER);
+    const theirs = await other.callTool({ name: "publish_game", arguments: { html: gameHtml(), publish: true } });
+    const theirId = (theirs.structuredContent as { post_id: string }).post_id;
+    const client = await connect();
+    const a = await client.callTool({ name: "unpublish_game", arguments: { post_id: theirId } });
+    const b = await client.callTool({ name: "unpublish_game", arguments: { post_id: "01JZZZZZZZZZZZZZZZZZZZZZZZ" } });
+    expect(a.isError).toBe(true);
+    expect((a.structuredContent as { code: string }).code).toBe("not_found");
+    expect(a.structuredContent).toEqual(b.structuredContent);
+
+    await db.execute(sql`update posts set base_status = 'removed' where id = ${theirId}`);
+    const c = await other.callTool({ name: "unpublish_game", arguments: { post_id: theirId } });
+    expect(c.isError).toBe(true);
+    expect((c.structuredContent as { code: string }).code).toBe("invalid_state");
+    await client.close();
+    await other.close();
   });
 
   it("R-mc.A3-2 publish_game の成功は structuredContent に {post_id, status, url, warnings, reused}。下書き → 公開で url が変わる", async () => {
