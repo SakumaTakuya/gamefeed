@@ -402,7 +402,11 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const draft = await ok({ html: gameHtml({ salt: "other" }) });
     now = new Date(now.getTime() + 1000);
     await ok({ html, post_id: draft.post_id });
-    expect(await ok({ html })).toMatchObject({ post_id: draft.post_id, status: "draft", reused: true });
+    expect(await ok({ html })).toMatchObject({
+      post_id: draft.post_id,
+      status: "draft",
+      reused: true,
+    });
 
     await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, live.post_id));
     expect((await err({ html })).code).toBe("invalid_state");

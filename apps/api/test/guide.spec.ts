@@ -1,8 +1,8 @@
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
-import { extractGuide } from "../src/guide.ts";
 import { GUIDE_MARKDOWN } from "../src/guide.gen.ts";
+import { extractGuide } from "../src/guide.ts";
 
 // mc#A.3: gf://guide は game-contract.md の A 部（A.1〜A.13）の本文
 describe("R-mc.A3-1 gf://guide の本文", () => {

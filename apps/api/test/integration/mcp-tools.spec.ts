@@ -93,7 +93,11 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
   it("R-mc.A3-1 tools/list は 3 本、resources/list は gf://guide の 1 つだけ（C1）。本文は game-contract.md の A 部", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
-    expect(tools.map((t) => t.name).sort()).toEqual(["list_my_games", "publish_game", "unpublish_game"]);
+    expect(tools.map((t) => t.name).sort()).toEqual([
+      "list_my_games",
+      "publish_game",
+      "unpublish_game",
+    ]);
     const descriptions = new Map(tools.map((t) => [t.name, t.description]));
     expect(descriptions.get("list_my_games")).toMatch(/^自分の投稿の一覧。/);
     expect(descriptions.get("unpublish_game")).toMatch(/^公開した投稿を非公開にする。取り消せる/);
@@ -105,7 +109,9 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       description: "GameFeed のミクロゲーム規約。`publish_game` を呼ぶ前に読む。",
     });
     const read = await client.readResource({ uri: "gf://guide" });
-    expect(read.contents).toEqual([{ uri: "gf://guide", mimeType: "text/markdown", text: GUIDE_MARKDOWN }]);
+    expect(read.contents).toEqual([
+      { uri: "gf://guide", mimeType: "text/markdown", text: GUIDE_MARKDOWN },
+    ]);
     expect(GUIDE_MARKDOWN).toContain("## A.13 ");
     await client.close();
   });
@@ -144,11 +150,17 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
 
   it("R-mc.A10-1 unpublish_game: 他人の post_id と存在しない post_id は等しい not_found、removed は invalid_state", async () => {
     const other = await connect(OTHER);
-    const theirs = await other.callTool({ name: "publish_game", arguments: { html: gameHtml(), publish: true } });
+    const theirs = await other.callTool({
+      name: "publish_game",
+      arguments: { html: gameHtml(), publish: true },
+    });
     const theirId = (theirs.structuredContent as { post_id: string }).post_id;
     const client = await connect();
     const a = await client.callTool({ name: "unpublish_game", arguments: { post_id: theirId } });
-    const b = await client.callTool({ name: "unpublish_game", arguments: { post_id: "01JZZZZZZZZZZZZZZZZZZZZZZZ" } });
+    const b = await client.callTool({
+      name: "unpublish_game",
+      arguments: { post_id: "01JZZZZZZZZZZZZZZZZZZZZZZZ" },
+    });
     expect(a.isError).toBe(true);
     expect((a.structuredContent as { code: string }).code).toBe("not_found");
     expect(a.structuredContent).toEqual(b.structuredContent);

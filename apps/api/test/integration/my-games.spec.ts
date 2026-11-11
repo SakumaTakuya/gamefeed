@@ -9,7 +9,12 @@ import { user as authUser } from "../../src/db/auth-schema.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
 import * as s from "../../src/db/schema.ts";
 import { listMyGames, unpublishGame } from "../../src/my-games.ts";
-import { type PublishDeps, type PublishInput, publishGame, type ServeValue } from "../../src/publish.ts";
+import {
+  type PublishDeps,
+  type PublishInput,
+  publishGame,
+  type ServeValue,
+} from "../../src/publish.ts";
 import { gameHtml } from "../helpers/game-html.ts";
 
 const url = process.env.DATABASE_URL;
@@ -78,6 +83,13 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     if (!r.ok) throw new Error(JSON.stringify(r.error));
     tick();
     return r.value;
+  }
+  /** trust_score を一時的に 10 にして公開する（limited になる。mo#A.2） */
+  async function pubLimited(input: PublishInput) {
+    await db.update(s.users).set({ trustScore: 10 }).where(eq(s.users.id, ME));
+    const v = await pub({ ...input, publish: true });
+    await db.update(s.users).set({ trustScore: 30 }).where(eq(s.users.id, ME));
+    return v;
   }
   async function list(userId = ME) {
     const r = await listMyGames(deps, userId);
@@ -163,19 +175,24 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     const r = await pub({ html: gameHtml({ salt: "r" }), publish: true });
     const u = await pub({ html: gameHtml({ salt: "u" }), publish: true });
     const x = await pub({ html: gameHtml({ salt: "x" }), publish: true });
-    const l = await pub({ html: gameHtml({ salt: "l" }), publish: true });
+    const l = await pubLimited({ html: gameHtml({ salt: "l" }) });
     const p = await pub({ html: gameHtml({ salt: "p" }), publish: true });
     const d = await pub({ html: gameHtml({ salt: "d" }) });
     await db.update(s.posts).set({ indivRestricted: true }).where(eq(s.posts.id, r.post_id));
     await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, u.post_id));
     await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, x.post_id));
-    await db.update(s.posts).set({ baseStatus: "limited" }).where(eq(s.posts.id, l.post_id));
     for (const id of ["a1", "a2", "a3", "a4"]) await addActor(id, OTHER);
     await db.insert(s.reports).values([
       { postId: r.post_id, actorId: "a1", category: "sexual", weight: 3 },
       { postId: r.post_id, actorId: "a2", category: "sexual", weight: 3, resolution: "upheld" },
       { postId: r.post_id, actorId: "a3", category: "spam", weight: 1 },
-      { postId: r.post_id, actorId: "a4", category: "broken", weight: 0.2, resolution: "dismissed" },
+      {
+        postId: r.post_id,
+        actorId: "a4",
+        category: "broken",
+        weight: 0.2,
+        resolution: "dismissed",
+      },
       // 制限されていない投稿の通報は出さない
       { postId: p.post_id, actorId: "a1", category: "spam", weight: 1 },
     ]);
@@ -225,8 +242,8 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
 
   it("mo#A.2 public / limited → unpublished。{post_id, status} を返し、KV は no になる", async () => {
     const p = await pub({ html: gameHtml({ salt: "p" }), publish: true });
-    const l = await pub({ html: gameHtml({ salt: "l" }), publish: true });
-    await db.update(s.posts).set({ baseStatus: "limited" }).where(eq(s.posts.id, l.post_id));
+    const l = await pubLimited({ html: gameHtml({ salt: "l" }) });
+    expect(await baseStatus(l.post_id)).toBe("limited");
     expect(kvValues.get(p.post_id)?.status).toBe("ok");
 
     expect(await unpub(p.post_id)).toEqual({
@@ -253,7 +270,10 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
       ok: true,
       value: { post_id: p.post_id, status: "unpublished" },
     });
-    expect(await unpub(d.post_id)).toEqual({ ok: true, value: { post_id: d.post_id, status: "draft" } });
+    expect(await unpub(d.post_id)).toEqual({
+      ok: true,
+      value: { post_id: d.post_id, status: "draft" },
+    });
     expect(await baseStatus(d.post_id)).toBe("draft");
     expect(kvPuts).toBe(puts);
     expect(kvValues.get(d.post_id)?.status).toBe("draft");
@@ -263,7 +283,9 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     const r = await pub({ html: gameHtml(), publish: true });
     await db.update(s.posts).set({ indivRestricted: true }).where(eq(s.posts.id, r.post_id));
     await addActor("a1", OTHER);
-    await db.insert(s.reports).values({ postId: r.post_id, actorId: "a1", category: "spam", weight: 1 });
+    await db
+      .insert(s.reports)
+      .values({ postId: r.post_id, actorId: "a1", category: "spam", weight: 1 });
 
     expect(await unpub(r.post_id)).toEqual({
       ok: true,

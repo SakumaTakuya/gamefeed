@@ -1,11 +1,13 @@
 /**
  * MCP サーバ（mcp.md）。ツールの入出力の形と説明文だけを持ち、処理は API の関数（publish.ts）を同じプロセスで呼ぶ。
- * `list_my_games` / `unpublish_game` / `gf://guide` は #88。
+ * 公開するのはツール 3 本とリソース 1 つだけ（mc#A.3、C1）。
  */
 
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
-import { type PublishDeps, publishGame, type ToolError } from "./publish.ts";
+import { GUIDE_MARKDOWN } from "./guide.gen.ts";
+import { listMyGames, unpublishGame } from "./my-games.ts";
+import { type PublishDeps, publishGame, type ToolError, type ToolOutcome } from "./publish.ts";
 
 /** mc#A.2: `version` はデプロイのコミット短縮ハッシュ（Vercel が入れる環境変数。ローカルは dev） */
 export const MCP_SERVER_INFO = {
@@ -21,6 +23,15 @@ export const PUBLISH_GAME_DESCRIPTION = [
   "作者が公開を望んだときだけ `publish: true` を付ける。公開後は内容を変えられない。直すなら新しい下書きにする。",
   "投稿は GameFeed 上でのリミックス（改変と再投稿、元作者の表示つき）を許諾したものとして扱う。作者に伝えておくこと。",
 ].join("\n");
+
+export const LIST_MY_GAMES_DESCRIPTION =
+  "自分の投稿の一覧。状態（下書き・公開・制限中など）、プレイ数、いいね、校正までの残りを返す。「ランに入りました」は `calibration: calibrated` で分かる。制限中なら理由（通報カテゴリ）が付く。";
+
+export const UNPUBLISH_GAME_DESCRIPTION =
+  "公開した投稿を非公開にする。取り消せる（作者がサイトで再公開できる）。削除ではない。";
+
+export const GUIDE_URI = "gf://guide";
+export const GUIDE_DESCRIPTION = "GameFeed のミクロゲーム規約。`publish_game` を呼ぶ前に読む。";
 
 export interface McpContext {
   /** アクセストークンの `sub`（= `auth_user.id` = `users.id`）。requireMcpAuth を通っていれば必ずある */
@@ -64,16 +75,47 @@ export function createMcpServer(ctx: McpContext): McpServer {
         publish: z.boolean().optional().describe("true でそのまま公開する。既定は false（下書き）"),
       }),
     },
-    async (input) => {
-      const result = await publishGame(ctx.publish, requireUser(ctx), input);
-      if (result.ok) return success(result.value);
-      // banned はツールの結果にしない（mc#A.2: トークンを無効として 401。HTTP 層の検査は moderation の実装で入れる）
-      if (result.error.code === "banned") throw new Error("unauthorized");
-      return failure(result.error);
+    async (input) => toResult(await publishGame(ctx.publish, requireUser(ctx), input)),
+  );
+
+  server.registerTool(
+    "list_my_games",
+    { title: "自分の投稿の一覧", description: LIST_MY_GAMES_DESCRIPTION },
+    // 出力は一覧だが、structuredContent はオブジェクトでなければならないので `games` に入れる
+    async () => toResult(await listMyGames(ctx.publish, requireUser(ctx))),
+  );
+
+  server.registerTool(
+    "unpublish_game",
+    {
+      title: "投稿を非公開にする",
+      description: UNPUBLISH_GAME_DESCRIPTION,
+      inputSchema: z.object({ post_id: z.string().describe("非公開にする投稿の post_id") }),
     },
+    async (input) => toResult(await unpublishGame(ctx.publish, requireUser(ctx), input)),
+  );
+
+  server.registerResource(
+    "guide",
+    GUIDE_URI,
+    {
+      title: "GameFeed ミクロゲーム規約",
+      description: GUIDE_DESCRIPTION,
+      mimeType: "text/markdown",
+    },
+    async () => ({
+      contents: [{ uri: GUIDE_URI, mimeType: "text/markdown", text: GUIDE_MARKDOWN }],
+    }),
   );
 
   return server;
+}
+
+function toResult(outcome: ToolOutcome<object>): ToolResult {
+  if (outcome.ok) return success(outcome.value);
+  // banned はツールの結果にしない（mc#A.2: トークンを無効として 401。HTTP 層の検査は moderation の実装で入れる）
+  if (outcome.error.code === "banned") throw new Error("unauthorized");
+  return failure(outcome.error);
 }
 
 function requireUser(ctx: McpContext): string {
