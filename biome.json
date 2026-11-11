@@ -8,7 +8,8 @@
       "!**/node_modules",
       "!**/.wrangler",
       "!**/*.md",
-      "!**/migrations/meta"
+      "!**/migrations/meta",
+      "!**/*.gen.ts"
     ]
   },
   "formatter": { "enabled": true, "indentStyle": "space", "indentWidth": 2, "lineWidth": 100 },

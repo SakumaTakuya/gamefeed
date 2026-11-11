@@ -384,6 +384,34 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(kv.values.get(r.post_id)).toEqual({ hash: sha256(h2), status: "no" });
   });
 
+  it("R-mc.A7-1 post_id なしで同じ HTML の下書きに publish: true を付けても公開しない（status: draft、reused: true。mc#A.6 の 3）", async () => {
+    const html = gameHtml();
+    const d = await ok({ html });
+    const again = await ok({ html, publish: true });
+    expect(again).toEqual({ ...d, reused: true });
+    const p = await post(d.post_id);
+    expect(p).toMatchObject({ baseStatus: "draft", publishedAt: null });
+    expect(kv.values.get(d.post_id)?.status).toBe("draft");
+  });
+
+  it("R-mc.A7-1 同じ内容の自分の投稿が複数あるときは updated_at が最も新しい投稿を返す。removed が 1 つでもあれば invalid_state", async () => {
+    const html = gameHtml();
+    const live = await ok({ html, publish: true });
+    now = new Date(now.getTime() + 1000);
+    // 別の下書きを、公開済みと同じ内容で置き換える（置き換えは同一内容を確認しない）
+    const draft = await ok({ html: gameHtml({ salt: "other" }) });
+    now = new Date(now.getTime() + 1000);
+    await ok({ html, post_id: draft.post_id });
+    expect(await ok({ html })).toMatchObject({
+      post_id: draft.post_id,
+      status: "draft",
+      reused: true,
+    });
+
+    await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, live.post_id));
+    expect((await err({ html })).code).toBe("invalid_state");
+  });
+
   it("R-mc.A7-1 removed の内容の再投稿は invalid_state（新しい行を作らない）", async () => {
     const html = gameHtml();
     const v = await ok({ html, publish: true });
