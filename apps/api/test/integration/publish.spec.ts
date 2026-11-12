@@ -588,10 +588,19 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(kv.puts).toBe(puts);
     expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(a), status: "draft" });
 
-    // 配信を止める方向（no）は R2 に無くても書く
-    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, v.post_id));
-    expect(await syncServe(db, kv, v.post_id)).toBe(true);
-    expect(kv.values.get(v.post_id)?.status).toBe("no");
+    // 配信を止める方向（no）は R2 に無くても書く: 公開したが R2 に置けなかった投稿を非公開にする
+    const c = gameHtml({ title: "公開で失敗" });
+    storage.failures = 1;
+    expect((await err({ html: c, publish: true })).code).toBe("storage_failed");
+    const [p] = await db
+      .select()
+      .from(s.posts)
+      .where(eq(s.posts.gameHash, sha256(c)));
+    if (!p) throw new Error("投稿が無い");
+    expect(kv.values.has(p.id)).toBe(false);
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, p.id));
+    expect(await syncServe(db, kv, p.id)).toBe(true);
+    expect(kv.values.get(p.id)).toEqual({ hash: sha256(c), status: "no" });
   });
 
   it("mc#A.2 R2 / KV が未設定なら not_configured で、何も書かない", async () => {

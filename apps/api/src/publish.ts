@@ -380,7 +380,8 @@ export async function publishGame(
 
   // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら storage_failed
   if (!(await syncServe(db, kv, committed.postId))) {
-    // 投稿は DB と R2 にあるが、KV に無いので試遊も配信もできない。同じ入力の呼び直しで同じ投稿に戻り、KV だけ書き直す
+    // KV に書けなかったか、並行する置き換えで「いまの内容」が R2 に無い。どちらも試遊・配信ができないので、
+    // 同じ入力で呼び直させる（同じ投稿に戻り、足りないものだけ書き直す）
     return fail(
       "storage_failed",
       "ゲームは保存しましたが、配信の準備が終わっていません。同じ内容でもう一度 publish_game を呼んでください。",
@@ -442,14 +443,22 @@ async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promi
  * （公開済みに戻った publish_game の `ok` が、後から確定した unpublish_game の `no` を上書きする）。
  * 投稿ごとの advisory lock の中で状態を読み直して書くので、最後に書く者は必ず最新の確定状態を書く。
  * 行がもう無い（下書きが消えた）なら何もしない。書けなかったら false。
+ * いまの内容が R2 に無い（`games.stored_at` が NULL）間も書かずに false（mc#A.6 の 12、C7）。
  */
 export async function syncServe(db: Db, kv: ServeKv, postId: string): Promise<boolean> {
   return db.transaction(async (txn) => {
     const tx = txn as unknown as Db;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`serve:${postId}`}, 0))`);
-    const [p] = await tx.select({ hash: posts.gameHash }).from(posts).where(eq(posts.id, postId));
+    const [p] = await tx
+      .select({ hash: posts.gameHash, storedAt: games.storedAt })
+      .from(posts)
+      .innerJoin(games, eq(games.hash, posts.gameHash))
+      .where(eq(posts.id, postId));
     if (!p) return true;
     const status = serveStatus(await statusOf(tx, postId));
+    // C7: R2 に無い内容を KV に指させない。並行する置き換えが DB を先に確定させ、その R2 が失敗（または途中）のときに起きる。
+    // 呼び出し側は storage_failed を返し、呼び直しが R2 から置き直す。止める方向（no）は内容を配らないので書く
+    if (status !== "no" && !p.storedAt) return false;
     return writeServe(kv, postId, { hash: p.hash, status });
   });
 }
