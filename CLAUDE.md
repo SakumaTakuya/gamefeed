@@ -33,6 +33,7 @@ docs/          プロダクト定義（product.md）・仕様の各文書・計�
 2. ブランチ `type/<issue番号>-<短い説明>`（例: `feat/12-host-state-machine`）。
 3. **テストを先に書く**（docs/testing.md）。Red → Green → Refactor。
 4. PR は Issue を `Closes #N` で参照。CI 緑のみ squash merge。レビューは AI 自身が PR 本文で「仕様との対応」「テストで保証したこと」「保証していないこと」を書く。
+   Codex レビューは最初の 1 回で終える。P0 / P1 は必ず直し、P2 は小さければ直すか Issue に回し、P3 は直さない。マージ条件は CI 緑かつ P0 / P1 の未対応なし（docs/workflow.md「Codex レビュー」）。
 5. マージ後、Issue が閉じたことと `docs/requirements.md` の対応表が更新されていることを確認する。
 
 ## コミットとPR
