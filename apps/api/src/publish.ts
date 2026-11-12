@@ -366,7 +366,9 @@ export async function publishGame(
   if (!g?.storedAt) {
     try {
       await storage.put(r2Key, html);
-    } catch {
+    } catch (e) {
+      // 原因（HTTP ステータスと応答の先頭。秘密は入らない）は運営がログで追う。作者には一般的な文だけ返す
+      console.error(`R2 への ${r2Key} の書き込みに失敗した`, e);
       return fail(
         "storage_failed",
         "ゲームの保存に失敗しました。同じ内容でもう一度 publish_game を呼んでください。",
