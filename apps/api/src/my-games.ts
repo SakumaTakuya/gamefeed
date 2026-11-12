@@ -1,6 +1,7 @@
 /**
  * `list_my_games` と `unpublish_game` の本体（mcp.md A.3、moderation.md A.2 の `unpublish` の行）。
  * どちらも DB だけで動く（mc#A.2）。KV があれば `unpublish_game` が `serve:<post_id>` を `no` にする（se#A.5）。
+ * KV に書けなかったら `storage_failed` を返し、呼び直しで KV だけ書き直す（DB は既に `unpublished`）。
  */
 
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
@@ -13,8 +14,8 @@ import {
   type PostStatus,
   type PublishDeps,
   statusOf,
+  syncServe,
   type ToolOutcome,
-  writeServe,
 } from "./publish.ts";
 
 /** 一覧の上限（mc#A.3、暫定） */
@@ -134,7 +135,6 @@ export async function unpublishGame(
         id: posts.id,
         userId: posts.userId,
         baseStatus: posts.baseStatus,
-        gameHash: posts.gameHash,
       })
       .from(posts)
       .where(eq(posts.id, input.post_id))
@@ -147,16 +147,22 @@ export async function unpublishGame(
       );
     }
     // unpublished / draft には何もせず成功。制限（indiv_restricted、tree_locks）と通報は触らない
-    const changed = p.baseStatus === "limited" || p.baseStatus === "public";
-    if (changed) {
+    if (p.baseStatus === "limited" || p.baseStatus === "public") {
       await tx.update(posts).set({ baseStatus: "unpublished" }).where(eq(posts.id, p.id));
     }
-    return { postId: p.id, hash: p.gameHash, status: await statusOf(tx, p.id), changed };
+    return { postId: p.id, status: await statusOf(tx, p.id) };
   });
   if ("ok" in done) return done;
 
-  if (done.changed && deps.kv) {
-    await writeServe(deps.kv, done.postId, { hash: done.hash, status: "no" });
+  // KV は状態が変わらなかったときも書き直す。前回の呼び出しで KV だけ失敗した場合に、呼び直しで配信が止まるように。
+  // 下書きは止める配信が無いので触らない（R2 に内容が無い下書きで syncServe が false を返し、何もしない呼び出しが失敗になるのを避ける）
+  if (deps.kv && done.status !== "draft") {
+    if (!(await syncServe(deps.db, deps.kv, done.postId))) {
+      return fail(
+        "storage_failed",
+        "非公開にしましたが、配信の停止がまだ反映されていません。もう一度 unpublish_game を呼んでください。",
+      );
+    }
   }
   return { ok: true, value: { post_id: done.postId, status: done.status } };
 }

@@ -4,7 +4,7 @@
  */
 
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { user as authUser } from "../../src/db/auth-schema.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
 import * as s from "../../src/db/schema.ts";
@@ -261,11 +261,52 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     expect(kvValues.get(l.post_id)?.status).toBe("no");
   });
 
-  it("mo#A.2 unpublished / draft には何もせず成功（状態も KV も変えない）", async () => {
+  it("se#A.5 KV に書けなかったら storage_failed（DB は unpublished のまま）。呼び直すと KV だけ書き直して成功する", async () => {
+    const p = await pub({ html: gameHtml(), publish: true });
+    const working = deps.kv;
+    let attempts = 0;
+    deps = {
+      ...deps,
+      kv: {
+        put: async () => {
+          attempts++;
+          throw new Error("KV に届かない（fake）");
+        },
+      },
+    };
+    const failed = await unpub(p.post_id);
+    expect(failed.ok ? null : failed.error.code).toBe("storage_failed");
+    expect(attempts).toBe(3);
+    expect(await baseStatus(p.post_id)).toBe("unpublished");
+    expect(kvValues.get(p.post_id)?.status).toBe("ok");
+
+    deps = { ...deps, ...(working ? { kv: working } : {}) };
+    expect(await unpub(p.post_id)).toEqual({
+      ok: true,
+      value: { post_id: p.post_id, status: "unpublished" },
+    });
+    expect(kvValues.get(p.post_id)?.status).toBe("no");
+  });
+
+  it("mo#A.2 draft は R2 に内容が無くても何もせず成功（止める配信が無いので KV を触らない）", async () => {
+    // R2 に置けなかった下書き（stored_at NULL、KV なし）
+    const html = gameHtml({ salt: "unstored" });
+    const failing = { ...deps, storage: { put: () => Promise.reject(new Error("R2 に届かない")) } };
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const r = await publishGame(failing, ME, { html });
+    logged.mockRestore();
+    expect(r.ok ? null : r.error.code).toBe("storage_failed");
+    const [p] = await db.select().from(s.posts);
+    if (!p) throw new Error("投稿が無い");
+    const puts = kvPuts;
+    expect(await unpub(p.id)).toEqual({ ok: true, value: { post_id: p.id, status: "draft" } });
+    expect(kvPuts).toBe(puts);
+  });
+
+  it("mo#A.2 unpublished / draft には何もせず成功（状態を変えず、unpublished の KV は同じ値を書き直すだけ）", async () => {
     const d = await pub({ html: gameHtml({ salt: "d" }) });
     const p = await pub({ html: gameHtml({ salt: "p" }), publish: true });
     await unpub(p.post_id);
-    const puts = kvPuts;
     expect(await unpub(p.post_id)).toEqual({
       ok: true,
       value: { post_id: p.post_id, status: "unpublished" },
@@ -275,8 +316,9 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
       value: { post_id: d.post_id, status: "draft" },
     });
     expect(await baseStatus(d.post_id)).toBe("draft");
-    expect(kvPuts).toBe(puts);
+    expect(await baseStatus(p.post_id)).toBe("unpublished");
     expect(kvValues.get(d.post_id)?.status).toBe("draft");
+    expect(kvValues.get(p.post_id)?.status).toBe("no");
   });
 
   it("mo#A.2 制限中の投稿も unpublished にできる。制限（indiv_restricted）と通報は触らない", async () => {

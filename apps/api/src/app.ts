@@ -10,9 +10,11 @@ import {
 } from "./auth.ts";
 import { type ApiConfig, configFromEnv } from "./config.ts";
 import { createDb } from "./db/client.ts";
+import { createServeKv } from "./kv.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
 import type { PublishDeps } from "./publish.ts";
+import { createR2Storage } from "./r2.ts";
 
 // REST API・Better Auth・MCP サーバはすべてこの app に載せる。
 // Vercel からは /api/index.ts 経由で、ローカルは src/dev.ts から起動する。
@@ -95,8 +97,15 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
     google: config.google,
   });
   // SPA と API は同じ Vercel プロジェクトなので、試遊 URL・ゲームページの元（mc#A.9）は baseURL と同じ。
-  // R2 / KV の実体は #89 で繋ぐ。それまで publish_game は not_configured を返す
-  const publish: PublishDeps = { db, appOrigin: config.baseURL, now: () => new Date() };
+  // R2_* / KV の変数が揃っていなければ storage / kv は入らず、publish_game は not_configured を返す（mc#A.2）
+  const publish: PublishDeps = {
+    db,
+    appOrigin: config.baseURL,
+    now: () => new Date(),
+    ...(config.r2 ? { storage: createR2Storage(config.r2) } : {}),
+    ...(config.kv ? { kv: createServeKv(config.kv) } : {}),
+    storageMissing: config.storageMissing,
+  };
   return { auth, baseURL: config.baseURL, publish };
 }
 

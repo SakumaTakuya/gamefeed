@@ -28,7 +28,7 @@ export const TITLE_MAX = 40;
 export const PROMPT_MAX = 1000;
 /** 「当日」の境界は JST の 0 時（mc#A.6 の 4、B.8） */
 export const DAY_OFFSET_MS = 9 * 60 * 60 * 1000;
-/** KV の書き込みを試す回数（mc#A.6 の 12「失敗はリトライ」。それでも駄目なら日次の突き合わせに任せる） */
+/** KV の書き込みを試す回数（mc#A.6 の 12「失敗はリトライ」。それでも駄目なら `storage_failed`） */
 export const KV_ATTEMPTS = 3;
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -60,6 +60,8 @@ export interface PublishDeps {
   /** 未設定（`R2_*` なし）なら `not_configured`（mc#A.2） */
   storage?: GameStorage;
   kv?: ServeKv;
+  /** 未設定のときに足りない環境変数の名前（`not_configured` の文に入れる。値は入れない） */
+  storageMissing?: string[];
   /** 試遊 URL・ゲームページの元（末尾スラッシュなし）。mc#A.9 */
   appOrigin: string;
   now: () => Date;
@@ -159,9 +161,12 @@ export async function publishGame(
 ): Promise<PublishResult> {
   const { db, storage, kv } = deps;
   if (!storage || !kv) {
+    const names = deps.storageMissing?.length
+      ? `（未設定: ${deps.storageMissing.join(", ")}）`
+      : "";
     return fail(
       "not_configured",
-      "GameFeed の保存先がまだ設定されていません。運営に連絡してください。",
+      `GameFeed の保存先がまだ設定されていません。運営に連絡してください。${names}`,
     );
   }
 
@@ -361,7 +366,9 @@ export async function publishGame(
   if (!g?.storedAt) {
     try {
       await storage.put(r2Key, html);
-    } catch {
+    } catch (e) {
+      // 原因（HTTP ステータスと応答の先頭。秘密は入らない）は運営がログで追う。作者には一般的な文だけ返す
+      console.error(`R2 への ${r2Key} の書き込みに失敗した`, e);
       return fail(
         "storage_failed",
         "ゲームの保存に失敗しました。同じ内容でもう一度 publish_game を呼んでください。",
@@ -373,8 +380,15 @@ export async function publishGame(
       .where(and(eq(games.hash, hash), isNull(games.storedAt)));
   }
 
-  // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら日次の突き合わせに任せる
-  await writeServe(kv, committed.postId, { hash, status: serveStatus(committed.status) });
+  // 12. KV（se#A.5）。stored_at が入ってから書く。失敗はリトライし、駄目なら storage_failed
+  if (!(await syncServe(db, kv, committed.postId))) {
+    // KV に書けなかったか、並行する置き換えで「いまの内容」が R2 に無い。どちらも試遊・配信ができないので、
+    // 同じ入力で呼び直させる（同じ投稿に戻り、足りないものだけ書き直す）
+    return fail(
+      "storage_failed",
+      "ゲームは保存しましたが、配信の準備が終わっていません。同じ内容でもう一度 publish_game を呼んでください。",
+    );
+  }
 
   return {
     ok: true,
@@ -409,17 +423,51 @@ function errorOut(f: Finding): { code: string; message: string; fix: string; lin
 
 /**
  * KV `serve:<post_id>` を書く（se#A.5）。DB のコミット後に呼ぶ。
- * 失敗はリトライし、駄目なら日次の突き合わせに任せる（例外にしない）。
+ * 失敗はリトライし、それでも駄目なら false を返す（例外にしない）。
+ * 呼び出し側は false を `storage_failed` として返し、同じ入力の呼び直しで書き直せるようにする。
  */
-export async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<void> {
+async function writeServe(kv: ServeKv, postId: string, value: ServeValue): Promise<boolean> {
   for (let i = 0; i < KV_ATTEMPTS; i++) {
     try {
       await kv.put(postId, value);
-      return;
+      return true;
     } catch (e) {
       if (i === KV_ATTEMPTS - 1) console.error(`KV serve:${postId} の書き込みに失敗した`, e);
     }
   }
+  return false;
+}
+
+/**
+ * KV `serve:<post_id>` を、いま DB に確定している状態に合わせる（se#A.5）。DB のコミット後に呼ぶ。
+ *
+ * 呼び出し側が自分のトランザクションで見た状態をそのまま書くと、並行する操作と KV の書き込み順が入れ替わりうる
+ * （公開済みに戻った publish_game の `ok` が、後から確定した unpublish_game の `no` を上書きする）。
+ * 投稿ごとの advisory lock の中で状態を読み直して書くので、最後に書く者は必ず最新の確定状態を書く。
+ * 行がもう無い（下書きが消えた）なら何もしない。書けなかったら false。
+ * いまの内容が R2 に無い（`games.stored_at` が NULL）間も書かずに false（mc#A.6 の 12、C7）。
+ */
+export async function syncServe(db: Db, kv: ServeKv, postId: string): Promise<boolean> {
+  return db.transaction(async (txn) => {
+    const tx = txn as unknown as Db;
+    await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`serve:${postId}`}, 0))`);
+    // 内容・R2 の有無・状態は 1 文で読む。READ COMMITTED では文ごとにスナップショットが変わるので、
+    // 分けて読むと間に確定した置き換えで「古い hash と新しい状態」の組ができる
+    const rows = (await tx.execute(sql`
+      select p.game_hash as hash, g.stored_at as stored_at, ps.status as status
+      from posts p
+      join games g on g.hash = p.game_hash
+      join post_status ps on ps.id = p.id
+      where p.id = ${postId}
+    `)) as unknown as { hash: string; stored_at: Date | null; status: PostStatus }[];
+    const p = rows[0];
+    if (!p) return true;
+    const status = serveStatus(p.status);
+    // C7: R2 に無い内容を KV に指させない。並行する置き換えが DB を先に確定させ、その R2 が失敗（または途中）のときに起きる。
+    // 呼び出し側は storage_failed を返し、呼び直しが R2 から置き直す。止める方向（no）は内容を配らないので書く
+    if (status !== "no" && !p.stored_at) return false;
+    return writeServe(kv, postId, { hash: p.hash, status });
+  });
 }
 
 /** 投稿状態（dm#A.4 の `post_status` ビュー） */

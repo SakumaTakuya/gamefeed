@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { user as authUser } from "../../src/db/auth-schema.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
 import * as s from "../../src/db/schema.ts";
@@ -19,6 +19,7 @@ import {
   publishGame,
   type ServeKv,
   type ServeValue,
+  syncServe,
 } from "../../src/publish.ts";
 import { gameHtml } from "../helpers/game-html.ts";
 
@@ -505,8 +506,14 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const html = gameHtml();
     const hash = sha256(html);
     storage.failures = 1;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const e = await err({ html, title: "題" });
     expect(e.code).toBe("storage_failed");
+    // 原因（R2 の応答）は運営がログで追えるように残す。作者に返す文には入れない
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(String(logged.mock.calls[0]?.[1])).toContain("R2 に届かない");
+    expect(e.message).not.toContain("R2 に届かない");
+    logged.mockRestore();
     expect(await count("posts")).toBe(1);
     expect((await game(hash)).storedAt).toBeNull();
     expect(kv.puts).toBe(0);
@@ -530,16 +537,76 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(html), status: "ok" });
   });
 
-  it("mc#A.6 の 12: KV の書き込みは失敗したらリトライする。3 回とも失敗しても投稿は成功として返す（日次の突き合わせで直る）", async () => {
+  it("mc#A.6 の 12: KV の書き込みは失敗したらリトライする。3 回とも失敗したら storage_failed で、同じ入力の呼び直しで KV だけ書き直す", async () => {
     kv.failures = 2;
     const v = await ok({ html: gameHtml() });
     expect(kv.puts).toBe(3);
     expect(kv.values.get(v.post_id)?.status).toBe("draft");
 
+    kv.failures = 3;
+    const html = gameHtml({ salt: "2" });
+    const e = await err({ html, publish: true });
+    expect(e.code).toBe("storage_failed");
+    expect(await count("posts")).toBe(2);
+    expect((await game(sha256(html))).storedAt).not.toBeNull();
+
+    const puts = storage.puts;
+    const w = await ok({ html, publish: true });
+    expect(w).toMatchObject({ status: "limited", reused: true });
+    expect(kv.values.get(w.post_id)).toEqual({ hash: sha256(html), status: "ok" });
+    // R2 は書き直さない（stored_at が入っている）
+    expect(storage.puts).toBe(puts);
+    expect(await count("posts")).toBe(2);
+  });
+
+  it("se#A.5 KV に書くのは書く時点で DB に確定している状態（並行する非公開の no を、古い ok で上書きしない）", async () => {
+    const html = gameHtml();
+    const v = await ok({ html, publish: true });
+    expect(kv.values.get(v.post_id)?.status).toBe("ok");
+    // publish_game が「公開済み」と見た後、KV に書く前に unpublish が確定した状況を作る:
+    // DB だけ unpublished にしてから syncServe を呼ぶ
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, v.post_id));
+    expect(await syncServe(db, kv, v.post_id)).toBe(true);
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(html), status: "no" });
+
+    // 行が無い post_id は何も書かない
+    const puts = kv.puts;
+    expect(await syncServe(db, kv, "01JZZZZZZZZZZZZZZZZZZZZZZZ")).toBe(true);
+    expect(kv.puts).toBe(puts);
+
+    // 書けなければ false
     kv.failures = 99;
-    const w = await ok({ html: gameHtml({ salt: "2" }) });
-    expect(w.status).toBe("draft");
-    expect(kv.values.has(w.post_id)).toBe(false);
+    expect(await syncServe(db, kv, v.post_id)).toBe(false);
+  });
+
+  it("mc#A.12 C7 いまの内容が R2 に無い（stored_at NULL）間は KV を書かず false（並行する置き換えの R2 が失敗した状況）", async () => {
+    const a = gameHtml();
+    const b = gameHtml({ title: "置き換え後" });
+    const v = await ok({ html: a });
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(a), status: "draft" });
+    // 後から来た置き換えが DB を確定させたが、R2 に置けなかった
+    storage.failures = 1;
+    expect((await err({ html: b, post_id: v.post_id })).code).toBe("storage_failed");
+    expect((await post(v.post_id)).gameHash).toBe(sha256(b));
+    // 先の呼び出しがここで KV を書きに来る。R2 に無い内容を指してはいけない
+    const puts = kv.puts;
+    expect(await syncServe(db, kv, v.post_id)).toBe(false);
+    expect(kv.puts).toBe(puts);
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(a), status: "draft" });
+
+    // 配信を止める方向（no）は R2 に無くても書く: 公開したが R2 に置けなかった投稿を非公開にする
+    const c = gameHtml({ title: "公開で失敗" });
+    storage.failures = 1;
+    expect((await err({ html: c, publish: true })).code).toBe("storage_failed");
+    const [p] = await db
+      .select()
+      .from(s.posts)
+      .where(eq(s.posts.gameHash, sha256(c)));
+    if (!p) throw new Error("投稿が無い");
+    expect(kv.values.has(p.id)).toBe(false);
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, p.id));
+    expect(await syncServe(db, kv, p.id)).toBe(true);
+    expect(kv.values.get(p.id)).toEqual({ hash: sha256(c), status: "no" });
   });
 
   it("mc#A.2 R2 / KV が未設定なら not_configured で、何も書かない", async () => {
