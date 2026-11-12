@@ -449,16 +449,21 @@ export async function syncServe(db: Db, kv: ServeKv, postId: string): Promise<bo
   return db.transaction(async (txn) => {
     const tx = txn as unknown as Db;
     await tx.execute(sql`select pg_advisory_xact_lock(hashtextextended(${`serve:${postId}`}, 0))`);
-    const [p] = await tx
-      .select({ hash: posts.gameHash, storedAt: games.storedAt })
-      .from(posts)
-      .innerJoin(games, eq(games.hash, posts.gameHash))
-      .where(eq(posts.id, postId));
+    // 内容・R2 の有無・状態は 1 文で読む。READ COMMITTED では文ごとにスナップショットが変わるので、
+    // 分けて読むと間に確定した置き換えで「古い hash と新しい状態」の組ができる
+    const rows = (await tx.execute(sql`
+      select p.game_hash as hash, g.stored_at as stored_at, ps.status as status
+      from posts p
+      join games g on g.hash = p.game_hash
+      join post_status ps on ps.id = p.id
+      where p.id = ${postId}
+    `)) as unknown as { hash: string; stored_at: Date | null; status: PostStatus }[];
+    const p = rows[0];
     if (!p) return true;
-    const status = serveStatus(await statusOf(tx, postId));
+    const status = serveStatus(p.status);
     // C7: R2 に無い内容を KV に指させない。並行する置き換えが DB を先に確定させ、その R2 が失敗（または途中）のときに起きる。
     // 呼び出し側は storage_failed を返し、呼び直しが R2 から置き直す。止める方向（no）は内容を配らないので書く
-    if (status !== "no" && !p.storedAt) return false;
+    if (status !== "no" && !p.stored_at) return false;
     return writeServe(kv, postId, { hash: p.hash, status });
   });
 }
