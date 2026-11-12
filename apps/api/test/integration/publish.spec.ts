@@ -8,7 +8,7 @@
 
 import { createHash } from "node:crypto";
 import { eq, sql } from "drizzle-orm";
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import { user as authUser } from "../../src/db/auth-schema.ts";
 import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
 import * as s from "../../src/db/schema.ts";
@@ -506,8 +506,14 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const html = gameHtml();
     const hash = sha256(html);
     storage.failures = 1;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
     const e = await err({ html, title: "題" });
     expect(e.code).toBe("storage_failed");
+    // 原因（R2 の応答）は運営がログで追えるように残す。作者に返す文には入れない
+    expect(logged).toHaveBeenCalledTimes(1);
+    expect(String(logged.mock.calls[0]?.[1])).toContain("R2 に届かない");
+    expect(e.message).not.toContain("R2 に届かない");
+    logged.mockRestore();
     expect(await count("posts")).toBe(1);
     expect((await game(hash)).storedAt).toBeNull();
     expect(kv.puts).toBe(0);
