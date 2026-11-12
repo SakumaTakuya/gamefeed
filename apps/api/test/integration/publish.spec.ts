@@ -573,6 +573,27 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(await syncServe(db, kv, v.post_id)).toBe(false);
   });
 
+  it("mc#A.12 C7 いまの内容が R2 に無い（stored_at NULL）間は KV を書かず false（並行する置き換えの R2 が失敗した状況）", async () => {
+    const a = gameHtml();
+    const b = gameHtml({ title: "置き換え後" });
+    const v = await ok({ html: a });
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(a), status: "draft" });
+    // 後から来た置き換えが DB を確定させたが、R2 に置けなかった
+    storage.failures = 1;
+    expect((await err({ html: b, post_id: v.post_id })).code).toBe("storage_failed");
+    expect((await post(v.post_id)).gameHash).toBe(sha256(b));
+    // 先の呼び出しがここで KV を書きに来る。R2 に無い内容を指してはいけない
+    const puts = kv.puts;
+    expect(await syncServe(db, kv, v.post_id)).toBe(false);
+    expect(kv.puts).toBe(puts);
+    expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(a), status: "draft" });
+
+    // 配信を止める方向（no）は R2 に無くても書く
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, v.post_id));
+    expect(await syncServe(db, kv, v.post_id)).toBe(true);
+    expect(kv.values.get(v.post_id)?.status).toBe("no");
+  });
+
   it("mc#A.2 R2 / KV が未設定なら not_configured で、何も書かない", async () => {
     const { storage: _s, ...noStorage } = deps;
     const r = await publishGame(noStorage, ME, { html: gameHtml() });
