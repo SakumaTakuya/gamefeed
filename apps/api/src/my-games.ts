@@ -154,8 +154,9 @@ export async function unpublishGame(
   });
   if ("ok" in done) return done;
 
-  // KV は状態が変わらなかったときも書き直す。前回の呼び出しで KV だけ失敗した場合に、呼び直しで配信が止まるように
-  if (deps.kv) {
+  // KV は状態が変わらなかったときも書き直す。前回の呼び出しで KV だけ失敗した場合に、呼び直しで配信が止まるように。
+  // 下書きは止める配信が無いので触らない（R2 に内容が無い下書きで syncServe が false を返し、何もしない呼び出しが失敗になるのを避ける）
+  if (deps.kv && done.status !== "draft") {
     if (!(await syncServe(deps.db, deps.kv, done.postId))) {
       return fail(
         "storage_failed",
