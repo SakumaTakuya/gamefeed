@@ -1,6 +1,6 @@
 // 下書きの試遊ページ（mc#A.9、product#9 の 3、protocol#A.11）。
 // 作者がログインして試遊トークンを取り、配信オリジンのゲームを iframe に入れて遊ぶ。
-import type { Speed } from "@gamefeed/domain";
+import type { GameMeta, Speed } from "@gamefeed/domain";
 import { createHost, type Host } from "@gamefeed/sdk";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { gameUrl } from "../game-url.ts";
@@ -15,6 +15,8 @@ type Access =
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 const SPEED: Speed = 1;
+/** 最初の load から ready までに待つ時間（ms）。過ぎたら読み込み失敗として扱う */
+const READY_TIMEOUT_MS = 5000;
 
 /** 試遊トークンを取り、iframe の URL を作る（se#A.5）。 */
 async function loadAccess(postId: string): Promise<Access> {
@@ -99,6 +101,8 @@ function Player({ postId, src }: { postId: string; src: string }) {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const hostRef = useRef<Host | null>(null);
   const loads = useRef(0);
+  /** 最後に届いたメタ宣言。破棄した後も診断に載せるために持っておく */
+  const lastMeta = useRef<GameMeta | null>(null);
   /** iframe を外した理由（ページ移動など、Host 側で見つけたもの） */
   const [halted, setHalted] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
@@ -144,10 +148,20 @@ function Player({ postId, src }: { postId: string; src: string }) {
     if (loads.current > 1) {
       host.destroy();
       setHalted("ゲームが別のページへ移動しようとしたため止めました");
+      return;
     }
+    // 読み込めたのに ready が届かない（配信が 404、SDK より前の例外など）なら、待ち続けずに知らせる
+    window.setTimeout(() => {
+      if (host.state.kind !== "LOADING") return;
+      host.destroy();
+      setHalted(
+        "ゲームから ready が届きませんでした。配信が 404（試遊トークンの期限切れなど）か、ゲームの読み込み中に例外が出ています",
+      );
+    }, READY_TIMEOUT_MS);
   }, [host]);
 
-  const meta = "meta" in state ? state.meta : null;
+  if ("meta" in state) lastMeta.current = state.meta;
+  const meta = lastMeta.current;
   const result = state.kind === "ENDED" ? state.result : null;
   const problem = halted ?? host.problem;
   const dead = state.kind === "DESTROYED";
@@ -227,7 +241,14 @@ function Player({ postId, src }: { postId: string; src: string }) {
               </>
             )}
 
-            {dead && <p style={styles.error}>{problem ?? "ゲームを止めました"}</p>}
+            {dead && (
+              <>
+                <p style={styles.error}>{problem ?? "ゲームを止めました"}</p>
+                <button type="button" style={styles.button} onClick={() => location.reload()}>
+                  読み込み直す
+                </button>
+              </>
+            )}
 
             {(result || dead) && (
               <button type="button" style={styles.button} onClick={copy}>
