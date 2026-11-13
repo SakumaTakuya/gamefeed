@@ -14,7 +14,6 @@ describe("Guest SDK のバンドル", () => {
   it("インラインの <script> に入れても壊れない（</script と <!-- を含まず、ASCII だけ）", () => {
     expect(GUEST_SDK_JS.toLowerCase()).not.toContain("</script");
     expect(GUEST_SDK_JS).not.toContain("<!--");
-    // biome-ignore lint/suspicious/noControlCharactersInRegex: ASCII の範囲を見る
     expect(/^[\x00-\x7f]*$/.test(GUEST_SDK_JS)).toBe(true);
     expect(GUEST_SDK_JS.length).toBeLessThan(40_000);
   });
