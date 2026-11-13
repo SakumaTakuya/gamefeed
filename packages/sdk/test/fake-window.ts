@@ -63,7 +63,14 @@ export function fakeWindow(opts: FakeOptions = {}) {
   const doc = Object.assign(new Target(), {
     title: opts.title ?? " まるタップ ",
     readyState: opts.readyState ?? "loading",
-    documentElement: { style: {} as Record<string, string> },
+    documentElement: {
+      style: {} as Record<string, string>,
+      captured: [] as number[],
+      setPointerCapture(id: number): void {
+        if (id < 0) throw new Error("NotFoundError");
+        this.captured.push(id);
+      },
+    },
     querySelector: (sel: string) => {
       const m = metas.find((x) => x.name === nameOf(sel));
       return m ? asEl(m) : null;

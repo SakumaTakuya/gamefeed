@@ -64,7 +64,15 @@ export function installGuest(win: Window): void {
     const pointer = createPointerInput(meta.input, (kind, data) => guest.input(kind, data));
     const x = (ev: PointerEvent) => normalize(ev.clientX, win.innerWidth);
     const y = (ev: PointerEvent) => normalize(ev.clientY, win.innerHeight);
-    win.addEventListener("pointerdown", (ev) => pointer.down(ev.pointerId, x(ev), y(ev)));
+    win.addEventListener("pointerdown", (ev) => {
+      // iframe の外で離しても pointerup が届くようにする（押しっぱなしで固まらないように）
+      try {
+        doc.documentElement.setPointerCapture(ev.pointerId);
+      } catch {
+        // 既に離れた指などで失敗しても、入力は続ける
+      }
+      pointer.down(ev.pointerId, x(ev), y(ev));
+    });
     win.addEventListener("pointermove", (ev) => pointer.move(ev.pointerId, x(ev), y(ev)));
     win.addEventListener("pointerup", (ev) => pointer.up(ev.pointerId, x(ev), y(ev)));
     win.addEventListener("pointercancel", (ev) => pointer.cancel(ev.pointerId));

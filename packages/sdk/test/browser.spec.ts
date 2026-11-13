@@ -92,6 +92,27 @@ describe("installGuest", () => {
     expect(f.sent.at(-1)).toEqual({ type: "end", session_id: "s-1", score: 1, frames: 30 });
   });
 
+  it("pointerdown で指を捕まえる（iframe の外で離しても pointerup が届く）。失敗しても入力は続く", () => {
+    const f = install({
+      metas: { "gf:verb": "おせ", "gf:input": "hold", "gf:duration": "300", "gf:target": "1" },
+    });
+    const inputs: number[][] = [];
+    f.GF.onInput((ev) => inputs.push(ev.data));
+    f.loaded();
+    f.fromHost(INIT);
+    f.fromHost({ type: "start" });
+    f.pointer("pointerdown", 200, 400, 7);
+    f.pointer("pointerup", 200, 400, 7);
+    f.pointer("pointerdown", 200, 400, -1); // 捕まえるのに失敗する指
+    f.step(17);
+    expect(f.doc.documentElement.captured).toEqual([7]);
+    expect(inputs).toEqual([
+      [0.5, 0.5, 1],
+      [0.5, 0.5, 0],
+      [0.5, 0.5, 1],
+    ]);
+  });
+
   it("ゲームが performance.now や requestAnimationFrame を差し替えても、SDK はつかんだ実体で進む", () => {
     const f = install();
     let ticks = 0;
