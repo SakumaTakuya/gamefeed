@@ -1,4 +1,5 @@
 // R-5.1-2 / R-5.3-1 / R-5.3-2 / R-5.3-4: 配信レスポンスのヘッダ（se#A.2, A.4）。
+import { GUEST_SDK_JS } from "@gamefeed/sdk/guest-bundle";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import {
   APP_ORIGIN,
@@ -8,6 +9,7 @@ import {
   HTML_A,
   POST_A,
   POST_B,
+  SERVED_A,
   startWorker,
 } from "./helpers.ts";
 
@@ -52,7 +54,18 @@ describe("配信レスポンスのヘッダ（se#A.4）", () => {
     expect(res.headers.get("content-type")).toBe("text/html; charset=utf-8");
     expect(res.headers.get("content-security-policy")).toBe(expectedCsp(POST_A));
     expectCommonHeaders(res);
-    expect(await res.text()).toBe(HTML_A);
+    expect(await res.text()).toBe(SERVED_A);
+  });
+
+  it("配信する HTML は <head> の先頭に SDK が入っている（gc#A.4）", async () => {
+    const html = await (await w.get(`/p/${POST_A}/`)).text();
+    expect(html.startsWith("<!doctype html><html><head><script>")).toBe(true);
+    expect(html).toContain(GUEST_SDK_JS);
+    expect(
+      html.endsWith(
+        "<title>A</title></head><body><script>GF.onInit(()=>{})</script></body></html>",
+      ),
+    ).toBe(true);
   });
 
   it("R-5.3-1 / R-5.1-2: アセットのパス・存在しない投稿の 404 にも同じ形のヘッダが付き、Set-Cookie がない", async () => {
