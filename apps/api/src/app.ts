@@ -13,6 +13,7 @@ import { createDb } from "./db/client.ts";
 import { createServeKv } from "./kv.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
+import { issuePlayToken } from "./play-token.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
 
@@ -24,6 +25,7 @@ import { createR2Storage } from "./r2.ts";
 //   /api/auth/*            Better Auth（Google ログイン、OAuth 2.1 の /oauth2/*、issuer 配下の .well-known）
 //   /.well-known/*         RFC 8414 / 9728 のパス挿入形（issuer・リソースにパスがあるので root にも出る）
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
+//   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
 
@@ -32,6 +34,8 @@ export interface AppDeps {
   baseURL: string;
   /** `publish_game` が使うもの（DB・R2・KV・時計）。R2 / KV が無ければツールは `not_configured` を返す（mc#A.2） */
   publish: PublishDeps;
+  /** 試遊トークンの署名鍵（se#A.5）。配信 Worker と同じ値。無ければ play-token は `not_configured` */
+  gamesSigningSecret?: string;
 }
 
 export type AppInput = AppDeps | { missing: string[] };
@@ -50,7 +54,7 @@ export function createApp(input: AppInput): Hono {
     return app;
   }
 
-  const { auth, baseURL, publish } = input;
+  const { auth, baseURL, publish, gamesSigningSecret } = input;
   const authHandler = (req: Request) => auth.handler(req);
 
   app.all(`${AUTH_BASE_PATH}/*`, (c) => authHandler(c.req.raw));
@@ -58,6 +62,22 @@ export function createApp(input: AppInput): Hono {
 
   app.get(SIGN_IN_PAGE, (c) => c.html(signInPage()));
   app.get(CONSENT_PAGE, (c) => c.html(consentPage()));
+
+  // 下書きの試遊トークン（se#A.5）。作者本人の draft 以外は理由を区別せず not_found
+  app.get("/api/posts/:id/play-token", async (c) => {
+    c.header("cache-control", "no-store");
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+    if (!gamesSigningSecret) {
+      return c.json({ error: "not_configured", missing: ["GAMES_SIGNING_SECRET"] }, 503);
+    }
+    const token = await issuePlayToken(
+      { db: publish.db, now: publish.now, secret: gamesSigningSecret },
+      session.user.id,
+      c.req.param("id"),
+    );
+    return token ? c.json(token) : c.json({ error: "not_found" }, 404);
+  });
 
   const mcpHandler = createMcpFetchHandler(publish);
   const protectedMcp = requireMcpAuth(
@@ -106,7 +126,12 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
     ...(config.kv ? { kv: createServeKv(config.kv) } : {}),
     storageMissing: config.storageMissing,
   };
-  return { auth, baseURL: config.baseURL, publish };
+  return {
+    auth,
+    baseURL: config.baseURL,
+    publish,
+    ...(config.gamesSigningSecret ? { gamesSigningSecret: config.gamesSigningSecret } : {}),
+  };
 }
 
 export const app = createAppFromEnv(process.env);

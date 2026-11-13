@@ -68,6 +68,14 @@ describe("下書きの試遊トークン（se#A.5）", () => {
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
+  it("API が発行する形の固定値を受理する（apps/api/test/integration/play-token.spec.ts と同じ値）", async () => {
+    // post_id 01M782MV00TMYMTHTGG5C6KS3T、exp 4102444800（2100-01-01）、秘密は SECRET
+    const fixed =
+      "MDFNNzgyTVYwMFRNWU1USFRHRzVDNktTM1QuNDEwMjQ0NDgwMA.vIJI1mUrXnptV_vUHRHtfluI0pWzZhgVA8j8-aPSAEg";
+    await w.putServe(POST_A, { hash: HASH_A, status: "draft" });
+    expect((await w.get(`/p/${POST_A}/?t=${fixed}`)).status).toBe(200);
+  });
+
   it("R-se.A5-2: 期限内なら同じトークンを何度でも使える", async () => {
     const t = playToken(DRAFT, nowSec() + 600);
     for (let i = 0; i < 3; i++) expect((await w.get(`/p/${DRAFT}/?t=${t}`)).status).toBe(200);
