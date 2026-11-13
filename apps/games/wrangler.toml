@@ -2,7 +2,19 @@ name = "gamefeed-games"
 main = "src/index.ts"
 compatibility_date = "2026-10-01"
 
-# ゲーム HTML の保存先（spec#5）。バケットはオーナーが作る（#4）。
+# frame-ancestors に入れるアプリのオリジン（se#A.4）。
+[vars]
+APP_ORIGIN = "https://gamefeed-seven.vercel.app"
+
+# 試遊トークンの署名鍵 GAMES_SIGNING_SECRET は `wrangler secret put` で入れる（API と同じ値。se#A.5）。
+
+# ゲーム HTML の保存先（se#A.5）。バケットはオーナーが作った（#4）。
 [[r2_buckets]]
 binding = "GAMES"
 bucket_name = "gamefeed-games"
+
+# 配信可否 serve:<post_id>（se#A.5）。API の KV_NAMESPACE_ID と同じ namespace。
+# id はデプロイの Issue でオーナーの値に差し替える（秘密ではない）。
+[[kv_namespaces]]
+binding = "SERVE"
+id = "00000000000000000000000000000000"

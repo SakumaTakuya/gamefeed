@@ -22,7 +22,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
 | R-5.1-1 | ゲームは配信オリジン `<games-origin>/p/<post_id>/` からのみ配信され、アプリのオリジンでゲーム HTML が返らない | integration + manual | `app.request("/p/x/")` がゲーム HTML を返さない。PT-5.1-1 | `apps/api/test/integration/no-games.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo |
-| R-5.1-2 | 配信オリジンは `Set-Cookie` を一切返さない（HTML・アセット・404） | integration + manual | R-5.3-1 と同じ 3 パスでヘッダを検査。PT-5.1-2 | `apps/games/test/integration/csp.spec.ts`、同上 | todo |
+| R-5.1-2 | 配信オリジンは `Set-Cookie` を一切返さない（HTML・アセット・404） | integration + manual | R-5.3-1 と同じ 3 パスでヘッダを検査。PT-5.1-2 | `apps/games/test/integration/csp.spec.ts`、同上 | green（integration、#102）/ todo（manual） |
 | R-5.1-3 | ゲーム URL の組み立ては Host の 1 関数に閉じ、サブドメイン方式へ設定だけで戻せる | manual | PT-5.1-3（grep で 1 か所） | 同上 | todo |
 
 ## security A.3 iframe（旧 5.2）
@@ -36,10 +36,10 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-5.3-1 | ゲーム配信の全レスポンス（HTML・アセット・404・405 含む）に se#A.4 の CSP（`sandbox allow-scripts` を含む）、`Cross-Origin-Resource-Policy: cross-origin`、`nosniff`、`Referrer-Policy: no-referrer` が付く | integration | Miniflare で `/p/<id>/`、`/p/<id>/assets/x`、存在しないパス、`POST` を取得し、ヘッダを検査 | `apps/games/test/integration/csp.spec.ts`、PT-5.3-1 | todo |
-| R-5.3-2 | CSP の各ソースは自投稿パス `/p/<post_id>/` と `/lib/` だけを指し、他投稿のパスを含まない | integration + e2e | integration: 投稿 A の CSP に投稿 B のパスが含まれない。e2e: 投稿 A のゲームから `/p/B/assets/` を読むと CSP 違反になる | `apps/games/test/integration/csp.spec.ts`、`apps/web/e2e/sandbox.spec.ts`、PT-5.3-2 | todo |
+| R-5.3-1 | ゲーム配信の全レスポンス（HTML・アセット・404・405 含む）に se#A.4 の CSP（`sandbox allow-scripts` を含む）、`Cross-Origin-Resource-Policy: cross-origin`、`nosniff`、`Referrer-Policy: no-referrer` が付く | integration | Miniflare で `/p/<id>/`、`/p/<id>/assets/x`、存在しないパス、`POST` を取得し、ヘッダを検査 | `apps/games/test/integration/csp.spec.ts`、PT-5.3-1 | green（#102） |
+| R-5.3-2 | CSP の各ソースは自投稿パス `/p/<post_id>/` と `/lib/` だけを指し、他投稿のパスを含まない | integration + e2e | integration: 投稿 A の CSP に投稿 B のパスが含まれない。e2e: 投稿 A のゲームから `/p/B/assets/` を読むと CSP 違反になる | `apps/games/test/integration/csp.spec.ts`、`apps/web/e2e/sandbox.spec.ts`、PT-5.3-2 | green（integration、#102）/ todo（e2e） |
 | R-5.3-3 | ゲーム URL を直接開いても不透明オリジンで動く（`origin === "null"`、`localStorage` が例外） | e2e | Playwright でゲーム URL をトップレベルで開き、`self.origin` と `localStorage` を確かめる | `apps/web/e2e/sandbox.spec.ts`、PT-5.3-3 | todo |
-| R-5.3-4 | 配信 Worker はリダイレクトを返さない（CSP のパス照合がリダイレクト後に効かないため） | integration | 末尾スラッシュなし等で 3xx が返らない | `apps/games/test/integration/csp.spec.ts`、PT-5.3-4 | todo |
+| R-5.3-4 | 配信 Worker はリダイレクトを返さない（CSP のパス照合がリダイレクト後に効かないため） | integration | 末尾スラッシュなし等で 3xx が返らない | `apps/games/test/integration/csp.spec.ts`、PT-5.3-4 | green（#102） |
 
 ## security A.7 脅威モデル（旧 5.4。侵入テスト項目）
 
@@ -72,8 +72,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-se.A5-1 | 配信 Worker は KV `serve:<post_id>` が `ok` のときだけ配信し、`no` / 未知 / `draft`（トークンなし）は同じ文言の 404。`Cache-Control` は `draft` が `no-store`、`ok` が `public, max-age=60`、`/lib/` が `immutable` | integration | Miniflare に KV を 3 状態で置いて `/p/<id>/` を取得。本文とヘッダ | `apps/games/test/integration/serve.spec.ts` | todo |
-| R-se.A5-2 | 試遊トークンは `draft` の作者にだけ発行され（他は `not_found`）、Worker は HMAC・`post_id` の一致・`exp` を検証する。期限切れ・別の `post_id`・改ざんは 404。公開後の投稿では `?t=` を無視する | integration | API: 作者 / 他人 / `public` の投稿で `play-token` を呼ぶ。Worker: 正しいトークン、10 分 + 1 秒後、別 ID、署名 1 バイト改変 | `apps/api/test/integration/play-token.spec.ts`、`apps/games/test/integration/serve.spec.ts` | todo |
+| R-se.A5-1 | 配信 Worker は KV `serve:<post_id>` が `ok` のときだけ配信し、`no` / 未知 / `draft`（トークンなし）は同じ文言の 404。`Cache-Control` は `draft` が `no-store`、`ok` が `public, max-age=60`、`/lib/` が `immutable` | integration | Miniflare に KV を 3 状態で置いて `/p/<id>/` を取得。本文とヘッダ | `apps/games/test/integration/serve.spec.ts` | partial（#102: `/p/` の配信可否と `Cache-Control`。`/lib/` の `immutable` が残り） |
+| R-se.A5-2 | 試遊トークンは `draft` の作者にだけ発行され（他は `not_found`）、Worker は HMAC・`post_id` の一致・`exp` を検証する。期限切れ・別の `post_id`・改ざんは 404。公開後の投稿では `?t=` を無視する | integration | API: 作者 / 他人 / `public` の投稿で `play-token` を呼ぶ。Worker: 正しいトークン、10 分 + 1 秒後、別 ID、署名 1 バイト改変 | `apps/api/test/integration/play-token.spec.ts`、`apps/games/test/integration/serve.spec.ts` | partial（#102: Worker の検証。API の発行が残り） |
 | R-se.A5-3 | se#A.5 の遷移（公開・置き換え・非公開・再公開・運営の操作・自動制限・下書きの削除）のたびに KV が書かれ、ツリー制限は子孫全員分。日次の突き合わせでずれが直る | integration | fake の KV クライアントで各遷移後の値を見る。突き合わせジョブが欠けたキーを書く | `apps/api/test/integration/serve-kv.spec.ts` | todo |
 | R-se.A6-1 | アプリのオリジンは se#A.6 の CSP（`frame-src` は配信オリジンだけ、`frame-ancestors 'none'`）と `Referrer-Policy`、`nosniff` を返す | integration | `app.request("/")` と `/api/connect/sign-in` のヘッダ | `apps/api/test/integration/headers.spec.ts` | todo |
 | R-se.A8-1 | 運営の操作（`moderation.md` A.7）は `MODERATOR_IDS` に含まれるユーザーだけが呼べ、他は `forbidden` | integration | 運営 / 一般 / 未ログインで `restrict` を呼ぶ | `apps/api/test/integration/moderation.spec.ts` | todo |
