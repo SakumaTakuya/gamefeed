@@ -151,6 +151,21 @@ describe("ready と Host メッセージの受理（pr#A.4, A.10）", () => {
     }
   });
 
+  it("ready より前の destroy も効く（以後 ready を送らず、init も受けない）", () => {
+    const { guest, init, sent } = setup();
+    let inits = 0;
+    guest.GF.onInit(() => inits++);
+    // 形の違うものは ready の前なら捨てるだけ（破棄しない）
+    guest.receive({ type: "destroy", extra: 1 });
+    expect(guest.state).toBe("LOADING");
+    guest.receive({ type: "destroy" });
+    expect(guest.state).toBe("DESTROYED");
+    guest.ready(META);
+    init();
+    expect(sent).toEqual([]);
+    expect(inits).toBe(0);
+  });
+
   it("destroy の後はコールバックを呼ばず、何も送らない", () => {
     const { guest, sent, run } = started();
     let ticks = 0;
@@ -304,6 +319,16 @@ describe("end（pr#A.4, gc#A.4）", () => {
       ["12", 12],
       ["abc", 0],
       [undefined, 0],
+      // 数に直すと例外になる値でも end は送る
+      [Symbol("x"), 0],
+      [
+        {
+          valueOf() {
+            throw new Error("no");
+          },
+        },
+        0,
+      ],
     ] as const) {
       const { guest, run, ofType } = started({ time_limit: 1 });
       guest.GF.onTick(() => {

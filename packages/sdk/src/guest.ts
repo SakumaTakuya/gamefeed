@@ -93,9 +93,15 @@ function mulberry32(seed: number): () => number {
   };
 }
 
-/** gc#A.4 / protocol#A.10: 整数・0 以上・2^31−1 以下。数でないものは 0。 */
+/** gc#A.4 / protocol#A.10: 整数・0 以上・2^31−1 以下。数でないもの・数に直せないものは 0。 */
 export function clampScore(value: unknown): number {
-  const n = Number(value);
+  let n: number;
+  try {
+    // Symbol や、変換で例外を投げるオブジェクトでも end を送れるようにする
+    n = Number(value);
+  } catch {
+    return 0;
+  }
   if (Number.isNaN(n)) return 0;
   return Math.min(SCORE_MAX, Math.max(0, Math.trunc(n)));
 }
@@ -282,9 +288,13 @@ export function createGuest(env: GuestEnv): Guest {
     },
 
     receive(raw) {
-      // ready の前に届いたものは捨てる。破棄の後は何も受けない
-      if (state === "LOADING" || state === "DESTROYED") return;
+      if (state === "DESTROYED") return;
       const parsed = parseHostMessage(raw);
+      // ready の前に届いたものは捨てる。destroy だけはどの状態でも効く（protocol#A.5）
+      if (state === "LOADING") {
+        if (parsed.ok && parsed.message.type === "destroy") state = "DESTROYED";
+        return;
+      }
       if (!parsed.ok) {
         // スキーマ違反は即セッション破棄。以後すべて無視する（protocol#A.2）
         state = "DESTROYED";
