@@ -83,8 +83,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | todo |
-| R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | todo |
+| R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | partial（unit、#105: Guest 側。Host 側と contract が残り） |
+| R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
 | R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | green |
 | R-6.1-4 | `media` は廃止（pr#B.1）。Guest からバイナリを受け取る経路を持たない | unit | スキーマが `media` を未知の type として拒否する | `packages/sdk/test/messages.spec.ts` | green（#52） |
 | R-6.1-5 | pr#A.3 の 9 種（Guest: ready / log / end / error、Host: init / start / pause / resume / destroy）を方向別のスキーマで検証する。余計なフィールド・型違い・未知の type・方向違いを拒否。`ready` の `verb` / `input` / `duration` / `target` は静的検査と同じ定数、`end.score` は 0〜2^31−1、`end.frames` ≤ `time_limit`、`init.speed` は 1.0〜1.5。`log.inputs` の kind は tap / hold / swipe / drag（`key` と `tilt` は拒否）。検証済み Guest メッセージは `SessionEvent` に 1 対 1 で変換できる | unit | 各型の正例 1 つ、余計なフィールド、型違い、未知の type、境界値（duration 179/180/600/601、verb 0/8/9 文字、target 0/1、score −1/0/2^31−1/+1、speed 0.99/1.0/1.5/1.51）、replay で inputs 欠落、`end.result` があると拒否 | `packages/sdk/test/messages.spec.ts` | green（#52。`log.inputs` は kind ごとの長さと 0〜1 の座標も検査、`init.speed` は 5 値の列挙） |
@@ -98,8 +98,8 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-6.3-1 | `gf:duration` は 180〜600（gc#A.3）。範囲外・欠落は静的検査で拒否 | unit | 179 / 180 / 600 / 601 / 欠落 / 非数 | `packages/domain/test/static-check.spec.ts` | green（#49） |
 | R-6.3-2 | `gf:verb` は 1〜8 文字 | unit | 0 / 1 / 8 / 9 文字、絵文字を含む場合 | 同上 | green |
 | R-6.3-3 | `gf:input` は tap / hold / swipe / drag / stick のいずれか（tilt は拒否）。gc#A.3 | unit | 各値と `tilt`、未知の値 | 同上 | green（#49） |
-| R-6.3-4 | 時間切れ時、SDK はそのときの `GF.score` で `end` を自動送信する。`GF.end()` は 1 回だけ効く（gc#A.4） | contract | 最小 Host で `time_limit` フレーム進め、`end{score}` が 1 回届く。`GF.end()` を 2 回呼んでも 1 回 | `packages/sdk/test/contract/timeout.spec.ts` | todo |
-| R-gc.A4-1 | `GF.score` は整数・0 以上・2^31−1 以下に SDK がクランプする（gc#A.10） | unit | 負・小数・上限超・文字列 | `packages/sdk/test/score.spec.ts` | todo |
+| R-6.3-4 | 時間切れ時、SDK はそのときの `GF.score` で `end` を自動送信する。`GF.end()` は 1 回だけ効く（gc#A.4） | contract | 最小 Host で `time_limit` フレーム進め、`end{score}` が 1 回届く。`GF.end()` を 2 回呼んでも 1 回 | `packages/sdk/test/contract/timeout.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
+| R-gc.A4-1 | `GF.score` は整数・0 以上・2^31−1 以下に SDK がクランプする（gc#A.10） | unit | 負・小数・上限超・文字列 | `packages/sdk/test/score.spec.ts` | green（#105: `packages/sdk/test/guest.spec.ts`） |
 | R-gc.A4-2 | 入力イベントの座標は 0〜1 の正規化値。`tap` は `[x,y]`、`hold` は `[x,y,1|0]`、`swipe` は `[x0,y0,x1,y1]`、`drag` は `[x,y,1|0]` を 1/256 に量子化（gc#A.4） | contract | 実ブラウザで各入力を発生させ `onInput` の `data` を検証 | `packages/sdk/test/contract/input.spec.ts` | todo |
 | R-gc.A4-3 | `stick` は SDK が描いて解釈する。原点は押した地点、最大半径は画面幅の 12%、デッドゾーン 15%、`GF.stick.{x,y,active}` が `onTick` ごとに更新される。`onInput` には `stick` イベントが来ない（gc#A.4） | contract | 実ブラウザで押下→移動→離すを再現し、各 tick の `GF.stick` とログの `drag` 列を検証。同じログから `GF.stick` 列が再現される | `packages/sdk/test/contract/stick.spec.ts` | todo |
 | R-gc.A9-1 | 同じシードと同じ入力ログで `onDraw` なしに再実行すると同じ `GF.score` になる（gc#A.9） | contract | A.13 の例を 2 回実行して比較 | `packages/sdk/test/contract/determinism.spec.ts` | todo |
@@ -112,10 +112,10 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-6.4-1 | 監視タイマー満了で RUNNING → ENDED（`via: timeout`、`score: 0`、`frames: time_limit`）。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | green（unit: #52。formal: `Session.tla` P11, P12、#68） |
 | R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | green |
 | R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅。`error` の結果に `score: 0` が入る | 同上 | green（#52） |
-| R-pr.A4-1 | SDK は `start` から `time_limit ÷ (60 × speed)` 秒の壁時計が経過したら、フレームが足りなくても `end` を送る（`frames < time_limit`）。5 tick の追いつき上限は維持する（pr#A.4） | contract | rAF を 12 回/秒に絞った環境で speed 1.5・600 フレームのゲームを動かし、監視タイマー満了前に `end` が届き `frames < 600` | `packages/sdk/test/contract/slow-device.spec.ts` | todo |
+| R-pr.A4-1 | SDK は `start` から `time_limit ÷ (60 × speed)` 秒の壁時計が経過したら、フレームが足りなくても `end` を送る（`frames < time_limit`）。5 tick の追いつき上限は維持する（pr#A.4） | contract | rAF を 12 回/秒に絞った環境で speed 1.5・600 フレームのゲームを動かし、監視タイマー満了前に `end` が届き `frames < 600` | `packages/sdk/test/contract/slow-device.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
 | R-pr.A5-1 | PAUSED からの `init` は受理しない。ENDED からの `init` は受理する（pr#A.6） | unit | 遷移表の網羅 | 同上 | green |
-| R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | todo |
-| R-pr.A10-1 | Guest はコールバックの例外で `error` を 1 回だけ送り、以後そのセッションで何も送らない。`end` の後の例外は無視する（pr#A.10） | contract | `onTick` で throw するゲームで `error` が 1 回、`end` の後に throw しても何も来ない | `packages/sdk/test/contract/error.spec.ts` | todo |
+| R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
+| R-pr.A10-1 | Guest はコールバックの例外で `error` を 1 回だけ送り、以後そのセッションで何も送らない。`end` の後の例外は無視する（pr#A.10） | contract | `onTick` で throw するゲームで `error` が 1 回、`end` の後に throw しても何も来ない | `packages/sdk/test/contract/error.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
 
 ## run A.4 / A.5 / A.6 / A.7 スロットと手番の切り替え（旧 8.2）
 
