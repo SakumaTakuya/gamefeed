@@ -48,7 +48,13 @@ export function createApp(input: AppInput): Hono {
     // 設定不足でも health は生かす（Vercel のプレビュー等）。認証系は理由付きで 503。
     const notConfigured = (c: Context) =>
       c.json({ error: "not_configured", missing: input.missing }, 503);
-    for (const path of [`${AUTH_BASE_PATH}/*`, "/.well-known/*", "/api/connect/*", MCP_PATH]) {
+    for (const path of [
+      `${AUTH_BASE_PATH}/*`,
+      "/.well-known/*",
+      "/api/connect/*",
+      "/api/posts/*",
+      MCP_PATH,
+    ]) {
       app.all(path, notConfigured);
     }
     return app;
