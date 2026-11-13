@@ -112,8 +112,11 @@ export function createHost(env: HostEnv, onChange: () => void = () => {}): Host 
       }
       const m = parsed.message;
       if (!dispatch(toSessionEvent(m))) return;
-      if (m.type === "log") inputs = [...inputs, ...m.inputs];
-      else if (m.type === "error") {
+      // dispatch の中の通知は inputs / problem を更新する前なので、更新した後にもう一度知らせる
+      if (m.type === "log") {
+        inputs = [...inputs, ...m.inputs];
+        onChange();
+      } else if (m.type === "error") {
         problem = m.message;
         onChange();
       }

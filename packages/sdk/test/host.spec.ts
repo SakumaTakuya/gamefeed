@@ -139,6 +139,26 @@ describe("1 セッションの流れ（pr#A.4, A.5）", () => {
     expect(host.state).toMatchObject({ kind: "ENDED", sessionId: "s-2", result: { via: "guest" } });
   });
 
+  it("log を受理した後の onChange では、その入力が inputs に入っている", () => {
+    const seen: number[] = [];
+    const host = createHost(
+      {
+        post: () => {},
+        now: () => 0,
+        setTimer: () => 1,
+        clearTimer: () => {},
+        newSessionId: () => "s-1",
+        newSeed: () => 1,
+      },
+      () => seen.push(host.inputs.length),
+    );
+    host.receive({ type: "ready", sdk: "2.0", ...META });
+    host.init();
+    host.start();
+    host.receive({ type: "log", session_id: "s-1", from_frame: 0, inputs: [[1, "tap", 0.5, 0.5]] });
+    expect(seen.at(-1)).toBe(1);
+  });
+
   it("状態が変わるたびに onChange が呼ばれる", () => {
     const { host, guest, advance, changes } = setup();
     guest.ready(META);
