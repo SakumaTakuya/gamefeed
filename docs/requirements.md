@@ -23,14 +23,14 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | --- | --- | --- | --- | --- | --- |
 | R-5.1-1 | ゲームは配信オリジン `<games-origin>/p/<post_id>/` からのみ配信され、アプリのオリジンでゲーム HTML が返らない | integration + manual | `app.request("/p/x/")` がゲーム HTML を返さない。PT-5.1-1 | `apps/api/test/integration/no-games.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo |
 | R-5.1-2 | 配信オリジンは `Set-Cookie` を一切返さない（HTML・アセット・404） | integration + manual | R-5.3-1 と同じ 3 パスでヘッダを検査。PT-5.1-2 | `apps/games/test/integration/csp.spec.ts`、同上 | green（integration、#102）/ todo（manual） |
-| R-5.1-3 | ゲーム URL の組み立ては Host の 1 関数に閉じ、サブドメイン方式へ設定だけで戻せる | manual | PT-5.1-3（grep で 1 か所） | 同上 | todo |
+| R-5.1-3 | ゲーム URL の組み立ては Host の 1 関数に閉じ、サブドメイン方式へ設定だけで戻せる | manual | PT-5.1-3（grep で 1 か所） | 同上 | partial（#112: `gameUrl`（`apps/web/src/game-url.ts`）と、他に `/p/` を組み立てていないことの unit `apps/web/test/game-url.spec.ts`。manual が残り） |
 
 ## security A.3 iframe（旧 5.2）
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-5.2-1 | Host の iframe は `sandbox="allow-scripts"` のみ。`allow-same-origin` / `allow-popups` / `allow-top-navigation` / `allow-forms` / `allow-modals` / `allow-pointer-lock` / `allow-downloads` を付けない（se#A.3） | e2e + manual | 攻撃 HTML（PT-5.2-1〜6）で `localStorage` / `window.open` / `top.location` / form 送信 / `alert` / pointer lock がすべて遮断。DOM の `sandbox` 属性値を assert | `apps/web/e2e/sandbox.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo |
-| R-5.2-2 | `allow` を付けない（tilt は保留、se#B.6）、`referrerpolicy="no-referrer"`、`credentialless`。`draft` の `src` には `?t=<試遊トークン>` | e2e + manual | PT-5.2-7〜9。カメラ・位置情報・加速度が `NotAllowedError` または発火しない、`Referer` が空 | 同上 | todo |
+| R-5.2-1 | Host の iframe は `sandbox="allow-scripts"` のみ。`allow-same-origin` / `allow-popups` / `allow-top-navigation` / `allow-forms` / `allow-modals` / `allow-pointer-lock` / `allow-downloads` を付けない（se#A.3） | e2e + manual | 攻撃 HTML（PT-5.2-1〜6）で `localStorage` / `window.open` / `top.location` / form 送信 / `alert` / pointer lock がすべて遮断。DOM の `sandbox` 属性値を assert | `apps/web/e2e/sandbox.spec.ts`、`docs/manual-tests/sandbox-pentest.md` | todo（実装は #112 の試遊ページ。e2e / manual が残り） |
+| R-5.2-2 | `allow` を付けない（tilt は保留、se#B.6）、`referrerpolicy="no-referrer"`、`credentialless`。`draft` の `src` には `?t=<試遊トークン>` | e2e + manual | PT-5.2-7〜9。カメラ・位置情報・加速度が `NotAllowedError` または発火しない、`Referer` が空 | 同上 | todo（実装は #112 の試遊ページ。e2e / manual が残り） |
 
 ## security A.4 配信レスポンスのヘッダ（旧 5.3。#21 でパス分けに改訂）
 
@@ -53,7 +53,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-5.4-6 | Host は `X-Frame-Options: DENY` を返す | integration + manual | `app.request("/")` のヘッダ。PT-5.4-14 | `apps/api/test/integration/headers.spec.ts`、同上 | todo |
 | R-5.4-7 | Host は `event.source === iframe.contentWindow`、Guest は `event.source === window.parent` で送り元を照合し、他からのメッセージを捨てる | contract + manual | PT-5.4-9, PT-5.4-10。第三者ページからの `end` / `init` で状態が動かない | `packages/sdk/test/contract/schema.spec.ts`、同上 | todo |
 | R-5.4-8 | 無限ループ・巨大 canvas・音量爆弾で Host のページが巻き込まれない | manual | PT-5.4-11〜13 | `docs/manual-tests/sandbox-pentest.md` | todo |
-| R-5.4-9 | Guest が自分の iframe を遷移させたら、Host は 2 回目以降の `load` で即 `destroy` し、手番を `via: error` で終える（se#A.3） | e2e + manual | PT-5.4-16。`location.href` と `meta refresh` の 2 通りで、`load` の後に iframe が消え、セッションが ENDED(error) | `apps/web/e2e/sandbox.spec.ts`、同上 | todo |
+| R-5.4-9 | Guest が自分の iframe を遷移させたら、Host は 2 回目以降の `load` で即 `destroy` し、手番を `via: error` で終える（se#A.3） | e2e + manual | PT-5.4-16。`location.href` と `meta refresh` の 2 通りで、`load` の後に iframe が消え、セッションが ENDED(error) | `apps/web/e2e/sandbox.spec.ts`、同上 | todo（実装は #112 の試遊ページ: 2 回目の `load` で `destroy`。e2e / manual が残り） |
 
 ## mcp A.2 / A.3 / A.5 / A.6 / A.7 / A.10 サーバ・ツール・users 行・処理順・同一内容・エラー（旧 9）
 
