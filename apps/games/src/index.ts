@@ -1,6 +1,8 @@
 // ゲーム HTML を投稿ごとのパス（/p/<post_id>/）から配信する（se#A.2, A.4, A.5）。
 // 状態を持たない。配信可否は API が書いた KV `serve:<post_id>` を読むだけ。
+import { GUEST_SDK_JS } from "@gamefeed/sdk/guest-bundle";
 import { baseHeaders, CSP_LOCKED, cspForPost } from "./headers.ts";
+import { injectSdk } from "./inject.ts";
 import { verifyPlayToken } from "./play-token.ts";
 
 export interface Env {
@@ -83,6 +85,9 @@ export default {
     const headers = baseHeaders(csp);
     headers.set("content-type", "text/html; charset=utf-8");
     headers.set("cache-control", serve.status === "draft" ? "no-store" : "public, max-age=60");
-    return new Response(head ? null : (object as R2ObjectBody).body, { status: 200, headers });
+    if (head) return new Response(null, { status: 200, headers });
+    // SDK を <head> の先頭に入れて返す（gc#A.4）。HTML は 128 KB 以下（gc#A.2）なので全文を読む
+    const html = await (object as R2ObjectBody).text();
+    return new Response(injectSdk(html, GUEST_SDK_JS), { status: 200, headers });
   },
 };

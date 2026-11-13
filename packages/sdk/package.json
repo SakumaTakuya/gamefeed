@@ -4,14 +4,21 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./guest-bundle": "./src/guest-bundle.gen.ts"
   },
   "scripts": {
     "typecheck": "tsc -p tsconfig.json",
-    "test": "vitest run"
+    "test": "vitest run",
+    "gen:bundle": "tsx scripts/gen-guest-bundle.ts"
   },
   "dependencies": {
     "@gamefeed/domain": "workspace:*",
     "valibot": "1.5.0"
+  },
+  "devDependencies": {
+    "@types/node": "22.20.5",
+    "esbuild": "0.28.2",
+    "tsx": "4.23.15"
   }
 }

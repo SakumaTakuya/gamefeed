@@ -1,8 +1,10 @@
 // Miniflare で配信 Worker を起動する（docs/testing.md: apps/games は Worker + R2 + KV の integration）。
 import { createHmac } from "node:crypto";
 import { fileURLToPath } from "node:url";
+import { GUEST_SDK_JS } from "@gamefeed/sdk/guest-bundle";
 import { build } from "esbuild";
 import { Miniflare } from "miniflare";
+import { injectSdk } from "../../src/inject.ts";
 
 export const GAMES_ORIGIN = "https://gamefeed-games.example.workers.dev";
 export const APP_ORIGIN = "https://app.example";
@@ -11,7 +13,10 @@ export const SECRET = "test-signing-secret";
 export const POST_A = "01M782MV00TMYMTHTGG5C6KS3T";
 export const POST_B = "01M782MV00TMYMTHTGG5C6KS3V";
 export const HASH_A = "a".repeat(64);
-export const HTML_A = "<!doctype html><title>A</title><script>GF.onInit(()=>{})</script>";
+export const HTML_A =
+  "<!doctype html><html><head><title>A</title></head><body><script>GF.onInit(()=>{})</script></body></html>";
+/** 配信される形（SDK を <head> の先頭に入れたもの。gc#A.4） */
+export const SERVED_A = injectSdk(HTML_A, GUEST_SDK_JS);
 
 export type ServeStatus = "draft" | "ok" | "no";
 

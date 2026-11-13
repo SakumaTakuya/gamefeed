@@ -8,6 +8,7 @@ import {
   POST_A,
   POST_B,
   playToken,
+  SERVED_A,
   startWorker,
 } from "./helpers.ts";
 
@@ -46,7 +47,7 @@ describe("配信可否（se#A.5）", () => {
   it("R-se.A5-1: ok は配信し、Cache-Control は public, max-age=60", async () => {
     const res = await w.get(`/p/${OK}/`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe(HTML_A);
+    expect(await res.text()).toBe(SERVED_A);
     expect(res.headers.get("cache-control")).toBe("public, max-age=60");
   });
 
@@ -63,7 +64,7 @@ describe("下書きの試遊トークン（se#A.5）", () => {
   it("R-se.A5-2: 正しいトークンなら draft を配信し、Cache-Control は no-store", async () => {
     const res = await w.get(`/p/${DRAFT}/?t=${playToken(DRAFT, nowSec() + 600)}`);
     expect(res.status).toBe(200);
-    expect(await res.text()).toBe(HTML_A);
+    expect(await res.text()).toBe(SERVED_A);
     expect(res.headers.get("cache-control")).toBe("no-store");
   });
 
