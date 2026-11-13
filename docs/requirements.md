@@ -83,7 +83,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | partial（unit、#105: Guest 側。Host 側と contract が残り） |
+| R-6.1-1 | Host/Guest ともにメッセージを JSON スキーマで検証し、違反は即セッション破棄 | contract | 余計なフィールド・型違い・未知の type を送り、相手が DESTROYED に遷移する | `packages/sdk/test/contract/schema.spec.ts` | partial（unit、Guest 側 #105、Host 側 #112: `packages/sdk/test/host.spec.ts`。実ブラウザの contract が残り） |
 | R-6.1-2 | `ready` より前の Host 送信は無視される | contract | `init` を先に送ってから `ready`、Guest が `init` を再要求しないこと | 同上 | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
 | R-6.1-3 | `end` は 1 セッションに 1 回。2 回目以降は捨てる | unit | 状態機械に `end` を 2 回入れ、2 回目が拒否される | `packages/domain/test/session.spec.ts` | green |
 | R-6.1-4 | `media` は廃止（pr#B.1）。Guest からバイナリを受け取る経路を持たない | unit | スキーマが `media` を未知の type として拒否する | `packages/sdk/test/messages.spec.ts` | green（#52） |
