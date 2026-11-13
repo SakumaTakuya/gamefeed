@@ -1,0 +1,63 @@
+name: deploy-games
+# 配信 Worker（apps/games）を Cloudflare にデプロイする。
+# 必要なもの:
+#   Secrets   CLOUDFLARE_API_TOKEN（Workers Scripts の編集、KV、R2 を扱える CI 用トークン）、CLOUDFLARE_ACCOUNT_ID
+#   Secrets   GAMES_SIGNING_SECRET（試遊トークンの署名鍵。Vercel の同名の変数と同じ値。se#A.5）
+#   Variables KV_NAMESPACE_ID（serve:<post_id> の namespace。Vercel の同名の変数と同じ値）
+on:
+  push:
+    branches: [main]
+    paths:
+      - apps/games/**
+      - packages/sdk/**
+      - packages/domain/**
+      - pnpm-lock.yaml
+      - .github/workflows/deploy-games.yml
+  workflow_dispatch:
+# 同時に 2 本走らせない。途中のデプロイは止めずに終わらせる
+concurrency:
+  group: deploy-games
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: 配信 Worker のテスト
+        run: pnpm --filter @gamefeed/games test
+      - name: KV の namespace ID を wrangler.toml に入れる
+        env:
+          KV_NAMESPACE_ID: ${{ vars.KV_NAMESPACE_ID }}
+        run: |
+          if ! [[ "$KV_NAMESPACE_ID" =~ ^[0-9a-f]{32}$ ]]; then
+            echo "::error::Variables の KV_NAMESPACE_ID が無いか、32 桁の 16 進数ではありません"
+            exit 1
+          fi
+          sed -i "s/00000000000000000000000000000000/$KV_NAMESPACE_ID/" apps/games/wrangler.toml
+          grep -q "id = \"$KV_NAMESPACE_ID\"" apps/games/wrangler.toml
+      - name: デプロイ
+        working-directory: apps/games
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        run: pnpm exec wrangler deploy
+      - name: 試遊トークンの署名鍵を入れる
+        working-directory: apps/games
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+          GAMES_SIGNING_SECRET: ${{ secrets.GAMES_SIGNING_SECRET }}
+        run: |
+          if [ -z "$GAMES_SIGNING_SECRET" ]; then
+            echo "::warning::Secrets に GAMES_SIGNING_SECRET がありません。下書きの試遊は 404 のままです（公開済みの配信は動きます）"
+            exit 0
+          fi
+          printf '%s' "$GAMES_SIGNING_SECRET" | pnpm exec wrangler secret put GAMES_SIGNING_SECRET
