@@ -18,6 +18,8 @@ export interface ApiConfig {
   r2?: R2Config;
   /** KV `serve:<post_id>` を書く Cloudflare API（se#A.5、A.8）。3 つ揃ったときだけ入る */
   kv?: KvConfig;
+  /** 試遊トークンの署名鍵（se#A.5）。配信 Worker の `GAMES_SIGNING_SECRET` と同じ値。無ければ play-token は `not_configured` */
+  gamesSigningSecret?: string;
   /** `publish_game` に足りない変数名（空なら揃っている） */
   storageMissing: string[];
 }
@@ -70,6 +72,7 @@ export function configFromEnv(env: Record<string, string | undefined>): ConfigRe
             },
           }
         : {}),
+      ...(env.GAMES_SIGNING_SECRET ? { gamesSigningSecret: env.GAMES_SIGNING_SECRET } : {}),
       storageMissing: [...r2Missing, ...kvMissing],
     },
   };

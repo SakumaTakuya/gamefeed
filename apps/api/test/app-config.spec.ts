@@ -74,13 +74,14 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
     expect(r.ok && r.config.storageMissing).toEqual(["R2_BUCKET", "KV_NAMESPACE_ID"]);
   });
 
-  it("health は生き、認証・MCP・.well-known は 503 と不足一覧を返す", async () => {
+  it("health は生き、認証・MCP・.well-known・play-token は 503 と不足一覧を返す", async () => {
     const app = createAppFromEnv({});
     expect((await app.request("/api/health")).status).toBe(200);
     for (const path of [
       "/api/auth/get-session",
       "/api/mcp",
       "/.well-known/oauth-authorization-server/api/auth",
+      "/api/posts/01M782MV00TMYMTHTGG5C6KS3T/play-token",
     ]) {
       const res = await app.request(path, { method: path === "/api/mcp" ? "POST" : "GET" });
       expect(res.status, path).toBe(503);
