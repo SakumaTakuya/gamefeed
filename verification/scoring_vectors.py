@@ -1,6 +1,7 @@
 """Dump reference vectors for packages/domain/test/deviation.spec.ts (R-sc.A5-1, R-sc.A6-1).
 
-Run: python3 verification/scoring_vectors.py > packages/domain/test/fixtures/deviation-vectors.json
+Run (from verification/):
+  python3 scoring_vectors.py > ../packages/domain/test/fixtures/deviation-vectors.gen.ts
 The distributions are the same seeded ones scoring_check.py uses, so the output is stable.
 """
 from __future__ import annotations
@@ -24,8 +25,12 @@ def main() -> int:
             "miss_below": miss_below(dist),
             "deviations": [[s, deviation(s, dist)] for s in scores],
         })
+    sys.stdout.write("// verification/scoring_vectors.py が生成する。手で直さない。\n")
+    sys.stdout.write("export interface DeviationVector {\n  name: string;\n  dist: number[];\n"
+                     "  miss_below: number;\n  deviations: [number, number][];\n}\n")
+    sys.stdout.write("export const DEVIATION_VECTORS: DeviationVector[] = ")
     json.dump(out, sys.stdout, separators=(",", ":"))
-    sys.stdout.write("\n")
+    sys.stdout.write(";\n")
     return 0
 
 

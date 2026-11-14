@@ -1,18 +1,13 @@
-import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { CALIBRATION_MIN_PLAYS, deviation, inverseNormal, MISS_DEVIATION, missBelow } from "../src/index.ts";
-
-interface Vector {
-  name: string;
-  dist: number[];
-  miss_below: number;
-  deviations: [number, number][];
-}
-
+import {
+  CALIBRATION_MIN_PLAYS,
+  deviation,
+  inverseNormal,
+  MISS_DEVIATION,
+  missBelow,
+} from "../src/index.ts";
 // verification/scoring_vectors.py が、scoring_check.py と同じ種の分布から書き出した参照値
-const vectors: Vector[] = JSON.parse(
-  readFileSync(new URL("./fixtures/deviation-vectors.json", import.meta.url), "utf8"),
-);
+import { DEVIATION_VECTORS as vectors } from "./fixtures/deviation-vectors.gen.ts";
 
 const range = (n: number): number[] => Array.from({ length: n }, (_, i) => i);
 
@@ -95,9 +90,12 @@ describe("missBelow（R-sc.A6-1、sc#A.6）", () => {
     expect(missBelow(v.dist)).toBe(v.miss_below);
   });
 
-  it.each(vectors.map((v) => [v.name, v] as const))("S4: score < miss_below ⇔ 偏差値 < 40 [%s]", (_name, v) => {
-    s4(v.dist);
-  });
+  it.each(vectors.map((v) => [v.name, v] as const))(
+    "S4: score < miss_below ⇔ 偏差値 < 40 [%s]",
+    (_name, v) => {
+      s4(v.dist);
+    },
+  );
 
   it("S4: n = 20〜60 の境界（点数がすべて異なる分布）", () => {
     for (let n = 20; n <= 60; n++) s4(range(n));
