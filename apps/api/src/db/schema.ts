@@ -251,9 +251,10 @@ export const runs = pgTable(
     actorId: text("actor_id")
       .notNull()
       .references(() => actors.id),
-    /** 山札の post_id（12 または 10）。予定。実行済みの手番は sessions(run_id, turn) が正 */
+    /** 山札の post_id（エンドレスは 1〜12、デイリーは 10）。予定。実行済みの手番は sessions(run_id, turn) が正 */
     deck: text("deck").array().notNull(),
-    newIndex: integer("new_index").notNull(),
+    /** 山札の中で新作扱い（is_new）にする位置。通常 1 個、校正済みが足りない間は複数、未校正がなければ空（run#A.2、#123） */
+    newIndexes: integer("new_indexes").array().notNull(),
     fromRun: text("from_run").references((): AnyPgColumn => runs.id),
     lives: integer("lives").notNull(),
     // 凍結値（I13。ended_at が入った後は変えられない。トリガー runs_frozen_after_end）
@@ -276,8 +277,9 @@ export const runs = pgTable(
     ),
     check("runs_lives_nonnegative", sql`${t.lives} >= 0`),
     check(
-      "runs_new_index_in_deck",
-      sql`${t.newIndex} >= 0 AND ${t.newIndex} < cardinality(${t.deck})`,
+      "runs_new_indexes_in_deck",
+      // 配列に NULL があると ALL の比較が UNKNOWN になり CHECK を通るので、NULL の要素も拒否する
+      sql`array_position(${t.newIndexes}, NULL) IS NULL AND 0 <= ALL(${t.newIndexes}) AND cardinality(${t.deck}) > ALL(${t.newIndexes})`,
     ),
     check("runs_ended_iff_ended_at", sql`(${t.ended} IS NOT NULL) = (${t.endedAt} IS NOT NULL)`),
   ],

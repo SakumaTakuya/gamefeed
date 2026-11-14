@@ -50,6 +50,13 @@
       "when": 1794272054258,
       "tag": "0006_triggers_and_views_v2",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1794660485227,
+      "tag": "0007_runs_new_indexes",
+      "breakpoints": true
     }
   ]
 }
