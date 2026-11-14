@@ -39,16 +39,16 @@ export function createPointerInput(
     active = null;
     if (kind === "hold") emit("hold", [x, y, 0]);
     else if (kind === "drag") emit("drag", [quantize(x), quantize(y), 0]);
-    else if (cancelled) return;
-    else if (kind === "tap") emit("tap", [a.x0, a.y0]);
-    else if (kind === "swipe") emit("swipe", [a.x0, a.y0, x, y]);
+    else if (kind === "swipe" && !cancelled) emit("swipe", [a.x0, a.y0, x, y]);
   }
 
   return {
     down(id, x, y) {
       if (active) return;
       active = { id, x0: x, y0: y, x, y };
-      if (kind === "hold") emit("hold", [x, y, 1]);
+      // tap は押した瞬間に出す。離すのを待つと、動く的を狙うゲームで遅れになる（gc#A.4、#117）
+      if (kind === "tap") emit("tap", [x, y]);
+      else if (kind === "hold") emit("hold", [x, y, 1]);
       else if (kind === "drag") {
         active.x = quantize(x);
         active.y = quantize(y);

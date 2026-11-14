@@ -26,25 +26,28 @@ describe("座標", () => {
 });
 
 describe("tap", () => {
-  it("押して離したときに [x, y]（押した位置）が 1 回出る", () => {
+  it("押した瞬間に [x, y]（押した位置）が 1 回出る。離すのを待たない（#117）", () => {
     const { p, out } = setup("tap");
     p.down(1, 0.25, 0.5);
-    expect(out).toEqual([]);
+    expect(out).toEqual([["tap", [0.25, 0.5]]]);
     p.move(1, 0.3, 0.5);
     p.up(1, 0.3, 0.55);
     expect(out).toEqual([["tap", [0.25, 0.5]]]);
   });
 
-  it("cancel では出ない。2 本目の指は無視する", () => {
+  it("cancel しても取り消さない。押している間の 2 本目の指は無視し、離した後なら次の tap になる", () => {
     const { p, out } = setup("tap");
     p.down(1, 0.1, 0.1);
     p.down(2, 0.9, 0.9);
     p.up(2, 0.9, 0.9);
     p.cancel(1);
-    expect(out).toEqual([]);
+    expect(out).toEqual([["tap", [0.1, 0.1]]]);
     p.down(3, 0.2, 0.2);
     p.up(3, 0.2, 0.2);
-    expect(out).toEqual([["tap", [0.2, 0.2]]]);
+    expect(out).toEqual([
+      ["tap", [0.1, 0.1]],
+      ["tap", [0.2, 0.2]],
+    ]);
   });
 });
 
