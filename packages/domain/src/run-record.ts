@@ -41,22 +41,27 @@ export type NextTurn =
 /**
  * 次に発行する手番（run#A.3）。
  * issued は発行済みの手番数、misses はここまでに確定したミスの数（summarizeRun の misses）。
- * 上限か残機切れなら done。
+ * cursor は山札の通算位置（周回をまたいで数える）。出せなくなった投稿は手番を消費せずに飛ばす
+ * （mo#A.3）ので、飛ばした後は issued より先に進む。飛ばすかどうかは呼び出し側が決め、
+ * 飛ばすなら cursor を 1 進めて呼び直す。
+ * 上限か残機切れ、デイリーで山札を 1 周し終えたら done。
  */
 export function nextTurn(
   mode: RunMode,
   deckLength: number,
   issued: number,
   misses: number,
+  cursor: number = issued,
 ): NextTurn {
   if (!(deckLength >= 1)) throw new RangeError("deck is empty");
   if (issued >= turnLimit(mode)) return { done: true };
   if (mode === "endless" && misses >= ENDLESS_LIVES) return { done: true };
-  const lap = Math.floor(issued / deckLength);
+  const lap = Math.floor(cursor / deckLength);
+  if (mode === "daily" && lap >= 1) return { done: true };
   return {
     done: false,
     turn: issued,
-    index: issued % deckLength,
+    index: cursor % deckLength,
     lap,
     speed: turnSpeed(mode, lap),
   };
@@ -72,6 +77,8 @@ export interface RecordedTurn {
   missBelow: number | null;
   /** 受理時に計算した偏差値（sc#A.5）。校正中は null */
   deviation: number | null;
+  /** 山札の中の位置。デイリーの記号列に使う（省略時は手番番号と同じ） */
+  deckIndex?: number;
 }
 
 /**
@@ -118,8 +125,14 @@ function symbolOf(deviation: number | null): string {
  *
  * - 最後に結果のある手番より後の手番（先読みの捨て）は数えない
  * - エンドレスは 3 回目のミスの手番までを数え、それ以降は捨てる
+ * - デイリーで山札の末尾を飛ばした日（mo#A.3）を「通した」と判定するには cursor を渡す
  */
-export function summarizeRun(mode: RunMode, turns: readonly RecordedTurn[]): RunSummary {
+export function summarizeRun(
+  mode: RunMode,
+  turns: readonly RecordedTurn[],
+  /** 山札の通算位置（nextTurn の cursor と同じ）。デイリーで末尾の位置を飛ばした日の判定に使う */
+  cursor?: number,
+): RunSummary {
   let last = -1;
   turns.forEach((t, i) => {
     if (t.state === "submitted" || t.state === "skipped") last = i;
@@ -142,17 +155,28 @@ export function summarizeRun(mode: RunMode, turns: readonly RecordedTurn[]): Run
 
   const counted = out.slice(0, reached);
   const devs = counted.flatMap((t) => (t.deviation === null ? [] : [t.deviation]));
-  const avgDeviation =
-    devs.length === 0
-      ? null
-      : Math.round((devs.reduce((a, b) => a + b, 0) / devs.length) * 10) / 10;
+  // 偏差値は小数 1 桁なので、0.1 単位の整数で足してから丸める（20.1 と 64.6 の平均を 42.4 にする）
+  const tenths = devs.reduce((a, b) => a + Math.round(b * 10), 0);
+  const avgDeviation = devs.length === 0 ? null : Math.round(tenths / devs.length) / 10;
+
+  // 記号列は山札の位置ごとに 1 文字。飛ばした位置は「—」、最後に遊んだ位置まで（run#A.11）
+  const bySlot: string[] = [];
+  counted.forEach((t, i) => {
+    bySlot[turns[i]?.deckIndex ?? i] = symbolOf(t.deviation);
+  });
+  // デイリーは山札を回り切り、発行した手番をすべて遊べば、飛ばした位置があっても通したことになる。
+  // 末尾の位置を飛ばした日は手番が発行されないので、cursor で回り切ったことを知る（mo#A.3）
+  const exhausted = (cursor ?? bySlot.length) >= DAILY_TURN_LIMIT;
+  const dailyDone = mode === "daily" && exhausted && reached === turns.length;
+  if (dailyDone) bySlot.length = DAILY_TURN_LIMIT;
+  const symbols = Array.from(bySlot, (c) => c ?? SYMBOL_NONE).join("");
 
   return {
     reached,
     misses,
     avgDeviation,
-    symbols: mode === "daily" ? counted.map((t) => symbolOf(t.deviation)).join("") : null,
-    ended: over ? "lives" : reached >= turnLimit(mode) ? "limit" : "abandoned",
+    symbols: mode === "daily" ? symbols : null,
+    ended: over ? "lives" : reached >= turnLimit(mode) || dailyDone ? "limit" : "abandoned",
     turns: out,
   };
 }

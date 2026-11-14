@@ -119,6 +119,29 @@ describe("nextTurn（R-run.A3-1 の unit、run#A.2、A.3）", () => {
     });
   });
 
+  it("出せなくなった投稿を飛ばした後は、山札の通算位置（cursor）から位置と周回を出す（mo#A.3）", () => {
+    // 手番 5 まで発行済み。途中で 2 本飛ばしたので、山札の通算位置は 7
+    expect(nextTurn("endless", 12, 5, 0, 7)).toEqual({
+      done: false,
+      turn: 5,
+      index: 7,
+      lap: 0,
+      speed: 1,
+    });
+    // 飛ばしたぶん、周回の境界は手番 12 より早く来る
+    expect(nextTurn("endless", 12, 10, 0, 12)).toMatchObject({
+      turn: 10,
+      index: 0,
+      lap: 1,
+      speed: 1.125,
+    });
+  });
+
+  it("デイリーは山札を 1 周したら done（飛ばして 9 手番になった日）", () => {
+    expect(nextTurn("daily", 10, 9, 0, 10)).toEqual({ done: true });
+    expect(nextTurn("daily", 10, 8, 0, 9)).toMatchObject({ turn: 8, index: 9 });
+  });
+
   it("山札が空なら例外", () => {
     expect(() => nextTurn("endless", 0, 0, 0)).toThrow(RangeError);
   });
@@ -226,6 +249,11 @@ describe("summarizeRun: 平均偏差値と記号列（sc#A.9）", () => {
     expect(s.avgDeviation).toBe(35);
   });
 
+  it("平均がちょうど 0.05 の境界に乗るとき、浮動小数の誤差で切り下げない", () => {
+    const s = summarizeRun("endless", [played({ deviation: 20.1 }), played({ deviation: 64.6 })]);
+    expect(s.avgDeviation).toBe(42.4);
+  });
+
   it("偏差値のある手番がなければ null", () => {
     expect(summarizeRun("endless", [fresh(), fresh()]).avgDeviation).toBeNull();
   });
@@ -253,5 +281,44 @@ describe("summarizeRun: 平均偏差値と記号列（sc#A.9）", () => {
     ]);
     expect(s.symbols).toBe("◎○○△△×——◎×");
     expect(summarizeRun("endless", [played()]).symbols).toBeNull();
+  });
+
+  it("記号列は山札の位置ごとに 1 文字。飛ばした位置は —（mo#A.3）", () => {
+    const at = (deckIndex: number, deviation: number): RecordedTurn =>
+      played({ missBelow: null, deviation, deckIndex });
+    // 位置 3 の投稿が出せなくなり、9 手番で終わった日
+    const turns = [0, 1, 2, 4, 5, 6, 7, 8, 9].map((i) => at(i, 55));
+    const s = summarizeRun("daily", turns);
+    expect(s.symbols).toBe("○○○—○○○○○○");
+    expect(s).toMatchObject({ reached: 9, ended: "limit" });
+  });
+
+  it("末尾の位置を飛ばした日も、山札を回り切っていれば limit で 10 文字（mo#A.3）", () => {
+    const at = (deckIndex: number): RecordedTurn =>
+      played({ missBelow: null, deviation: 55, deckIndex });
+    const turns = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(at);
+    // cursor なしでは回り切ったか分からない
+    expect(summarizeRun("daily", turns)).toMatchObject({
+      ended: "abandoned",
+      symbols: "○○○○○○○○○",
+    });
+    expect(summarizeRun("daily", turns, 10)).toMatchObject({
+      reached: 9,
+      ended: "limit",
+      symbols: "○○○○○○○○○—",
+    });
+    // 回り切っていても、発行した手番を遊び残していれば中断
+    expect(summarizeRun("daily", [...turns.slice(0, 8), unsent(null)], 10)).toMatchObject({
+      reached: 8,
+      ended: "abandoned",
+      symbols: "○○○○○○○○",
+    });
+  });
+
+  it("中断したデイリーの記号列は最後に遊んだ位置まで（#136）", () => {
+    const at = (deckIndex: number): RecordedTurn =>
+      played({ missBelow: null, deviation: 61, deckIndex });
+    expect(summarizeRun("daily", [at(0), at(1), at(3)]).symbols).toBe("◎◎—◎");
+    expect(summarizeRun("daily", [at(0), at(1), at(3)]).ended).toBe("abandoned");
   });
 });
