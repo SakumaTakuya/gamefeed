@@ -256,6 +256,11 @@ export const runs = pgTable(
     /** 山札の中で新作扱い（is_new）にする位置。通常 1 個、校正済みが足りない間は複数、未校正がなければ空（run#A.2、#123） */
     newIndexes: integer("new_indexes").array().notNull(),
     fromRun: text("from_run").references((): AnyPgColumn => runs.id),
+    /**
+     * 山札の通算位置（周回をまたいで数える）。next が次に見る位置。出せなくなった投稿を
+     * 手番を消費せずに飛ばす（mo#A.3）と手番数より先に進むので、sessions からは導けない（#127）
+     */
+    cursor: integer("cursor").notNull().default(0),
     lives: integer("lives").notNull(),
     // 凍結値（I13。ended_at が入った後は変えられない。トリガー runs_frozen_after_end）
     reached: integer("reached"),
@@ -276,6 +281,7 @@ export const runs = pgTable(
       sql`(${t.mode} = 'daily') = (${t.themeId} IS NOT NULL AND ${t.date} IS NOT NULL)`,
     ),
     check("runs_lives_nonnegative", sql`${t.lives} >= 0`),
+    check("runs_cursor_nonnegative", sql`${t.cursor} >= 0`),
     check(
       "runs_new_indexes_in_deck",
       // 配列に NULL があると ALL の比較が UNKNOWN になり CHECK を通るので、NULL の要素も拒否する
