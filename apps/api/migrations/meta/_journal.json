@@ -57,6 +57,13 @@
       "when": 1794660485227,
       "tag": "0007_runs_new_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1794665831923,
+      "tag": "0008_runs_cursor",
+      "breakpoints": true
     }
   ]
 }
