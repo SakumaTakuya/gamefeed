@@ -278,7 +278,8 @@ export const runs = pgTable(
     check("runs_lives_nonnegative", sql`${t.lives} >= 0`),
     check(
       "runs_new_indexes_in_deck",
-      sql`0 <= ALL(${t.newIndexes}) AND cardinality(${t.deck}) > ALL(${t.newIndexes})`,
+      // 配列に NULL があると ALL の比較が UNKNOWN になり CHECK を通るので、NULL の要素も拒否する
+      sql`array_position(${t.newIndexes}, NULL) IS NULL AND 0 <= ALL(${t.newIndexes}) AND cardinality(${t.deck}) > ALL(${t.newIndexes})`,
     ),
     check("runs_ended_iff_ended_at", sql`(${t.ended} IS NOT NULL) = (${t.endedAt} IS NOT NULL)`),
   ],

@@ -5,4 +5,4 @@ ALTER TABLE "runs" ADD COLUMN "new_indexes" integer[];--> statement-breakpoint
 UPDATE "runs" SET "new_indexes" = ARRAY["new_index"];--> statement-breakpoint
 ALTER TABLE "runs" ALTER COLUMN "new_indexes" SET NOT NULL;--> statement-breakpoint
 ALTER TABLE "runs" DROP COLUMN "new_index";--> statement-breakpoint
-ALTER TABLE "runs" ADD CONSTRAINT "runs_new_indexes_in_deck" CHECK (0 <= ALL("runs"."new_indexes") AND cardinality("runs"."deck") > ALL("runs"."new_indexes"));
+ALTER TABLE "runs" ADD CONSTRAINT "runs_new_indexes_in_deck" CHECK (array_position("runs"."new_indexes", NULL) IS NULL AND 0 <= ALL("runs"."new_indexes") AND cardinality("runs"."deck") > ALL("runs"."new_indexes"));

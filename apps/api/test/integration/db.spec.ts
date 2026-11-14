@@ -870,9 +870,19 @@ dbSuite("data-model.md データモデル", () => {
       });
     });
 
-    it("山札の外の位置（負、山札の本数以上）は拒否", async () => {
+    it("山札の外の位置（負、山札の本数以上）と NULL の要素は拒否", async () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
+        for (const literal of ["{NULL}", "{0,NULL}"]) {
+          await rejects(
+            tx,
+            (t) =>
+              t.execute(
+                sql`insert into runs (id, mode, actor_id, deck, new_indexes, lives) values ('r-x', 'endless', 'a-1', '{p-1,p-1}', ${literal}::int[], 3)`,
+              ),
+            /runs_new_indexes_in_deck/,
+          );
+        }
         for (const newIndexes of [[12], [-1], [0, 12]]) {
           await rejects(tx, (t) => seedRun(t, "r-x", { newIndexes }), /runs_new_indexes_in_deck/);
         }

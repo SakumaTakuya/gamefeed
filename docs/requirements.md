@@ -193,7 +193,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-12.1-5 | 表示用 `status` はビュー `post_status` で導出。`removed` / `unpublished` / `draft` はそのまま、`indiv_restricted` または祖先（自身含む）が `tree_locks` の根なら `restricted`、それ以外は `base_status`（dm#A.4） | integration | 深さ 3 のツリーで根をロックすると子孫も `restricted`、ロック削除で戻る。`removed` / `draft` に `indiv_restricted` を立てても変わらない | 同上 | green（#59。`post_eligibility` も同じテストで normal / new / none を確認） |
 | R-12.1-6 | `createDb` は届かない DB に対して 5 秒（既定、上書き可）で `CONNECT_TIMEOUT` を返す。postgres-js の既定 30 秒では Vercel の 10 秒制限に先に当たり原因が見えない（#40） | unit | 接続を受け付けて応答しない TCP サーバに `select 1` を投げ、`CONNECT_TIMEOUT` が 1 秒で返る。既定値 5 秒と上書きを確かめる | `apps/api/test/db-client.spec.ts` | green |
 | R-dm.A1-1 | 匿名の初回アクセスで `device_id` から `actors` を upsert する。同じ `device_id` は同じ主体。ログイン済みで `users` 行があれば `user_id` を埋め、一度埋まった `user_id` は変えない（dm#A.1, A.3, I17。受け渡しと埋める時点は #141 の案） | integration | 同じ `device_id` で 2 回呼んで `actors` が 1 行。別の `device_id` は別の行。ログイン済みで `user_id` が入り、別の利用者で呼んでも変わらない | `apps/api/test/integration/runs.spec.ts` | green（#126） |
-| R-dm.A3-1 | `runs.new_indexes` は山札の中の位置の配列。空（未校正なし）・1 個・複数（校正済みが足りない間）が入り、山札の外の位置は拒否（CHECK。dm#A.3、run#A.2、#123） | integration | 空 / 1 個 / 複数が入る。負・山札の本数以上は拒否 | `apps/api/test/integration/db.spec.ts` | green（#126。マイグレーション `0007`。重複の検査は無い） |
+| R-dm.A3-1 | `runs.new_indexes` は山札の中の位置の配列。空（未校正なし）・1 個・複数（校正済みが足りない間）が入り、山札の外の位置は拒否（CHECK。dm#A.3、run#A.2、#123） | integration | 空 / 1 個 / 複数が入る。負・山札の本数以上は拒否 | `apps/api/test/integration/db.spec.ts` | green（#126。マイグレーション `0007`。NULL の要素も拒否。重複の検査は無い） |
 
 ## data-model A.5 不変条件（旧 12.2）
 

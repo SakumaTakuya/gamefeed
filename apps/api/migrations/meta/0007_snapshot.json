@@ -1155,7 +1155,7 @@
         },
         "runs_new_indexes_in_deck": {
           "name": "runs_new_indexes_in_deck",
-          "value": "0 <= ALL(\"runs\".\"new_indexes\") AND cardinality(\"runs\".\"deck\") > ALL(\"runs\".\"new_indexes\")"
+          "value": "array_position(\"runs\".\"new_indexes\", NULL) IS NULL AND 0 <= ALL(\"runs\".\"new_indexes\") AND cardinality(\"runs\".\"deck\") > ALL(\"runs\".\"new_indexes\")"
         },
         "runs_ended_iff_ended_at": {
           "name": "runs_ended_iff_ended_at",
