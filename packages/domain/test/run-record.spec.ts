@@ -52,10 +52,34 @@ describe("turnSpeed（R-run.A8-1、run#A.8）", () => {
 
 describe("nextTurn（R-run.A3-1 の unit、run#A.2、A.3）", () => {
   it("山札 12 本: 手番 0〜11 が 1 周目、12 が 2 周目の先頭で速度が上がる", () => {
-    expect(nextTurn("endless", 12, 0, 0)).toEqual({ done: false, turn: 0, index: 0, lap: 0, speed: 1 });
-    expect(nextTurn("endless", 12, 11, 0)).toEqual({ done: false, turn: 11, index: 11, lap: 0, speed: 1 });
-    expect(nextTurn("endless", 12, 12, 0)).toEqual({ done: false, turn: 12, index: 0, lap: 1, speed: 1.125 });
-    expect(nextTurn("endless", 12, 49, 0)).toEqual({ done: false, turn: 49, index: 1, lap: 4, speed: 1.5 });
+    expect(nextTurn("endless", 12, 0, 0)).toEqual({
+      done: false,
+      turn: 0,
+      index: 0,
+      lap: 0,
+      speed: 1,
+    });
+    expect(nextTurn("endless", 12, 11, 0)).toEqual({
+      done: false,
+      turn: 11,
+      index: 11,
+      lap: 0,
+      speed: 1,
+    });
+    expect(nextTurn("endless", 12, 12, 0)).toEqual({
+      done: false,
+      turn: 12,
+      index: 0,
+      lap: 1,
+      speed: 1.125,
+    });
+    expect(nextTurn("endless", 12, 49, 0)).toEqual({
+      done: false,
+      turn: 49,
+      index: 1,
+      lap: 4,
+      speed: 1.5,
+    });
   });
 
   it("山札 12・上限 50 で 51 回目が done", () => {
@@ -68,13 +92,31 @@ describe("nextTurn（R-run.A3-1 の unit、run#A.2、A.3）", () => {
   });
 
   it("デイリーは 10 本で done。ミスの数は見ない。速度は 1.0", () => {
-    expect(nextTurn("daily", 10, 9, 5)).toEqual({ done: false, turn: 9, index: 9, lap: 0, speed: 1 });
+    expect(nextTurn("daily", 10, 9, 5)).toEqual({
+      done: false,
+      turn: 9,
+      index: 9,
+      lap: 0,
+      speed: 1,
+    });
     expect(nextTurn("daily", 10, 10, 0)).toEqual({ done: true });
   });
 
   it("短い山札（#123）は同じ規則で周回する", () => {
-    expect(nextTurn("endless", 3, 7, 0)).toEqual({ done: false, turn: 7, index: 1, lap: 2, speed: 1.25 });
-    expect(nextTurn("endless", 1, 49, 0)).toEqual({ done: false, turn: 49, index: 0, lap: 49, speed: 1.5 });
+    expect(nextTurn("endless", 3, 7, 0)).toEqual({
+      done: false,
+      turn: 7,
+      index: 1,
+      lap: 2,
+      speed: 1.25,
+    });
+    expect(nextTurn("endless", 1, 49, 0)).toEqual({
+      done: false,
+      turn: 49,
+      index: 0,
+      lap: 49,
+      speed: 1.5,
+    });
   });
 
   it("山札が空なら例外", () => {
@@ -150,7 +192,11 @@ describe("summarizeRun: 到達手番数（R-run.A7-2、run#A.7、sc#A.9）", () 
       issued++;
     }
     expect(issued).toBe(50);
-    expect(summarizeRun("endless", turns)).toMatchObject({ reached: 50, misses: 0, ended: "limit" });
+    expect(summarizeRun("endless", turns)).toMatchObject({
+      reached: 50,
+      misses: 0,
+      ended: "limit",
+    });
   });
 
   it("結果が 1 つもなければ 0 本", () => {
@@ -185,7 +231,9 @@ describe("summarizeRun: 平均偏差値と記号列（sc#A.9）", () => {
   });
 
   it("デイリーにミスはない。10 本通して limit", () => {
-    const turns = Array.from({ length: 10 }, () => played({ missBelow: null, score: 0, deviation: 30 }));
+    const turns = Array.from({ length: 10 }, () =>
+      played({ missBelow: null, score: 0, deviation: 30 }),
+    );
     expect(summarizeRun("daily", turns)).toMatchObject({ reached: 10, misses: 0, ended: "limit" });
   });
 
