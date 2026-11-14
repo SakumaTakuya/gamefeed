@@ -119,7 +119,7 @@ dbSuite("data-model.md データモデル", () => {
       mode: "endless",
       actorId: "a-1",
       deck: Array.from({ length: 12 }, () => "p-1"),
-      newIndex: 11,
+      newIndexes: [11],
       lives: 3,
       ...extra,
     });
@@ -504,7 +504,7 @@ dbSuite("data-model.md データモデル", () => {
           themeId: "t-1",
           date: "2026-11-10",
           deck: Array.from({ length: 10 }, () => "p-1"),
-          newIndex: 0,
+          newIndexes: [0],
           lives: 0,
         });
         await tx
@@ -544,7 +544,7 @@ dbSuite("data-model.md データモデル", () => {
           tx,
           (t) =>
             t.execute(
-              sql`update runs set mode = 'daily', theme_id = 't-1', date = '2026-11-10', new_index = 0 where id = 'r-1'`,
+              sql`update runs set mode = 'daily', theme_id = 't-1', date = '2026-11-10', new_indexes = '{0}' where id = 'r-1'`,
             ),
           /runs.mode/,
         );
@@ -852,6 +852,39 @@ dbSuite("data-model.md データモデル", () => {
     });
   });
 
+  describe("R-dm.A3-1 runs.new_indexes は山札の中の位置（CHECK。run#A.2、#123）", () => {
+    it("空（未校正なし）・1 個・複数（校正済みが足りない間）が入る", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        await seedRun(tx, "r-0", { newIndexes: [] });
+        await seedRun(tx, "r-1", { newIndexes: [11] });
+        await seedRun(tx, "r-2", { deck: ["p-1"], newIndexes: [0] });
+        await seedRun(tx, "r-3", { newIndexes: [0, 3, 11] });
+        const rows = await tx.select({ id: s.runs.id, n: s.runs.newIndexes }).from(s.runs);
+        expect(Object.fromEntries(rows.map((r) => [r.id, r.n]))).toEqual({
+          "r-0": [],
+          "r-1": [11],
+          "r-2": [0],
+          "r-3": [0, 3, 11],
+        });
+      });
+    });
+
+    it("山札の外の位置（負、山札の本数以上）は拒否", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        for (const newIndexes of [[12], [-1], [0, 12]]) {
+          await rejects(tx, (t) => seedRun(t, "r-x", { newIndexes }), /runs_new_indexes_in_deck/);
+        }
+        await rejects(
+          tx,
+          (t) => seedRun(t, "r-x", { deck: ["p-1"], newIndexes: [1] }),
+          /runs_new_indexes_in_deck/,
+        );
+      });
+    });
+  });
+
   describe("R-dm.A5-16 I16: 同じ主体・お題・日付で recorded = true のランは 1 本（部分一意索引）", () => {
     it("2 本目の recorded は入らない。recorded = false なら何本でも", async () => {
       await rolledBack(async (tx) => {
@@ -863,7 +896,7 @@ dbSuite("data-model.md データモデル", () => {
             themeId: "t-1",
             date: "2026-11-10",
             deck: Array.from({ length: 10 }, () => "p-1"),
-            newIndex: 0,
+            newIndexes: [0],
             lives: 0,
             recorded,
           });
