@@ -18,6 +18,7 @@ import { issuePlayToken } from "./play-token.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
 import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
+import { deviceKindOf, issueNextTurn } from "./turns.ts";
 
 // REST API・Better Auth・MCP サーバはすべてこの app に載せる。
 // Vercel からは /api/index.ts 経由で、ローカルは src/dev.ts から起動する。
@@ -29,6 +30,7 @@ import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
+//   /api/runs/:id/next     手番の発行（そのランの主体だけ。run#A.3）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
 
@@ -39,7 +41,7 @@ export interface AppDeps {
   publish: PublishDeps;
   /** 試遊トークンの署名鍵（se#A.5）。配信 Worker と同じ値。無ければ play-token は `not_configured` */
   gamesSigningSecret?: string;
-  /** [0, 1) の乱数。山札の抽選に使う（run#A.10）。既定は Math.random。テストは seed から決まるものを渡す */
+  /** [0, 1) の乱数。山札の抽選（run#A.10）と手番の seed に使う。既定は Math.random。テストは seed から決まるものを渡す */
   random?: () => number;
 }
 
@@ -115,6 +117,26 @@ export function createApp(input: AppInput): Hono {
     const result = await createRun(deps, actor.id, input);
     return result.ok
       ? c.json(result.value, 201)
+      : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
+  });
+
+  // 手番の発行（run#A.3）。ランを作った主体だけが呼べる。上限か残機切れなら {done: true}
+  app.post("/api/runs/:id/next", async (c) => {
+    c.header("cache-control", "no-store");
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    const session = c.req.header("cookie")
+      ? await auth.api.getSession({ headers: c.req.raw.headers })
+      : null;
+    const deps = { db: publish.db, now: publish.now, random };
+    const actor = await ensureActor(deps, deviceId, session?.user.id);
+    const result = await issueNextTurn(deps, {
+      runId: c.req.param("id"),
+      actor,
+      deviceKind: deviceKindOf(c.req.header("user-agent")),
+    });
+    return result.ok
+      ? c.json(result.value)
       : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
   });
 

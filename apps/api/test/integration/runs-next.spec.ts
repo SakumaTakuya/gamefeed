@@ -5,12 +5,7 @@
  * 結果の受理（`result`）は #128 なので、ここでは `sessions` と `post_stats` を直接書いて「記録された後」を作る。
  * 応答のステータスやエラーなど仕様に未記載の点は #143 の案。
  */
-import {
-  CALIBRATION_MIN_PLAYS,
-  ENDLESS_TURN_LIMIT,
-  missBelow,
-  SPEED_MAX,
-} from "@gamefeed/domain";
+import { CALIBRATION_MIN_PLAYS, ENDLESS_TURN_LIMIT, missBelow, SPEED_MAX } from "@gamefeed/domain";
 import { testUtils } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -449,14 +444,11 @@ dbSuite("POST /api/runs/{id}/next（run#A.3）", () => {
       for (let i = 0; i < ENDLESS_TURN_LIMIT - 3; i++) await next(run.run_id);
       const results = await Promise.all(Array.from({ length: 8 }, () => postNext(run.run_id)));
       expect(results.map((r) => r.status)).toEqual(Array.from({ length: 8 }, () => 200));
-      const bodies = (await Promise.all(results.map((r) => r.json()))) as (
-        | Turn
-        | { done: true }
-      )[];
+      const bodies = (await Promise.all(results.map((r) => r.json()))) as (Turn | { done: true })[];
       expect(bodies.filter((b) => "done" in b)).toHaveLength(5);
-      expect(
-        bodies.flatMap((b) => ("turn" in b ? [b.turn] : [])).sort((a, b) => a - b),
-      ).toEqual([47, 48, 49]);
+      expect(bodies.flatMap((b) => ("turn" in b ? [b.turn] : [])).sort((a, b) => a - b)).toEqual([
+        47, 48, 49,
+      ]);
       const turns = (await sessionRows()).map((r) => r.turn);
       expect(turns).toEqual(Array.from({ length: ENDLESS_TURN_LIMIT }, (_, i) => i));
     }, 30_000);
@@ -594,11 +586,7 @@ dbSuite("POST /api/runs/{id}/next（run#A.3）", () => {
       await seedPosts("c", 3);
       const run = await createRun({ device: DEVICE_A });
       await expectError(await postNext("01M782MV00TMYMTHTGG5C6KS3T"), 404, "run_not_found");
-      await expectError(
-        await postNext(run.run_id, { device: DEVICE_B }),
-        404,
-        "run_not_found",
-      );
+      await expectError(await postNext(run.run_id, { device: DEVICE_B }), 404, "run_not_found");
       expect(await sessionRows()).toEqual([]);
     });
 
