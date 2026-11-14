@@ -160,8 +160,8 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `theme_id` | text null | fk themes。エンドレスは NULL |
 | `date` | date null | デイリーの日付 |
 | `actor_id` | text | fk actors |
-| `deck` | text[] | 山札の `post_id`（12 または 10）。予定であり、実行済みの手番は `sessions(run_id, turn)` が正 |
-| `new_index` | int | 山札の中の新作枠の位置 |
+| `deck` | text[] | 山札の `post_id`（エンドレスは 1〜12、デイリーは 10。重複なし）。予定であり、実行済みの手番は `sessions(run_id, turn)` が正 |
+| `new_indexes` | int[] | 山札の中で新作扱い（`is_new`）にする位置。通常 1 個。校正済みが足りない間は複数、未校正がなければ空（`run.md` A.2） |
 | `from_run` | text null | fk runs。共有リンクからの再現 |
 | `lives` | int | エンドレス 3、デイリー 0 |
 | `reached` | int null | 凍結: 到達手番数（`scoring.md` A.9） |
@@ -260,7 +260,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `games` | `theme_id`, `verb`, `input`, `duration_frames`, `thumb_key` を削除し `meta jsonb` に。`stored_at` を追加。`duration_frames` の CHECK は `meta` の検査として API 側に |
 | `posts` | `controls`, `showcase_key`, `deterministic` を削除（`deterministic` は `meta` へ）。`calibration`, `calibration_flags`, `thumb_key`, `preview_key`, `published_at`, `updated_at` を追加。`base_status` を `draft / limited / public / unpublished / removed` に（`pending`, `expired` を廃止）。I4 の CHECK を `published_at` に |
 | `sessions` | `user_id` を `actor_id` に。`post_id` を `ON DELETE CASCADE` に。`game_hash`, `device_kind`, `run_id`, `turn`, `speed`, `time_limit`, `miss_below`, `is_new`, `author`, `via`, `deviation` を追加。`checkpoint`, `opened_at`（→ `issued_at`）を削除。`state` に `skipped` |
-| `runs` | `seed`, `game_ids`, `results`, `cleared`, `total` を削除。`user_id` を `actor_id` に。`mode`, `date`, `deck`, `new_index`, `from_run`, `lives`, `reached`, `avg_deviation`, `symbols`, `ended`, `recorded` を追加。ビュー `run_results` は廃止 |
+| `runs` | `seed`, `game_ids`, `results`, `cleared`, `total` を削除。`user_id` を `actor_id` に。`mode`, `date`, `deck`, `new_indexes`（#123 で `new_index` から変更）, `from_run`, `lives`, `reached`, `avg_deviation`, `symbols`, `ended`, `recorded` を追加。ビュー `run_results` は廃止 |
 | `reports` | `reporter_id` を `actor_id`（fk actors）に。匿名は受理時に `weight = 0` |
 | `actors`, `theme_posts`, `likes`, `post_stats` | 新設 |
 | `moderation_kind` | `calibration_confirm`, `calibration_invalidate`, `unban_user` を追加 |
