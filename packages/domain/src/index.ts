@@ -8,6 +8,7 @@ export interface Clock {
 
 export const DOMAIN_VERSION = "0.0.0";
 
+export * from "./deviation.ts";
 export * from "./forbidden-identifiers.ts";
 export * from "./handle.ts";
 export * from "./session.ts";
