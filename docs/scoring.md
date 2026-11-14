@@ -138,6 +138,8 @@ stateDiagram-v2
 
 投稿状態が `public` / `limited` 以外なら校正状態によらず入らない（`moderation.md` A.3 / A.8）。
 
+エンドレスで正規枠に入れる校正済みが足りない間は、`uncalibrated` が正規枠の空きも埋める。扱いは新作枠と同じ（`run.md` A.2、B.10）。
+
 ## A.9 成績表の凍結値
 
 `POST /runs/{id}/finish` でサーバが計算し、`runs` に保存する。以後、分布が変わっても変えない。
