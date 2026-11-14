@@ -1,5 +1,6 @@
 import { requireMcpAuth } from "@better-auth/mcp";
 import { type Context, Hono } from "hono";
+import { DEVICE_ID_HEADER, ensureActor, parseDeviceId } from "./actors.ts";
 import {
   AUTH_BASE_PATH,
   type Auth,
@@ -16,6 +17,7 @@ import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
+import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
 
 // REST API・Better Auth・MCP サーバはすべてこの app に載せる。
 // Vercel からは /api/index.ts 経由で、ローカルは src/dev.ts から起動する。
@@ -26,6 +28,7 @@ import { createR2Storage } from "./r2.ts";
 //   /.well-known/*         RFC 8414 / 9728 のパス挿入形（issuer・リソースにパスがあるので root にも出る）
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
+//   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
 
@@ -36,7 +39,15 @@ export interface AppDeps {
   publish: PublishDeps;
   /** 試遊トークンの署名鍵（se#A.5）。配信 Worker と同じ値。無ければ play-token は `not_configured` */
   gamesSigningSecret?: string;
+  /** [0, 1) の乱数。山札の抽選に使う（run#A.10）。既定は Math.random。テストは seed から決まるものを渡す */
+  random?: () => number;
 }
+
+const RUN_ERROR_STATUS = {
+  invalid_request: 400,
+  run_not_found: 404,
+  no_games: 409,
+} as const satisfies Record<RunError, number>;
 
 export type AppInput = AppDeps | { missing: string[] };
 
@@ -53,6 +64,8 @@ export function createApp(input: AppInput): Hono {
       "/.well-known/*",
       "/api/connect/*",
       "/api/posts/*",
+      "/api/runs",
+      "/api/runs/*",
       MCP_PATH,
     ]) {
       app.all(path, notConfigured);
@@ -61,6 +74,7 @@ export function createApp(input: AppInput): Hono {
   }
 
   const { auth, baseURL, publish, gamesSigningSecret } = input;
+  const random = input.random ?? Math.random;
   const authHandler = (req: Request) => auth.handler(req);
 
   app.all(`${AUTH_BASE_PATH}/*`, (c) => authHandler(c.req.raw));
@@ -83,6 +97,25 @@ export function createApp(input: AppInput): Hono {
       c.req.param("id"),
     );
     return token ? c.json(token) : c.json({ error: "not_found" }, 404);
+  });
+
+  // ランの作成（run#A.3）。匿名で呼べる。主体は X-Device-Id から upsert する（dm#A.3、#141）
+  app.post("/api/runs", async (c) => {
+    c.header("cache-control", "no-store");
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    const input = parseCreateRunInput(await c.req.json().catch(() => null));
+    if (!input) return c.json({ error: "invalid_request" }, RUN_ERROR_STATUS.invalid_request);
+    // ログイン中なら主体に user_id を結ぶ。Cookie が無ければセッションを引かない
+    const session = c.req.header("cookie")
+      ? await auth.api.getSession({ headers: c.req.raw.headers })
+      : null;
+    const deps = { db: publish.db, now: publish.now, random };
+    const actor = await ensureActor(deps, deviceId, session?.user.id);
+    const result = await createRun(deps, actor.id, input);
+    return result.ok
+      ? c.json(result.value, 201)
+      : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
   });
 
   const mcpHandler = createMcpFetchHandler(publish);

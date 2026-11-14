@@ -74,7 +74,7 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
     expect(r.ok && r.config.storageMissing).toEqual(["R2_BUCKET", "KV_NAMESPACE_ID"]);
   });
 
-  it("health は生き、認証・MCP・.well-known・play-token は 503 と不足一覧を返す", async () => {
+  it("health は生き、認証・MCP・.well-known・play-token・runs は 503 と不足一覧を返す", async () => {
     const app = createAppFromEnv({});
     expect((await app.request("/api/health")).status).toBe(200);
     for (const path of [
@@ -82,8 +82,11 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
       "/api/mcp",
       "/.well-known/oauth-authorization-server/api/auth",
       "/api/posts/01M782MV00TMYMTHTGG5C6KS3T/play-token",
+      "/api/runs",
+      "/api/runs/01M782MV00TMYMTHTGG5C6KS3T/next",
     ]) {
-      const res = await app.request(path, { method: path === "/api/mcp" ? "POST" : "GET" });
+      const post = path === "/api/mcp" || path.startsWith("/api/runs");
+      const res = await app.request(path, { method: post ? "POST" : "GET" });
       expect(res.status, path).toBe(503);
       expect(await res.json()).toEqual({
         error: "not_configured",
