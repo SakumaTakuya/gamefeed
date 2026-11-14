@@ -183,6 +183,8 @@ export async function issueNextTurn(deps: TurnDeps, input: NextInput): Promise<N
       await tx.execute(sql`update runs set cursor = ${cursor + 1} where id = ${input.runId}`);
       return { ok: true, value };
     }
+    // 何も発行しなかった呼び出しは cursor を進めない。進めると、Host が呼び直した回数だけ周回（速度）が
+    // 上がってしまう。制限が解けた後の発行は、この呼び出しが無かった場合と同じ結果になる（#143 の 4）
     return { ok: true, value: { done: true } };
   });
 }

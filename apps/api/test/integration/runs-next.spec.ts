@@ -525,6 +525,20 @@ dbSuite("POST /api/runs/{id}/next（run#A.3）", () => {
       await expectDone(run.run_id);
       expect(await sessionRows()).toHaveLength(1);
     });
+
+    it("R-mo.A3-2 全部出せずに done を返した呼び出しは位置を進めない: 何回呼んでも、制限が解けた後の手番の周回と速度は変わらない（#143 の 4）", async () => {
+      await seedPosts("c", 3);
+      const run = await createRun();
+      const d1 = run.deck[1] as string;
+      await next(run.run_id);
+      for (const id of run.deck) await restrict(id);
+      for (let i = 0; i < 4; i++) await expectDone(run.run_id);
+      expect((await db.select().from(s.runs).where(eq(s.runs.id, run.run_id)))[0]?.cursor).toBe(1);
+      await db.execute(sql`update posts set indiv_restricted = false where id = ${d1}`);
+      expect(await next(run.run_id)).toMatchObject({ turn: 1, post_id: d1, lap: 0, speed: 1 });
+      // 残りの位置（山札の 3 本目）と次の周の 1 本目は制限中のまま飛ばされ、周回に数えられる
+      expect(await next(run.run_id)).toMatchObject({ turn: 2, post_id: d1, lap: 1 });
+    });
   });
 
   // ---- セッションに写す値（dm#A.3） -------------------------------------------------
