@@ -125,8 +125,14 @@ function symbolOf(deviation: number | null): string {
  *
  * - 最後に結果のある手番より後の手番（先読みの捨て）は数えない
  * - エンドレスは 3 回目のミスの手番までを数え、それ以降は捨てる
+ * - デイリーで山札の末尾を飛ばした日（mo#A.3）を「通した」と判定するには cursor を渡す
  */
-export function summarizeRun(mode: RunMode, turns: readonly RecordedTurn[]): RunSummary {
+export function summarizeRun(
+  mode: RunMode,
+  turns: readonly RecordedTurn[],
+  /** 山札の通算位置（nextTurn の cursor と同じ）。デイリーで末尾の位置を飛ばした日の判定に使う */
+  cursor?: number,
+): RunSummary {
   let last = -1;
   turns.forEach((t, i) => {
     if (t.state === "submitted" || t.state === "skipped") last = i;
@@ -158,9 +164,12 @@ export function summarizeRun(mode: RunMode, turns: readonly RecordedTurn[]): Run
   counted.forEach((t, i) => {
     bySlot[turns[i]?.deckIndex ?? i] = symbolOf(t.deviation);
   });
+  // デイリーは山札を回り切り、発行した手番をすべて遊べば、飛ばした位置があっても通したことになる。
+  // 末尾の位置を飛ばした日は手番が発行されないので、cursor で回り切ったことを知る（mo#A.3）
+  const exhausted = (cursor ?? bySlot.length) >= DAILY_TURN_LIMIT;
+  const dailyDone = mode === "daily" && exhausted && reached === turns.length;
+  if (dailyDone) bySlot.length = DAILY_TURN_LIMIT;
   const symbols = Array.from(bySlot, (c) => c ?? SYMBOL_NONE).join("");
-  // デイリーは山札の最後の位置まで遊べば、飛ばした手番があっても上限まで通したことになる
-  const dailyDone = mode === "daily" && bySlot.length >= DAILY_TURN_LIMIT;
 
   return {
     reached,

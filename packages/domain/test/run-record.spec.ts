@@ -293,6 +293,28 @@ describe("summarizeRun: 平均偏差値と記号列（sc#A.9）", () => {
     expect(s).toMatchObject({ reached: 9, ended: "limit" });
   });
 
+  it("末尾の位置を飛ばした日も、山札を回り切っていれば limit で 10 文字（mo#A.3）", () => {
+    const at = (deckIndex: number): RecordedTurn =>
+      played({ missBelow: null, deviation: 55, deckIndex });
+    const turns = [0, 1, 2, 3, 4, 5, 6, 7, 8].map(at);
+    // cursor なしでは回り切ったか分からない
+    expect(summarizeRun("daily", turns)).toMatchObject({
+      ended: "abandoned",
+      symbols: "○○○○○○○○○",
+    });
+    expect(summarizeRun("daily", turns, 10)).toMatchObject({
+      reached: 9,
+      ended: "limit",
+      symbols: "○○○○○○○○○—",
+    });
+    // 回り切っていても、発行した手番を遊び残していれば中断
+    expect(summarizeRun("daily", [...turns.slice(0, 8), unsent(null)], 10)).toMatchObject({
+      reached: 8,
+      ended: "abandoned",
+      symbols: "○○○○○○○○",
+    });
+  });
+
   it("中断したデイリーの記号列は最後に遊んだ位置まで（#136）", () => {
     const at = (deckIndex: number): RecordedTurn =>
       played({ missBelow: null, deviation: 61, deckIndex });
