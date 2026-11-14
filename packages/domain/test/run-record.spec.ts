@@ -129,7 +129,12 @@ describe("nextTurn（R-run.A3-1 の unit、run#A.2、A.3）", () => {
       speed: 1,
     });
     // 飛ばしたぶん、周回の境界は手番 12 より早く来る
-    expect(nextTurn("endless", 12, 10, 0, 12)).toMatchObject({ turn: 10, index: 0, lap: 1, speed: 1.125 });
+    expect(nextTurn("endless", 12, 10, 0, 12)).toMatchObject({
+      turn: 10,
+      index: 0,
+      lap: 1,
+      speed: 1.125,
+    });
   });
 
   it("デイリーは山札を 1 周したら done（飛ばして 9 手番になった日）", () => {
@@ -289,7 +294,8 @@ describe("summarizeRun: 平均偏差値と記号列（sc#A.9）", () => {
   });
 
   it("中断したデイリーの記号列は最後に遊んだ位置まで（#136）", () => {
-    const at = (deckIndex: number): RecordedTurn => played({ missBelow: null, deviation: 61, deckIndex });
+    const at = (deckIndex: number): RecordedTurn =>
+      played({ missBelow: null, deviation: 61, deckIndex });
     expect(summarizeRun("daily", [at(0), at(1), at(3)]).symbols).toBe("◎◎—◎");
     expect(summarizeRun("daily", [at(0), at(1), at(3)]).ended).toBe("abandoned");
   });
