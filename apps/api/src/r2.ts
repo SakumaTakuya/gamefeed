@@ -6,6 +6,7 @@
 
 import { createHash, createHmac } from "node:crypto";
 import type { GameStorage } from "./publish.ts";
+import type { ReplayStorage } from "./results.ts";
 
 export interface R2Config {
   accessKeyId: string;
@@ -17,8 +18,11 @@ export interface R2Config {
 
 type FetchLike = (url: string, init: RequestInit) => Promise<Response>;
 
-export const sha256Hex = (data: string): string =>
-  createHash("sha256").update(data, "utf8").digest("hex");
+export const sha256Hex = (data: string | Uint8Array): string =>
+  (typeof data === "string"
+    ? createHash("sha256").update(data, "utf8")
+    : createHash("sha256").update(data)
+  ).digest("hex");
 
 const hmac = (key: string | Buffer, data: string): Buffer =>
   createHmac("sha256", key).update(data, "utf8").digest();
@@ -85,37 +89,46 @@ const amzDateOf = (d: Date): string => d.toISOString().replace(/[-:]|\.\d{3}/g, 
 export function createR2Storage(
   cfg: R2Config,
   opts: { fetch?: FetchLike; now?: () => Date } = {},
-): GameStorage {
+): GameStorage & ReplayStorage {
   const doFetch: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
   const now = opts.now ?? (() => new Date());
   const base = cfg.endpoint.replace(/\/+$/, "");
+
+  async function putObject(
+    key: string,
+    body: string | Uint8Array,
+    contentType: string,
+  ): Promise<void> {
+    const url = new URL(`${base}/${cfg.bucket}/${key}`);
+    // `If-None-Match: *` は付けない（同じ内容の上書きは無害。mc#A.8）
+    const headers = {
+      "content-type": contentType,
+      "x-amz-date": amzDateOf(now()),
+      "x-amz-content-sha256": sha256Hex(body),
+    };
+    const authorization = signV4({
+      method: "PUT",
+      url,
+      headers,
+      region: "auto",
+      service: "s3",
+      accessKeyId: cfg.accessKeyId,
+      secretAccessKey: cfg.secretAccessKey,
+    });
+    const res = await doFetch(url.toString(), {
+      method: "PUT",
+      headers: { ...headers, authorization },
+      body,
+    });
+    if (!res.ok) {
+      const detail = (await res.text().catch(() => "")).slice(0, 200);
+      throw new Error(`R2 PutObject ${key} が ${res.status} を返した: ${detail}`);
+    }
+  }
+
   return {
-    async put(key: string, html: string): Promise<void> {
-      const url = new URL(`${base}/${cfg.bucket}/${key}`);
-      // `If-None-Match: *` は付けない（同じ内容の上書きは無害。mc#A.8）
-      const headers = {
-        "content-type": "text/html; charset=utf-8",
-        "x-amz-date": amzDateOf(now()),
-        "x-amz-content-sha256": sha256Hex(html),
-      };
-      const authorization = signV4({
-        method: "PUT",
-        url,
-        headers,
-        region: "auto",
-        service: "s3",
-        accessKeyId: cfg.accessKeyId,
-        secretAccessKey: cfg.secretAccessKey,
-      });
-      const res = await doFetch(url.toString(), {
-        method: "PUT",
-        headers: { ...headers, authorization },
-        body: html,
-      });
-      if (!res.ok) {
-        const detail = (await res.text().catch(() => "")).slice(0, 200);
-        throw new Error(`R2 PutObject ${key} が ${res.status} を返した: ${detail}`);
-      }
-    },
+    put: (key, html) => putObject(key, html, "text/html; charset=utf-8"),
+    // 入力ログ（dm#A.6 `replays/{session_id}.json.gz`）。gzip 済みのバイト列をそのまま置く
+    putReplay: (key, gz) => putObject(key, gz, "application/gzip"),
   };
 }

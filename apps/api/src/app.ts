@@ -17,6 +17,7 @@ import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
+import { type ReplayStorage, submitResult } from "./results.ts";
 import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
 import { deviceKindOf, issueNextTurn } from "./turns.ts";
 
@@ -31,6 +32,7 @@ import { deviceKindOf, issueNextTurn } from "./turns.ts";
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/runs/:id/next     手番の発行（そのランの主体だけ。run#A.3）
+//   /api/sessions/:id/result  結果の受理（その手番の主体だけ。sc#A.2）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
 
@@ -41,6 +43,8 @@ export interface AppDeps {
   publish: PublishDeps;
   /** 試遊トークンの署名鍵（se#A.5）。配信 Worker と同じ値。無ければ play-token は `not_configured` */
   gamesSigningSecret?: string;
+  /** 入力ログの置き場（R2）。無ければ結果は受理するが入力ログは保存しない（dm#A.6） */
+  replays?: ReplayStorage;
   /** [0, 1) の乱数。山札の抽選（run#A.10）と手番の seed に使う。既定は Math.random。テストは seed から決まるものを渡す */
   random?: () => number;
 }
@@ -50,6 +54,11 @@ const RUN_ERROR_STATUS = {
   run_not_found: 404,
   no_games: 409,
 } as const satisfies Record<RunError, number>;
+
+const RESULT_ERROR_STATUS = {
+  session_not_found: 404,
+  session_not_open: 409,
+} as const;
 
 export type AppInput = AppDeps | { missing: string[] };
 
@@ -68,6 +77,7 @@ export function createApp(input: AppInput): Hono {
       "/api/posts/*",
       "/api/runs",
       "/api/runs/*",
+      "/api/sessions/*",
       MCP_PATH,
     ]) {
       app.all(path, notConfigured);
@@ -140,6 +150,32 @@ export function createApp(input: AppInput): Hono {
       : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
   });
 
+  // 結果の受理（sc#A.2）。手番を発行された主体だけが送れる。拒否は「このセッションは無効」（Host は skip にする）
+  app.put("/api/sessions/:id/result", async (c) => {
+    c.header("cache-control", "no-store");
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    const body: unknown = await c.req.json().catch(() => null);
+    if (typeof body !== "object" || body === null || Array.isArray(body)) {
+      return c.json({ error: "invalid_request" }, 400);
+    }
+    const deps = {
+      db: publish.db,
+      now: publish.now,
+      ...(input.replays ? { replays: input.replays } : {}),
+    };
+    const actor = await ensureActor(deps, deviceId);
+    const result = await submitResult(deps, {
+      sessionId: c.req.param("id"),
+      actorId: actor.id,
+      body,
+    });
+    if (result.ok) return c.json(result.value);
+    return result.error === "invalid_result"
+      ? c.json({ error: result.error, reason: result.reason }, 422)
+      : c.json({ error: result.error }, RESULT_ERROR_STATUS[result.error]);
+  });
+
   const mcpHandler = createMcpFetchHandler(publish);
   const protectedMcp = requireMcpAuth(
     auth,
@@ -179,11 +215,12 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
   });
   // SPA と API は同じ Vercel プロジェクトなので、試遊 URL・ゲームページの元（mc#A.9）は baseURL と同じ。
   // R2_* / KV の変数が揃っていなければ storage / kv は入らず、publish_game は not_configured を返す（mc#A.2）
+  const storage = config.r2 ? createR2Storage(config.r2) : undefined;
   const publish: PublishDeps = {
     db,
     appOrigin: config.baseURL,
     now: () => new Date(),
-    ...(config.r2 ? { storage: createR2Storage(config.r2) } : {}),
+    ...(storage ? { storage } : {}),
     ...(config.kv ? { kv: createServeKv(config.kv) } : {}),
     storageMissing: config.storageMissing,
   };
@@ -191,6 +228,7 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
     auth,
     baseURL: config.baseURL,
     publish,
+    ...(storage ? { replays: storage } : {}),
     ...(config.gamesSigningSecret ? { gamesSigningSecret: config.gamesSigningSecret } : {}),
   };
 }

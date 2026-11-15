@@ -75,6 +75,27 @@ describe("createR2Storage（mc#A.8）", () => {
     return { calls, fetchImpl };
   }
 
+  it("putReplay は gzip 済みのバイト列を application/gzip で送り、バイト列のハッシュで署名する（dm#A.6）", async () => {
+    const { calls, fetchImpl } = capture();
+    const storage = createR2Storage(cfg, { fetch: fetchImpl, now });
+    const gz = new Uint8Array([0x1f, 0x8b, 0x08, 0x00, 0xff, 0x00]);
+    await storage.putReplay("replays/01JCSESSION.json.gz", gz);
+
+    expect(calls).toHaveLength(1);
+    const call = calls[0];
+    expect(call?.url).toBe(
+      "https://acct123.r2.cloudflarestorage.com/gamefeed-games/replays/01JCSESSION.json.gz",
+    );
+    expect(call?.init.method).toBe("PUT");
+    expect(call?.init.body).toBe(gz);
+    const h = new Headers(call?.init.headers);
+    expect(h.get("content-type")).toBe("application/gzip");
+    expect(h.get("x-amz-content-sha256")).toBe(sha256Hex(gz));
+    // 文字列として読んだハッシュとは違う（バイト列をそのまま数える）
+    expect(sha256Hex(new Uint8Array([0x61]))).toBe(sha256Hex("a"));
+    expect(sha256Hex(new Uint8Array([0xff]))).not.toBe(sha256Hex("\u00ff"));
+  });
+
   it("PUT <endpoint>/<bucket>/<key> に text/html; charset=utf-8 で送る。If-None-Match は付けない", async () => {
     const { calls, fetchImpl } = capture();
     const storage = createR2Storage(cfg, { fetch: fetchImpl, now });
