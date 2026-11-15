@@ -1,7 +1,7 @@
 /**
  * `PUT /api/sessions/{id}/result`（結果の受理）の integration テスト。
  * sc#A.2 / A.4 / A.5 / A.7、run#A.7、mo#A.2、dm#A.5 I7・I15。
- * R-sc.A2-1、R-sc.A4-1、R-sc.A7-1、R-run.A7-1（サーバ側）、R-12.2-7（I7）、R-dm.A5-15（受理の部分）、R-mo.A2-3。
+ * R-sc.A2-1、R-sc.A4-1、R-sc.A7-1、R-run.A7-1（サーバ側）、R-12.2-7（I7）、R-dm.A5-15（受理の部分）、R-mo.A2-3、R-mo.A3-2（発行済みの手番の result）。
  * Postgres と Better Auth は本物。時計はテストが進める。手番は `POST /api/runs` と `next` で本当に発行する。
  * 応答のステータスや拒否したセッションの状態など仕様に未記載の点は #145 の案。
  */
@@ -344,6 +344,23 @@ dbSuite("PUT /api/sessions/{id}/result（sc#A.2）", () => {
       });
       expect(over?.ratio).toBe(1);
       expect(await stats()).toEqual([6, 30]);
+    });
+
+    it("R-mo.A3-2 発行の後に出せなくなった投稿でも、発行済みの手番の結果は受理する", async () => {
+      await seedPost();
+      const restricted = await issue({ device: device(1) });
+      const unpublished = await issue({ device: device(2) });
+      await db.execute(sql`update posts set indiv_restricted = true`);
+      expect(
+        await accepted(restricted, result({ score: 55 }), { device: device(1) }),
+      ).toMatchObject({
+        deviation: deviation(55, DIST),
+        calibration: "calibrated",
+      });
+      await db.execute(sql`update posts set base_status = 'unpublished'`);
+      await accepted(unpublished, result({ score: 66 }), { device: device(2) });
+      // ゲームの記録としても残る（sc#A.4 は投稿状態を条件にしない）
+      expect(await stats()).toEqual([...DIST, 55, 66].sort((a, b) => a - b));
     });
 
     it("R-sc.A2-1 2 回目以降の提出は常に 409 で、記録も分布も変わらない", async () => {
