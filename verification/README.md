@@ -13,6 +13,8 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Session.cfg Session.tla
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Run.cfg Run.tla
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Lifecycle.cfg Lifecycle.tla
 java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderation.tla
+java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunSync_reorder.cfg RunSync.tla
+java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tla
 ```
 
 - `-deadlock` は「デッドロックを誤りとしない」。遊ぶ側が止まれば進まない系なので、終端状態は誤りではない
@@ -25,6 +27,8 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | --- | --- | --- | --- |
 | `Session.tla` | Host の状態機械（pr#A.5〜A.7）と Guest（pr#A.10）を非同期 FIFO で結ぶ。監視タイマーは離散時刻で、RUNNING でだけ進む | P1〜P4, P11〜P13（pr#A.12） | R-6.4-1 |
 | `Run.tla` | 手番の発行・スロット N〜N+2・幕間と skip・残機とミス（run#A.3〜A.7）。サーバの `finish` 規則（sc#A.9） | F1〜F9（run#A.15） | R-8.2-3, R-run.A15-1, R-run.A7-2 |
+| `RunSync.tla` | **現行**のランを Host（`run.ts`）とサーバ（`next` / `result` / `finish`、`summarizeRun`）に分け、順序の入れ替わり・消失・拒否のある通信で結ぶ（#151） | A1〜A6（下） | （#151 の判断材料） |
+| `RunLog.tla` | **作り直し案**（#151）: 計画を `POST /runs` で凍結し、サーバは次の手番の結果だけを記録に足す。`next` は無い | B1〜B7（下） | （#151。文書の改訂後に要件 ID を振る） |
 | `Lifecycle.tla` | 1 投稿の校正状態（sc#A.7）× 投稿状態（mo#A.2）× 制限と、`limited → public` の昇格、`post_eligibility`（dm#A.4） | L1〜L6（この README で定義） | （R-sc.* / R-mo.* の補助） |
 | `Moderation.tla` | 2 ユーザー・投稿 3 件の投稿状態・系譜・通報・自動制限・運営操作・ツリー制限・BAN（mo#A.2, A.4〜A.7、dm#A.4, A.5） | M1〜M10（mo#A.10） | R-mo.A10-1 |
 
@@ -46,6 +50,15 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 | F7 | `missTurns` に `isNew` の手番がない | 不変条件 |
 | F8 | `~startedAfterZero`（残機 0 で `start` を送った履歴がない）。`Cheat = FALSE` でだけ検査 | 不変条件 |
 | F9 | `finish` 時、サーバの到達本数は Host の 3 回目のミスの手番を超えない（結果を送らない `Withhold`、残機を無視する `Cheat` でも）。全部送れば 3 回目のミスの手番と一致し、ミスが 3 回未満なら最後に報告した手番。未提出の手番は run#A.7 / sc#A.9 の規則（最後の結果より後は数えず、前は `miss_below` ありならミス・なしなら skip） | 不変条件 |
+| A1 / B3 | 凍結した到達本数が、遊ぶ側が見た本数と同じ | 不変条件 |
+| A2 / B1 | 記録に載った手番の扱い（成立・ミス・skip）が、遊ぶ側が見たものと同じ | 不変条件 |
+| A3 / B3 | 終わった理由（残機切れ・上限・中断）が同じ | 不変条件 |
+| A4 / B2 | ランが止まるのは残機切れ・上限・本人の中断だけ（サーバが打ち切らない）。B2 は通信エラー（読み込みの skip が規定本数）を含む | 不変条件 |
+| A5 / B1 | 記録は遊ぶ側が見たものの先頭部分（A1 + A2 を弱めた最低線）。B1 は終了時でなく常に | 不変条件 |
+| A6 / B6 | ランはサーバ側でいつか閉じる | 活性 |
+| B4 | 記録は末尾に 1 手番ずつ足されるだけで、閉じた後は変わらない | アクション性質 |
+| B5 | 規定回数目のミスより後、規定本数目の読み込みの skip より後、上限より後は、何を送られても記録されない（F9 にあたる） | 不変条件 |
+| B7 | 障害がなければ、全手番がいつか記録される | 活性 |
 | L1 | `invalid` は終端 | アクション性質 |
 | L2 | `uncalibrated → calibrated` は `n >= 20`（`enough`）でだけ | アクション性質 |
 | L3 | `normal` ⇒ `public ∧ calibrated`、`new` ⇒ `limited/public ∧ uncalibrated ∧ thumb`、それ以外は `none`（dm#A.4） | 不変条件 |
@@ -89,6 +102,28 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Moderation_2u2p.cfg Moderat
 2. **mo#A.2 / A.7 / A.8: `limited` かつ `calibrated` の投稿が永久に `limited` に取り残される。** 経路: 自動制限（`indiv_restricted`、通報は `open` のまま）→ 校正済みになる（制限中なので昇格しない）→ 運営の `restore`（`indiv` を下ろし、通報は `dismissed`）。このとき投稿は可視・`calibrated`・`upheld` なし・制限なしだが `limited` のままで、A.7 の操作一覧に昇格させる操作がない（A.2 の「復帰は運営」に対応する操作が存在しない）。A.8 表の「起きていれば制限か `upheld` がある投稿」は成り立たない（`Lifecycle.cfg` の L4 違反）。提案: `restore`（と `restore_tree`）で、対象が `limited ∧ calibrated ∧ upheld なし` なら同じトランザクションで `public` に昇格する（`Lifecycle_fix.cfg`、`RestorePromotes = TRUE` で全性質成立）。`calibration_confirm`（`review → calibrated`）が昇格するかは A.2 の「`calibrated` になる遷移」に含まれると読み、モデルはそう書いた。文書に明記したい。
 3. **mo#A.5 の BAN「`removed` でない投稿をすべて `removed`」は `draft` を含むか。** A.2 / B.6 は `draft` を `removed` にしないので、`Moderation.tla` は BAN で `draft` を削除（行を消す）として扱った。I3 の文言（「投稿はすべて `removed`」）とどちらかに揃えたい。
 4. **run#A.7 / sc#A.9 の `finish`: `result` を送らなかった手番の扱い。** 到達手番数は「3 回目のミスが起きた手番まで」だが、3 回目のミスの `result` を送らず遊び続けるクライアントではその手番が `open`（期限切れ後は `abandoned`）のまま残る。`abandoned` を到達数に含めるか、ミスとみなすかが書かれていない。`Run.tla` の F9 は「結果はすべて届く」前提で検査している（`Cheat = TRUE` は残機の無視だけ）。 → #77 で規則を決め、`Run_withhold.cfg` で再検査した（#78）。
+
+## ランのモデルの作り直し（2026-11-15、#151）
+
+#141〜#149 で未記載点が 45 件出たので、現行のランを通信込みで書き直して（`RunSync.tla`）検査した。`Run.tla` は `result` と `finish` を原子的に扱い、Host を唯一の主体としていたので、下の反例は見えていなかった。Cap 4、Lives 2、再送 1 回。
+
+| cfg | 設定 | 結果 | 状態数（distinct） |
+| --- | --- | --- | --- |
+| `RunSync.cfg` | 現行。通信は順序が入れ替わるだけ、中断あり | A1〜A3・A6 は**反例なし** | 268,241 |
+| `RunSync_reorder.cfg` | 同上（中断なし） | **A4 違反**（13 手）。手番 1 の `{skipped: true}` より手番 2 のミスの `result` が先に届く → `next` が手番 1 を「後ろに結果のある未提出」としてミスに数え（#143 の 5）`{done: true}` → Host は残機 1 のまま終わる。`done` は Host で戻らない（`serverDone`） | — |
+| `RunSync_loss.cfg` | `result` が消える（再送しても届かない） | **A5 違反**（16 手）。読み込みの skip が成績表ではミスになり、残機 1 で `ended = lives` | — |
+| `RunSync_reject.cfg` | サーバが結果を拒否する（期限切れ） | **A3 違反**（12 手）。Host は残機切れ、成績表は `abandoned` | — |
+| `RunSync_vanish.cfg` | ページを閉じる | **A6 違反**。`finish` が来ないランは閉じない | — |
+| `RunSync_prefix_reliable.cfg` | 最小修正案（`PrefixRule`: 記録は最初の未提出の手番で打ち切る）。通信は順序だけ | A1〜A4・A6 は**反例なし** | 265,295 |
+| `RunSync_prefix.cfg` | 最小修正案、消失と中断あり | A4・A5 は**反例なし**（活性 A6 は状態数が大きく検査していない） | 8,186,150 |
+| `RunSync_prefix_reject.cfg` | 最小修正案、拒否あり | **A3 違反**（現行と同じ） | — |
+| `RunLog.cfg` | 作り直し案。重複と順序の入れ替わり。読み込みの skip 2 本で通信エラー（Fails 2） | B1〜B5・B7 は**反例なし** | 1,118,368 |
+| `RunLog_faults.cfg` | 作り直し案。消失・重複・順序・中断・ページを閉じる・期限 | B1〜B6 は**反例なし** | 5,274,720（約 25 分） |
+| `RunLog_cheat.cfg` | 作り直し案。任意の結果がいつでもサーバに届く（Cap 3） | B4〜B6 は**反例なし**。読み込みの skip を偽っても、規定本数より後は記録されない | 5,443,120 |
+
+原因は、進行を Host が決めている（run#B.2）のに、サーバが `sessions` の行の集まりから進行を推測し直すこと。`next` の残機の数え方（#143 の 5）は run#B.2 の「残機と進行は Host の手元で決まる」と両立しない。作り直し案はサーバが推測をやめ、届いた順に記録を足すだけにする。最小修正案は A4 / A5 を直すが、`next`・`runs.cursor`・先読みで発行したまま捨てる手番・拒否と終わり方の食い違い・閉じないランは残る。オーナーは 2026-11-15 に作り直し案を選んだ（#151）。
+
+`RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。`Run.tla` のサーバ側（F9、`Withhold`）と `RunSync.tla` は、文書の改訂が入ったら現行でなくなる。
 
 ## 境界と限界
 
