@@ -26,9 +26,9 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 | モデル | 対象 | 性質 | 要件 ID |
 | --- | --- | --- | --- |
 | `Session.tla` | Host の状態機械（pr#A.5〜A.7）と Guest（pr#A.10）を非同期 FIFO で結ぶ。監視タイマーは離散時刻で、RUNNING でだけ進む | P1〜P4, P11〜P13（pr#A.12） | R-6.4-1 |
-| `Run.tla` | 手番の発行・スロット N〜N+2・幕間と skip・残機とミス（run#A.3〜A.7）。サーバの `finish` 規則（sc#A.9） | F1〜F9（run#A.15） | R-8.2-3, R-run.A15-1, R-run.A7-2 |
-| `RunSync.tla` | **現行**のランを Host（`run.ts`）とサーバ（`next` / `result` / `finish`、`summarizeRun`）に分け、順序の入れ替わり・消失・拒否のある通信で結ぶ（#151） | A1〜A6（下） | （#151 の判断材料） |
-| `RunLog.tla` | **作り直し案**（#151）: 計画を `POST /runs` で凍結し、サーバは次の手番の結果だけを記録に足す。`next` は無い | B1〜B7（下） | （#151。文書の改訂後に要件 ID を振る） |
+| `Run.tla` | スロット N〜N+2・幕間と skip・残機とミス（run#A.4〜A.7）。Host 側（F1〜F8）は現行。手番の発行とサーバの `finish` 規則（旧 F9）は #153 より前の設計 | F1〜F8（run#A.15） | R-8.2-3, R-run.A15-1, R-run.A7-2 |
+| `RunSync.tla` | **#153 より前の設計**のランを Host（`run.ts`）とサーバ（`next` / `result` / `finish`、`summarizeRun`）に分け、順序の入れ替わり・消失・拒否のある通信で結ぶ（#151） | A1〜A6（下） | （#151 の判断材料） |
+| `RunLog.tla` | **現行**（#151 で選んだ設計）: 計画を `POST /runs` で凍結し、サーバは次の手番の結果だけを記録に足す。`next` は無い | F9〜F13 = B1〜B7（下） | R-run.A15-2 |
 | `Lifecycle.tla` | 1 投稿の校正状態（sc#A.7）× 投稿状態（mo#A.2）× 制限と、`limited → public` の昇格、`post_eligibility`（dm#A.4） | L1〜L6（この README で定義） | （R-sc.* / R-mo.* の補助） |
 | `Moderation.tla` | 2 ユーザー・投稿 3 件の投稿状態・系譜・通報・自動制限・運営操作・ツリー制限・BAN（mo#A.2, A.4〜A.7、dm#A.4, A.5） | M1〜M10（mo#A.10） | R-mo.A10-1 |
 
@@ -123,7 +123,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 
 原因は、進行を Host が決めている（run#B.2）のに、サーバが `sessions` の行の集まりから進行を推測し直すこと。`next` の残機の数え方（#143 の 5）は run#B.2 の「残機と進行は Host の手元で決まる」と両立しない。作り直し案はサーバが推測をやめ、届いた順に記録を足すだけにする。最小修正案は A4 / A5 を直すが、`next`・`runs.cursor`・先読みで発行したまま捨てる手番・拒否と終わり方の食い違い・閉じないランは残る。オーナーは 2026-11-15 に作り直し案を選んだ（#151）。
 
-`RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。`Run.tla` のサーバ側（F9、`Withhold`）と `RunSync.tla` は、文書の改訂が入ったら現行でなくなる。
+`RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。文書の改訂（#153）は 2026-11-15 に入った。`RunSync.tla` と、`Run.tla` のサーバ側（F9、`Withhold`、`Run_withhold.cfg` / `Run_cheat*.cfg`）は #153 より前の設計の記録で、現行の文書には対応しない。`Run.tla` の Host 側（F1〜F8）は現行。ただし幕間の延長（`SkipLoad` の前の待ち）はモデルに元から無く、読み込みの skip を待たずに決める変更の影響は受けない。
 
 ## 境界と限界
 
