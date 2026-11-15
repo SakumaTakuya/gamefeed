@@ -32,7 +32,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `session_via` | `guest`, `timeout`, `error` | `protocol.md` A.7 |
 | `verdict` | `provisional`, `accepted`, `rejected`, `flagged` | `scoring.md` A.3 |
 | `run_mode` | `endless`, `daily` | `run.md` A.2 |
-| `run_end` | `lives`, `limit`, `abandoned` | `run.md` A.7, A.9 |
+| `run_end` | `lives`, `limit`, `abandoned`, `error` | `run.md` A.6, A.7, A.9。`error` は読み込みの skip 3 本（通信エラー） |
 | `report_resolution` | `open`, `upheld`, `dismissed` | `moderation.md` |
 | `moderation_kind` | `restrict`, `restore`, `remove`, `restrict_tree`, `restore_tree`, `ban_user`, `unban_user`, `calibration_confirm`, `calibration_invalidate` | `moderation.md` A.7、`scoring.md` A.7。`unban_user` の操作は Phase 2 |
 | `device_kind` | `ios`, `android`, `other` | `scoring.md` A.7（端末差） |
