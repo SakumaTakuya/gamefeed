@@ -92,7 +92,7 @@ sequenceDiagram
         SDK->>Host: log（最後の分）
         SDK->>Host: end{session_id, score, frames}
     else 監視タイマー満了（SDK が end を送れなかった）
-        Note over Host: ENDED（via: timeout, score: 0）
+        Note over Host: ENDED（via: timeout）
     end
 
     Host->>SDK: destroy
@@ -102,7 +102,7 @@ sequenceDiagram
 - Host は `ready` を受け取るまで何も送らない。`ready` より前に届いた Host のメッセージを Guest が受け取ることはない
 - `init` を受けた Guest は、そのセッションの状態を初期化し（`onInit`）、`start` を待つ。`start` の前にフレームは進まず、入力も記録しない
 - `start` を受けた Guest は `onStart` を呼び、以後 `speed × 60` 回/秒で `onTick` を呼ぶ。描画は端末の `requestAnimationFrame` に合わせて `onDraw` を呼ぶ。遅れたときは 1 描画あたり最大 5 tick まで追いつき、それ以上は捨てずに次に持ち越す
-- 端末が遅く tick が追いつかないときのために、SDK は壁時計も見る。`start` から `time_limit ÷ (60 × speed)` 秒が経過したら、フレームが `time_limit` に達していなくても `end` を送る（`frames < time_limit` になる）。これにより、動いてはいるが遅いゲームが監視タイマー（A.7）で `score: 0` になることはない。短縮されたセッションを校正の分布に入れるかは `scoring.md` で決める
+- 端末が遅く tick が追いつかないときのために、SDK は壁時計も見る。`start` から `time_limit ÷ (60 × speed)` 秒が経過したら、フレームが `time_limit` に達していなくても `end` を送る（`frames < time_limit` になる）。これにより、動いてはいるが遅いゲームが監視タイマー（A.7）で満了になることはない。短縮されたセッションを校正の分布に入れるかは `scoring.md` で決める
 - 入力は DOM イベントの時点で受け、**次の tick のフレーム番号**を付けてログに入れ、その tick の前に `onInput` へ渡す
 - `frame == time_limit` に達した tick の直後に、SDK は `GF.end()` と同じ処理（最後の `log` と `end`）を行う。ゲームが先に `GF.end()` を呼んでいればその時点で行い、以後の tick は止める
 - `end` は 1 セッションに 1 回。SDK は 2 回目以降の `GF.end()` を無視する
@@ -158,16 +158,17 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 ## A.7 監視タイマーと終わり方
 
 - 長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒。`start` で始まり、`pause` で止まり、`resume` で残り時間から再開する
-- 満了したら Host は ENDED へ遷移し、結果を `via: timeout`、`score: 0`、`frames: time_limit` として記録する。以後その `session_id` の `end` は捨てる
-- `error` を受けたときも ENDED で、`via: error`、`score: 0`
+- 満了したら Host は ENDED へ遷移し、結果は `via: timeout`。以後その `session_id` の `end` は捨てる
+- `error` を受けたときも ENDED で、結果は `via: error`
+- 満了と `error` の結果は `score` も `frames` も入力ログも持たない。結果は 4 種類の直和（`scoring.md` A.1。4 つ目はセッションが始まらなかった読み込みの skip）で、下の 2 つの帳簿はそこからの写像
 - SDK は `time_limit` または壁時計（A.4）で必ず `end` を送るので、満了が起きるのはゲームが固まった（無限ループ）か、`end` の前に例外で止まったときだけ。遅いだけの端末では起きない
 
 終わり方は 3 通りで、それぞれ記録の扱いが違う（`scoring.md`、`run.md`）。
 
-| via | ゲームの記録（校正・分布） | 遊ぶ側のラン |
+| via | ゲームの集計（`scoring.md` A.4） | 遊ぶ側のラン |
 | --- | --- | --- |
-| `guest` | `score` をそのまま | 偏差値に直して成績に入る |
-| `timeout` | `score: 0` として入る（固まるゲームは 0 に張り付いて検出される） | `skip`。残機も成績も触らない（遊ぶ側のせいではない） |
+| `guest` | `score` が分布に入る | 偏差値に直して成績に入る |
+| `timeout` | 失敗の数に入る（固まるゲームは失敗率で検出される） | `skip`。残機も成績も触らない（遊ぶ側のせいではない） |
 | `error` | 同上 | 同上 |
 
 ## A.8 `speed`
@@ -175,11 +176,11 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 - `init.speed` は 1.0 以上 1.5 以下の 1/8 刻み（1.0, 1.125, 1.25, 1.375, 1.5）。Host が決め、Guest は変えられない（値の決め方は `run.md` A.8）
 - Guest は `speed × 60` 回/秒で `onTick` を呼ぶ。論理フレームの意味（`time_limit`、`frames`、ログの `frame`）は `speed` に依存しない
 - `replay` では元のセッションと同じ `speed` を渡す。入力はフレーム番号で記録されているので、実時間の長さが違っても同じ結果になる
-- Host は `end.frames` を `time_limit` 以下として検証する。壁時計との整合（`frames ÷ (60 × speed)` が経過時間 × 1.05 以下）は `scoring.md` の検証段階で行う
+- Host は `end` を結果の述語（`scoring.md` A.2。`score` は整数 0〜2³¹−1、`frames` は整数 0〜`time_limit` で、走っていた時間に対して多すぎない）で確かめ、満たさない `end` は捨てる（状態は変わらず、監視タイマーが満了する）。値を直して受け取ることはしない。サーバも同じ関数を使うので、Host が受け取った `end` はサーバでも通る。サーバはランの合計で同じことを確かめる（`scoring.md` A.2）
 
 ## A.9 `log` の組み立て
 
-- `from_frame` は厳密に増加する。Host は減る・重なる `log` を捨て、そのセッションを `flagged` にする（`scoring.md`）
+- `from_frame` は厳密に増加する。Host は減る・重なる `log` を捨てる（ほかの条件に外れたメッセージと同じく、起きなかったこととして扱う。セッションに印は付けない）。入力ログが欠けた結果は、再実行（`scoring.md` A.3）で点数が合わなければ `rejected` になる
 - `end` の直前の `log` で、`inputs` は `end.frames` までをすべて含む。Host は `end` 受理時に、`log` の最大フレームが `end.frames` を超えていないことを検査する
 - Host は `log` を連結して 1 本の入力ログにし、`seed` と `speed` と一緒に保存する。これがリプレイの材料になる
 
@@ -224,9 +225,11 @@ PAUSED からの `init` は認めない。やり直すなら `destroy` して作
 
 勝敗は点数に置き換えた（`product.md` 5.1）。`checkpoint`（ゲーム状態のハッシュ）は検証を強くするが、ゲームに状態のハッシュ計算を書かせることになり、AI が間違えやすい。検証は `score` の一致だけで行い、足りなければ後から optional で足す。
 
-## B.3 監視タイマー満了を `score: 0` と `skip` に分けた理由
+## B.3 監視タイマー満了を、ゲームの集計では失敗、ランでは `skip` にした理由
 
-満了は SDK が `end` を送れなかったときにしか起きないので、ほぼ確実にゲーム側の不具合（無限ループ、例外）。ゲームの記録としては 0 を入れて「0 に張り付く」分布検査（`product.md` 5.4）で捕まえたい。一方、遊ぶ側に残機を失わせるのは筋が違うので、ランでは `skip` と同じ扱いにする。1 つの事象を 2 つの帳簿で別に数える、という決定。
+満了は SDK が `end` を送れなかったときにしか起きないので、ほぼ確実にゲーム側の不具合（無限ループ、例外）。ゲームの集計では失敗として数えて、失敗率の検査（`scoring.md` A.7）で捕まえたい。一方、遊ぶ側に残機を失わせるのは筋が違うので、ランでは `skip` にする。1 つの事象を 2 つの帳簿で別に数える、という決定。
+
+結果そのものは `score: 0` を持たない（#162）。#162 より前は、満了を `score: 0`、`frames: time_limit` の結果として書き、分布に 0 として入れていた（分布に入れるのをやめた理由は `scoring.md` B.7）。`error` には `frames` がなく、サーバの条件（`frames` は 1 以上）と合う値を Host が作る必要があり、開始直後に例外を出すゲームの結果が拒否されて記録が止まった。結果を 4 種類の直和にして、0 は分布への写像の側で決めれば、満了と `error` に `frames` を決める必要がない。却下した案: Host が値を直して送る（`frames: 0` を 1 にする）、サーバが `error` のときだけ 0 を通す。どちらも条件ごとに例外が増える。
 
 ## B.4 PAUSED からの `init` を認めない理由
 

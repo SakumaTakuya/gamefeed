@@ -29,7 +29,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `calibration` | `uncalibrated`, `calibrated`, `review`, `invalid` | `scoring.md` A.7 |
 | `session_state` | `open`, `submitted`, `skipped`, `abandoned` | `run.md` A.6, A.9、`scoring.md` A.2 |
 | `session_mode` | `play`, `replay` | `protocol.md` |
-| `session_via` | `guest`, `timeout`, `error` | `protocol.md` A.7 |
+| `session_via` | `guest`, `timeout`, `error`, `noload` | 結果の種類（`scoring.md` A.1）。`noload` は読み込みの skip |
 | `verdict` | `provisional`, `accepted`, `rejected`, `flagged` | `scoring.md` A.3 |
 | `run_mode` | `endless`, `daily` | `run.md` A.2 |
 | `run_end` | `lives`, `limit`, `abandoned`, `error` | `run.md` A.6, A.7, A.9。`error` は読み込みの skip 3 本（通信エラー） |
@@ -141,11 +141,11 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `miss_below` | int null | 計画に凍結した値（`scoring.md` A.6）。校正前・新作枠・デイリー・試遊は NULL |
 | `is_new` | bool | 新作枠の手番 |
 | `author` | bool | 投稿者本人のセッション（`actors.user_id = posts.user_id`）。分布に入れない |
-| `state` | `session_state` | ランの手番は `submitted` か `skipped` |
+| `state` | `session_state` | ランの手番は常に `submitted`（結果の種類は `via` で表す。`skipped` は使わない） |
 | `via` | `session_via` null | `submitted` のとき非 NULL |
-| `score` | int null | 0 ≤ score ≤ 2³¹−1 |
-| `frames` | int null | 1 ≤ frames ≤ `time_limit` |
-| `log_key` | text null | `replays/{session_id}.json.gz` |
+| `score` | int null | 0 ≤ score ≤ 2³¹−1。`via = guest` のときだけ非 NULL |
+| `frames` | int null | 0 ≤ frames ≤ `time_limit`。`via = guest` のときだけ非 NULL |
+| `log_key` | text null | `replays/{session_id}.json.gz`。`via = guest` のときだけ |
 | `verdict` | `verdict` | default `provisional` |
 | `deviation` | numeric(4,1) null | 受理時の偏差値（`scoring.md` A.5）。校正前は NULL |
 | `issued_at` | timestamptz | ランの手番は記録に足した時刻 |
@@ -210,6 +210,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | --- | --- | --- |
 | `post_id` | text pk | |
 | `n` | int | 分布の件数 |
+| `failures` | int | 失敗の数（満了と `error`。`scoring.md` A.4） |
 | `scores` | int[] | 昇順。上限 10,000 件（暫定、超えたら分位点 101 点に切り替え） |
 | `updated_at` | timestamptz | |
 
