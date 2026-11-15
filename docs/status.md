@@ -2,7 +2,8 @@
 
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
-## 現在地（2026-11-14）
+## 現在地（2026-11-15）
+- **ランのモデルを作り直す（#151、2026-11-15 にオーナーが決定）**。#141〜#149 の未記載 45 点を受けて、現行のランを通信込みで TLA+ に書き直した（`verification/RunSync.tla`）。順序の入れ替わりだけで「残機を残してランが打ち切られる」（`next` が未着の結果をミスに数えて `{done: true}`。#143 の 5 と run#B.2 が両立しない）、`result` の消失で「読み込みの skip が成績表でミスになる」、拒否で終わり方の食い違い、ページを閉じるとランが閉じない、の反例が出た。作り直し案（`verification/RunLog.tla`）は、計画（山札・`miss_below`・seed）を `POST /runs` で凍結し、手番 → 位置・周回・速度・seed を domain の純粋関数にして `next` を無くし、サーバは「記録の次の手番」の結果だけを足す。消失・重複・順序・中断・期限を入れても B1〜B6 が成立（結果は `verification/README.md`）。**文書はまだ現行のまま**で、`spec:` の PR（#151 を閉じる。オーナーがマージ）が次の作業。それまで #126〜#130 の実装（`next`・`runs.cursor`・`summarizeRun` の未提出の扱い・`run.ts` の `request_next`）は現行の文書どおりに残っているが、**この上に積まない**。#131（ラン画面）は文書の PR がマージされるまで止める。本番に `0007` / `0008` は当てない（作り直しで `runs` / `sessions` の形が変わる）
 - **下書きを本番で遊べるようになった（2026-11-14）**。`publish_game` → 配信 Worker → 試遊ページ `/draft/<post_id>` → SDK が一通りつながり、オーナーが Muse の下書き「まるタップ」を実機で試遊した（#117）。入ったもの:
   - 配信 Worker（#102、`apps/games`）: `/p/<post_id>/` を KV `serve:<post_id>` と試遊トークン（`?t=`、HMAC-SHA256）で返す。全レスポンスに se#A.4 のヘッダ。R2 の HTML に SDK を `<head>` の直後へ注入する（#108、`inject.ts`）。`/lib/` と `assets/` は 404 のまま
   - デプロイ（#115）: ワークフロー `deploy-games` が `apps/games` / `packages/sdk` / `packages/domain` の変更で `wrangler deploy` する。KV の `id` は Variables `KV_NAMESPACE_ID`、署名鍵は Secrets `GAMES_SIGNING_SECRET`（Vercel の Production と同じ値）。2026-11-13 と 11-14 に成功
@@ -42,11 +43,12 @@
 - #35 で Node.js を 26（LTS、2026-10-28〜、EOL 2029-04）に揃えた。`engines.node >=26`、CI と `db-migrate` も 26。Vercel は `engines` で決まるので新規デプロイから 26。
 
 ## 次の一手（順番どおりに）
-1. **ラン本線（W3）**。依存の順に: #126 `actors` と `POST /api/runs`（済み）→ #127 `next`（済み）→ #128 `result`（済み）→ #129 `finish`（済み）→ #130 Host のスロット制御（済み）→ **#131 ラン画面**（`apps/web`。`runHostStep` の effects を iframe・`packages/sdk` の Host ブリッジ・API につなぐ。試遊ページ `apps/web/src/draft/` の iframe の扱いを使い回す。`X-Device-Id` は localStorage の 128 bit の乱数。`test:manual` なので、実機の確認はオーナー）
-2. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) #97 の案を選ぶ (d) #103 / #106 / #141 / #143 / #145 / #147 / #149 の承認（承認されたら AI が `spec:` の PR を出す）(f) Actions の `db-migrate` を実行して本番に `0007` と `0008` を当てる（当てるまで本番の `POST /api/runs` と `next` は 500）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
-3. 保守: #96（日次の突き合わせジョブ）、#97 の実装（オーナーの選択後）
-4. Issue を切る: 試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
-5. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新
+1. **ランのモデルの作り直し（#151）**。(a) `spec:` の PR で `run.md` A.3 / A.5〜A.7 / A.15 / B.1〜B.3、`scoring.md` A.2 / A.6 / A.9、`moderation.md` A.3、`data-model.md` A.3 / A.5 を直す。#151 の「文書の PR で決める点」5 つに案を付ける。#143 / #147 / #149 の各点を「無くなる・変わる・残る」に分けて、残る点は同じ PR で文書に入れる (b) マージ後に `requirements.md` を追従させ、実装 Issue を切る: domain（手番の純粋関数、記録の集計、Host から `next` を外す）、API（`POST /runs` の計画、結果の追記、`finish`、マイグレーション）(c) `Run.tla` のサーバ側と `RunSync.tla` を現行でなくなったものとして整理
+2. **ラン本線（W3）の残り**（1 の後）。以下は作り直し前の記録。依存の順に: #126 `actors` と `POST /api/runs`（済み）→ #127 `next`（済み）→ #128 `result`（済み）→ #129 `finish`（済み）→ #130 Host のスロット制御（済み）→ **#131 ラン画面**（`apps/web`。`runHostStep` の effects を iframe・`packages/sdk` の Host ブリッジ・API につなぐ。試遊ページ `apps/web/src/draft/` の iframe の扱いを使い回す。`X-Device-Id` は localStorage の 128 bit の乱数。`test:manual` なので、実機の確認はオーナー）
+3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) #97 の案を選ぶ (d) #103 / #106 / #141 / #143 / #145 / #147 / #149 の承認（承認されたら AI が `spec:` の PR を出す）(f) 本番への `0007` / `0008` の適用は #151 の実装が入るまで保留(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
+4. 保守: #96（日次の突き合わせジョブ）、#97 の実装（オーナーの選択後）
+5. Issue を切る: 試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
+6. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新
 
 `gh api "repos/SakumaTakuya/gamefeed/issues?milestone=3&state=open"` で W3 の残りを見る（W3 は `milestone: 3`）。`blocked` ラベルの Issue は本文の依存先が閉じるまで触らない。
 
@@ -73,6 +75,7 @@
 - iOS Safari で Guest の無限ループが Host を止める問題の実機確認（run#未解決）。侵入テストと一緒に
 
 ## AI の作業環境メモ（Claude のチャットからコンテナで作業するとき）
+- TLC を裏で回すときは `(setsid nohup bash /tmp/x.sh > /dev/null 2>&1 &)`。止めるときは `pgrep java` の PID を直接 kill（`pgrep -f <スクリプト名>` は、その名前をコマンドラインに含む自分のシェルに当たる。2026-11-15 に 2 回やった）。活性（`PROPERTY`）は 500 万状態を超えると 1 CPU / 3 GB では終わらないので、大きい設定は不変条件だけにする
 - TLC（`verification/`）は `tla2tools.jar` を GitHub releases から取る。Moderation の 2u2p は 4 分・270 万状態、1u3p はそれ以上かかる。`-metadir /tmp/tlcstates` で `states/` を外に出し、長いものは `setsid nohup` で回す。`pkill -f` も `kill $(pgrep -f 'java -XX')` も、そのパターンを含む自分のシェルを殺す。kill はパターンを含まないスクリプトファイルから実行するか、`pgrep -a java | grep tlc2` で PID を見て直接 `kill <pid>`
 - コミット前に `git config user.name motaku` / `user.email mo.takusakkun@gmail.com`（コンテナには identity が無く、`git commit` が失敗して `&&` で繋いだ後続が黙って飛ぶ）。
 - MCP のツール層のテストは `InMemoryTransport.createLinkedPair()` で `createMcpServer` に直接繋ぐ（`mcp-tools.spec.ts`）。OAuth を通すのは `mcp-oauth.spec.ts` の 1 本だけでよい。`publishGame` は自分でコミットするので、テストは `truncate table posts, games, users, auth_user cascade` で毎回空にする
