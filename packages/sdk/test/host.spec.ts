@@ -95,7 +95,7 @@ describe("1 セッションの流れ（pr#A.4, A.5）", () => {
 
     expect(host.state).toMatchObject({
       kind: "ENDED",
-      result: { score: 2, frames: 180, via: "guest", flagged: false, scoreable: true },
+      result: { score: 2, frames: 180, via: "guest", scoreable: true },
     });
     expect(host.inputs).toEqual([
       [11, "tap", 0.5, 0.5],
@@ -184,11 +184,48 @@ describe("監視タイマー（pr#A.7）", () => {
     expect(host.state.kind).toBe("RUNNING");
     advance(200);
     expect(clock.t).toBeGreaterThanOrEqual(4500);
-    expect(host.state).toMatchObject({
-      kind: "ENDED",
-      result: { score: 0, frames: 180, via: "timeout" },
+    expect(host.state).toMatchObject({ kind: "ENDED" });
+    // 満了の結果は値を持たない（pr#A.7）
+    expect(host.state.kind === "ENDED" && host.state.result).toEqual({
+      via: "timeout",
+      scoreable: true,
     });
     expect(hasTimer()).toBe(false);
+  });
+
+  it("pause をはさんでも、Guest の end は実時間の検査を通る（止まっていた時間は両方が数えない。sc#A.2）", () => {
+    const { host, guest, advance } = setup();
+    guest.ready(META);
+    host.init({ speed: 1.5 });
+    host.start();
+    advance(700);
+    expect(host.pause()).toBe(true);
+    advance(60_000);
+    expect(host.resume()).toBe(true);
+    advance(600);
+    expect(host.pause()).toBe(true);
+    advance(5000);
+    expect(host.resume()).toBe(true);
+    advance(800);
+    expect(host.state).toMatchObject({
+      kind: "ENDED",
+      result: { via: "guest", frames: 180 },
+    });
+  });
+
+  it("SDK を通さず、開始直後に frames = time_limit と報告する end は捨てる。満了で終わる（pr#A.8）", () => {
+    const { host, guest, advance } = setup({ connect: false });
+    guest.ready(META);
+    host.init();
+    host.start();
+    advance(100);
+    host.receive({ type: "end", session_id: "s-1", score: 999, frames: 180 });
+    expect(host.state.kind).toBe("RUNNING");
+    advance(4500);
+    expect(host.state.kind === "ENDED" && host.state.result).toEqual({
+      via: "timeout",
+      scoreable: true,
+    });
   });
 
   it("pause 中は満了せず、resume で残り時間から再開する", () => {
@@ -230,7 +267,11 @@ describe("error と破棄（pr#A.2, A.7）", () => {
     host.init();
     host.start();
     advance(500);
-    expect(host.state).toMatchObject({ kind: "ENDED", result: { via: "error", score: 0 } });
+    // error の結果は値を持たない（pr#A.7）
+    expect(host.state.kind === "ENDED" && host.state.result).toEqual({
+      via: "error",
+      scoreable: true,
+    });
     expect(host.problem).toBe("Error: boom");
     // 遊び直すと消える
     host.init();
@@ -278,8 +319,8 @@ describe("error と破棄（pr#A.2, A.7）", () => {
     expect(host.state.kind).toBe("RUNNING");
   });
 
-  it("log の順序違反は捨てて flagged を残す（pr#A.9）", () => {
-    const { host, guest } = setup({ connect: false });
+  it("log の順序違反は捨てるだけで、印は付けない。その後の end は受け取る（pr#A.9）", () => {
+    const { host, guest, clock } = setup({ connect: false });
     guest.ready(META);
     host.init();
     host.start();
@@ -291,8 +332,14 @@ describe("error と破棄（pr#A.2, A.7）", () => {
     });
     host.receive({ type: "log", session_id: "s-1", from_frame: 0, inputs: [[1, "tap", 0.5, 0.5]] });
     expect(host.inputs).toEqual([[70, "tap", 0.5, 0.5]]);
+    clock.t = 2000;
     host.receive({ type: "end", session_id: "s-1", score: 1, frames: 100 });
-    expect(host.state).toMatchObject({ kind: "ENDED", result: { flagged: true } });
+    expect(host.state.kind === "ENDED" && host.state.result).toEqual({
+      via: "guest",
+      score: 1,
+      frames: 100,
+      scoreable: true,
+    });
   });
 
   it("destroy はどの状態からも効き、destroy を送ってタイマーを止める", () => {

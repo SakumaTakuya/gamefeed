@@ -547,7 +547,7 @@ describe("乱数と replay（gc#A.4, pr#A.8）", () => {
 });
 
 describe("Host の状態機械とのかみ合わせ（pr#A.5, A.9）", () => {
-  it("Guest が送る列を Host の状態機械に通すと、flagged なしで ENDED（via: guest）になる", () => {
+  it("Guest が送る列を Host の状態機械に通すと、どれも捨てられずに ENDED（via: guest）になる", () => {
     const { guest, run, sent } = started({ time_limit: 300 });
     guest.GF.onTick((f) => {
       if (f % 20 === 0) guest.input("tap", [0.5, 0.5]);
@@ -564,7 +564,9 @@ describe("Host の状態機械とのかみ合わせ（pr#A.5, A.9）", () => {
             if (!p.ok) throw new Error(p.reason);
             return toSessionEvent(p.message);
           })();
-      const r = transition(state, event, 0);
+      // Host の発信は 0 ms、Guest の発信は 300 フレームぶんの実時間（5 秒）が経った時刻に届いたことにする。
+      // 時計を共有した通しの検査は host.spec.ts
+      const r = transition(state, event, host ? 0 : 5000);
       expect(r.ok, JSON.stringify(raw)).toBe(true);
       state = r.state;
     };
@@ -577,7 +579,7 @@ describe("Host の状態機械とのかみ合わせ（pr#A.5, A.9）", () => {
     for (const m of sent.slice(1)) feed(m);
     expect(state.kind).toBe("ENDED");
     expect(state).toMatchObject({
-      result: { score: 300, frames: 300, via: "guest", flagged: false },
+      result: { score: 300, frames: 300, via: "guest" },
     });
   });
 });

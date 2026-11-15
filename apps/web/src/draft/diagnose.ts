@@ -34,10 +34,13 @@ export function diagnose(d: Diagnosis): string {
   lines.push(`終わり方: ${result ? VIA[result.via] : "中断"}`);
 
   if (result && meta) {
-    lines.push(
-      `点: ${result.score}（target ${meta.target} ${result.score >= meta.target ? "以上" : "未満"}）`,
-    );
-    if (result.frames !== undefined) lines.push(`フレーム: ${result.frames} / ${meta.duration}`);
+    // 点とフレームを持つのは end が届いた結果だけ（pr#A.7）
+    if (result.via === "guest") {
+      lines.push(
+        `点: ${result.score}（target ${meta.target} ${result.score >= meta.target ? "以上" : "未満"}）`,
+      );
+      lines.push(`フレーム: ${result.frames} / ${meta.duration}`);
+    }
     lines.push(`入力: ${d.inputs} 回`);
 
     if (result.via === "timeout") {
@@ -49,7 +52,7 @@ export function diagnose(d: Diagnosis): string {
       if (result.score === 0) {
         notes.push("点が 0 のままでした。GF.score への加算が呼ばれているか確かめてください。");
       }
-      if (result.frames !== undefined && result.frames < meta.duration) {
+      if (result.frames < meta.duration) {
         notes.push(
           `${meta.duration} フレームに届かず ${result.frames} フレームで終わりました。GF.end() を呼んでいないなら、onTick か onDraw が重くて処理が追いついていません。`,
         );
@@ -60,7 +63,6 @@ export function diagnose(d: Diagnosis): string {
         "入力が 1 回も記録されていません。入力は GF.onInput で受けてください（addEventListener の入力は記録されません）。",
       );
     }
-    if (result.flagged) notes.push("入力ログの順序が乱れました（SDK の不具合の可能性）。");
   }
   if (d.problem) lines.push(`例外: ${d.problem}`);
 
