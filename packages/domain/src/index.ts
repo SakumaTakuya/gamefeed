@@ -14,6 +14,7 @@ export * from "./forbidden-identifiers.ts";
 export * from "./handle.ts";
 export * from "./result.ts";
 export * from "./run.ts";
+export * from "./run-plan.ts";
 export * from "./run-record.ts";
 export * from "./session.ts";
 export * from "./static-check.ts";
