@@ -18,6 +18,7 @@ import {
   graphemeCount,
   type InputKind,
   type Mode,
+  SCORE_MAX,
   type SessionEvent,
   SPEEDS,
   TARGET_MIN,
@@ -29,8 +30,8 @@ import * as v from "valibot";
 export const SDK_PROTOCOL_VERSION = "2.0";
 export const SDK_PROTOCOL_MAJOR = 2;
 
-/** gc#A.4 / protocol#A.3: 0 ≤ score ≤ 2^31−1 */
-export const SCORE_MAX = 2 ** 31 - 1;
+/** gc#A.4 / protocol#A.3: 0 ≤ score ≤ 2^31−1。値は domain が持つ（サーバの受理条件と同じ。sc#A.2） */
+export { SCORE_MAX };
 
 /** 入力ログに現れる種別（protocol#A.3）。`stick` は `drag` 列から解釈し、`tilt` は予約 */
 export const INPUT_LOG_KINDS = ["tap", "hold", "swipe", "drag"] as const;
