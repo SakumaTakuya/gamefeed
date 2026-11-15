@@ -53,7 +53,7 @@ describe("turnAt: 手番の位置・周回・速度（run#A.3、A.8。R-run.A3-3
     });
   });
 
-  it("読み込みの skip になった位置は、以後の周回で飛ばす（run#A.6）", () => {
+  it("skip になった位置は、以後の周回で飛ばす（run#A.6）", () => {
     // 山札 4 本。手番 1（位置 1）が読み込みの skip。2 周目は 0, 2, 3
     expect(positions(4, "onooooo")).toEqual([0, 1, 2, 3, 0, 2, 3, 0]);
   });
@@ -69,19 +69,23 @@ describe("turnAt: 手番の位置・周回・速度（run#A.3、A.8。R-run.A3-3
     expect(positions(3, "oonoo")).toEqual([0, 1, 2, 0, 1, 0]);
   });
 
-  it("監視タイマー満了・error の skip とミスは位置を飛ばさない", () => {
-    expect(positions(3, "smoso")).toEqual([0, 1, 2, 0, 1, 2]);
+  it("満了・error の skip も位置を飛ばす。ミスは飛ばさない", () => {
+    // 手番 0（位置 0）が skip、手番 1 はミス、手番 3（位置 1）が skip
+    expect(positions(3, "smoso")).toEqual([0, 1, 2, 1, 2, 2]);
+    expect(positions(3, "mmoom")).toEqual([0, 1, 2, 0, 1, 2]);
   });
 
   it("直前の手番が読み込みの skip でも、その次の手番の位置は変わらない（先読みが無駄にならない）", () => {
     expect(turnAt("endless", 12, outcomes("oo"))).toMatchObject({ index: 2 });
     expect(turnAt("endless", 12, outcomes("on"))).toMatchObject({ index: 2 });
+    expect(turnAt("endless", 12, outcomes("os"))).toMatchObject({ index: 2 });
   });
 
   it("出せる位置が無くなったら done", () => {
     expect(turnAt("endless", 1, outcomes("n"))).toEqual({ done: true, reason: "no_position" });
     expect(turnAt("endless", 2, outcomes("nn"))).toEqual({ done: true, reason: "no_position" });
     expect(positions(2, "non")).toEqual([0, 1, 1, null]);
+    expect(turnAt("endless", 2, outcomes("ss"))).toEqual({ done: true, reason: "no_position" });
   });
 
   it("デイリーは 1 周で、手番 = 山札の位置、等速", () => {
@@ -121,17 +125,16 @@ describe("turnSeed: 手番の seed（run#A.3。R-run.A3-3）", () => {
 });
 
 describe("outcomeOf: 結果の扱い（run#A.6、A.7）", () => {
-  it("読み込みの skip、監視タイマー満了・error、ミス、成立", () => {
-    expect(outcomeOf({ skipped: true })).toBe("noload");
-    expect(outcomeOf({ via: "timeout", score: 0, missBelow: 10 })).toBe("skip");
-    expect(outcomeOf({ via: "error", score: 0, missBelow: 10 })).toBe("skip");
-    expect(outcomeOf({ via: "guest", score: 9, missBelow: 10 })).toBe("miss");
-    expect(outcomeOf({ via: "guest", score: 10, missBelow: 10 })).toBe("ok");
-    expect(outcomeOf({ via: "guest", score: 0, missBelow: null })).toBe("ok");
+  it("読み込みの skip、満了・error、ミス、成立", () => {
+    expect(outcomeOf({ via: "noload" }, 10)).toBe("noload");
+    expect(outcomeOf({ via: "timeout" }, 10)).toBe("skip");
+    expect(outcomeOf({ via: "error" }, 10)).toBe("skip");
+    expect(outcomeOf({ via: "guest", score: 9 }, 10)).toBe("miss");
+    expect(outcomeOf({ via: "guest", score: 10 }, 10)).toBe("ok");
   });
 
-  it("デイリーにミスは無い", () => {
-    expect(outcomeOf({ via: "guest", score: 0, missBelow: null })).toBe("ok");
+  it("閾値が無ければミスにならない（新作枠、校正中、デイリー）", () => {
+    expect(outcomeOf({ via: "guest", score: 0 }, null)).toBe("ok");
   });
 });
 
@@ -155,15 +158,21 @@ describe("logState: 記録からランが閉じたかを決める（run#A.3。R-
     expect(logState("daily", 10, outcomes("nnn")).ended).toBe("error");
   });
 
-  it("出せる位置が無くなったら error", () => {
-    expect(logState("endless", 2, outcomes("nn")).ended).toBe("error");
-    expect(logState("endless", 1, outcomes("n")).ended).toBe("error");
+  it("満了・error の skip は何本でも error にならない", () => {
+    expect(logState("endless", 12, outcomes("sssss"))).toMatchObject({ ended: null, loadSkips: 0 });
   });
 
-  it("上限で limit。監視タイマー満了の skip が続いても上限で終わる（F6）", () => {
-    expect(logState("endless", 12, outcomes("s".repeat(49))).ended).toBeNull();
-    expect(logState("endless", 12, outcomes("s".repeat(50))).ended).toBe("limit");
+  it("次の手番が無ければ limit: 上限に達した", () => {
+    expect(logState("endless", 12, outcomes("o".repeat(49))).ended).toBeNull();
+    expect(logState("endless", 12, outcomes("o".repeat(50))).ended).toBe("limit");
     expect(logState("daily", 10, outcomes("o".repeat(10))).ended).toBe("limit");
+  });
+
+  it("次の手番が無ければ limit: 山札の出せる位置が無くなった（skip が続いてもランは終わる。F6）", () => {
+    expect(logState("endless", 12, outcomes("s".repeat(11))).ended).toBeNull();
+    expect(logState("endless", 12, outcomes("s".repeat(12))).ended).toBe("limit");
+    expect(logState("endless", 2, outcomes("nn")).ended).toBe("limit");
+    expect(logState("endless", 1, outcomes("n")).ended).toBe("limit");
   });
 
   it("上限の手番が 3 回目のミスなら lives、3 本目の読み込みの skip なら error", () => {
