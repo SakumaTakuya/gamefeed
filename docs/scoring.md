@@ -11,7 +11,8 @@
 
 | 用語 | 意味 |
 | --- | --- |
-| 結果 | 1 セッションの `score`, `frames`, `via`（`protocol.md` A.7）と入力ログ |
+| 結果 | 1 セッションの終わり方。次の 4 種類のどれか 1 つ（`protocol.md` A.7）。**遊んだ結果**（`via: guest`。`score`、`frames`、入力ログを持つ）、**満了**（`via: timeout`）、**`error`**（`via: error`）、**読み込みの skip**（`run.md` A.6）。後ろの 3 つは値を持たない |
+| 結果の述語 | 遊んだ結果が満たす条件（A.2）。Host とサーバが `packages/domain` の同じ関数で確かめる |
 | verdict | 結果の検証状態。`provisional` / `accepted` / `rejected` / `flagged` |
 | 分布 | 1 つのゲームについて、偏差値の計算に使う結果の集合（A.4） |
 | 偏差値 | 分布の中の順位から出す値（A.5）。20〜80 |
@@ -23,17 +24,29 @@
 
 受理の条件。1 つでも外れたら記録に足さない（`run.md` A.3）。手番の `speed`・`time_limit`・`miss_below` はサーバが計画と `t` から求める。
 
+本文は結果の種類ごとに 1 つの形。
+
+| 結果 | 本文 |
+| --- | --- |
+| 遊んだ結果 | `{via: "guest", score, frames, inputs}` |
+| 満了 | `{via: "timeout"}` |
+| `error` | `{via: "error"}` |
+| 読み込みの skip | `{skipped: true}` |
+
+下の表の 1・2 行目はどの結果にも掛かる。3〜5 行目は**結果の述語**で、遊んだ結果にだけ掛かる。6 行目はサーバだけが確かめられる条件で、遊んだ結果にだけ掛かる。
+
 | 条件 | 外れたとき |
 | --- | --- |
 | `t` が記録の次の手番（`t = settled`）で、ランが閉じていない | `t < settled` は 200 で保存した値を返す（冪等）。`t > settled` は 409 `out_of_order`、閉じたランは 409 `run_closed`（`run.md` A.3） |
 | ランの作成から 60 分（暫定）以内 | ランは閉じている（上の行） |
 | `score` が整数で 0〜2³¹−1 | 拒否 |
-| `frames` が 1〜`time_limit` | 拒否 |
+| `frames` が整数で 0〜`time_limit` | 拒否 |
 | 入力ログの `frame` が単調非減少で、最大値が `frames` 以下 | 拒否 |
-| 記録にある手番とこの手番の `frames ÷ (60 × speed)` の合計が、ランの作成からの経過秒 × 1.05 ＋ 3 以下 | 拒否（実時間より多くのフレームを申告）。手番ごとでなくランの合計で見る |
-| `via` が `guest` / `timeout` / `error` のどれか。`timeout` / `error` なら `score = 0` | 拒否 |
+| 記録にある遊んだ結果とこの結果の `frames ÷ (60 × speed)` の合計が、ランの作成からの経過秒 × 1.05 ＋ 3 以下 | 拒否（実時間より多くのフレームを申告）。手番ごとでなくランの合計で見る |
 
-拒否は 422 `{error: "invalid_result", reason}` で、何も保存しない。記録は進まないので、その手番を送り直すまで後ろの手番も記録に入らない。正しい Host は条件に外れた結果を送らない。
+本文が上の 4 つの形のどれでもなければ 400 `invalid_request`。拒否は 422 `{error: "invalid_result", reason}`。どちらも何も保存せず、記録は進まないので、その手番を送り直すまで後ろの手番も記録に入らない。
+
+Host が送る結果は必ず受理される。Host は Guest の `end` と `log` を同じ述語で確かめ、満たさない報告は起きなかったこととして捨てる（`protocol.md` A.8、A.9。値は直さない）。捨てた後は監視タイマーが満了するので、Host から出るのは述語を満たす遊んだ結果・満了・`error`・読み込みの skip だけになる。`time_limit` は Host もサーバも計画の値を使う（`run.md` A.3）。6 行目は、実際に遊んだ結果なら満たす。ゲームが何を報告しても、記録が止まることはない。
 
 受理したら記録に足し（`sessions` に `submitted` の 1 行）、verdict を `provisional` にして、応答に表示用の値を返す。
 
@@ -45,7 +58,9 @@
 
 試遊ページからの結果は `author: true` を付けて送られ、保存はするが分布に入れない（A.4）。
 
-本文が `{skipped: true}` だけのときは読み込みの skip（`run.md` A.6）。表の 1・2 行目だけを確かめ、記録に skip として足す（`sessions` に `skipped` の 1 行）。`score` / `frames` / `via` / 入力ログは持たず、verdict も分布も変えない。応答は `{settled, skipped: true}`。専用の操作は、操作が 1 つ増えるだけなので作らない。
+読み込みの skip は記録に skip として足す（`sessions` に `skipped` の 1 行）。verdict も分布も変えない。応答は `{settled, skipped: true}`。専用の操作は、操作が 1 つ増えるだけなので作らない。
+
+満了と `error` は記録に足し（`sessions` に `submitted` の 1 行。`score` / `frames` / 入力ログは持たない）、分布には 0 として入る（A.4）。応答は `deviation` も `ratio` も `null`、`miss` は `false`。
 
 ## A.3 検証の 3 段階
 
@@ -68,8 +83,8 @@
 | verdict が `provisional` か `accepted` | B.3 |
 | `speed = 1.0`（エンドレスの 1 周目とデイリー） | B.4 |
 | `author = false` | B.5 |
-| `frames ≥ 0.9 × time_limit`（遅い端末で短縮されたセッションを除く。暫定） | B.6 |
-| `via` は問わない。`timeout` / `error` は `score = 0` として入る | B.7 |
+| 遊んだ結果は `frames ≥ 0.9 × time_limit`（遅い端末で短縮されたセッションを除く。暫定）のとき `score` が入る | B.6 |
+| 満了と `error` は 0 として入る（`frames` の条件は掛からない）。読み込みの skip は入らない | B.7 |
 | 1 ユーザー 1 ゲームにつき直近 5 件まで（暫定） | B.8 |
 
 分布は結果ごとに更新し、ゲームページの表示と `miss_below` の計算に使う。実装は点数の昇順の配列（または分位点の表）で、更新は受理のトランザクション内で行う。

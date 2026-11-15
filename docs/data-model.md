@@ -143,9 +143,9 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `author` | bool | 投稿者本人のセッション（`actors.user_id = posts.user_id`）。分布に入れない |
 | `state` | `session_state` | ランの手番は `submitted` か `skipped` |
 | `via` | `session_via` null | `submitted` のとき非 NULL |
-| `score` | int null | 0 ≤ score ≤ 2³¹−1 |
-| `frames` | int null | 1 ≤ frames ≤ `time_limit` |
-| `log_key` | text null | `replays/{session_id}.json.gz` |
+| `score` | int null | 0 ≤ score ≤ 2³¹−1。`via = guest` のときだけ非 NULL |
+| `frames` | int null | 0 ≤ frames ≤ `time_limit`。`via = guest` のときだけ非 NULL |
+| `log_key` | text null | `replays/{session_id}.json.gz`。`via = guest` のときだけ |
 | `verdict` | `verdict` | default `provisional` |
 | `deviation` | numeric(4,1) null | 受理時の偏差値（`scoring.md` A.5）。校正前は NULL |
 | `issued_at` | timestamptz | ランの手番は記録に足した時刻 |

@@ -56,7 +56,7 @@
 | 操作 | 内容 |
 | --- | --- |
 | `POST /runs` | `{mode, theme?, from_run?}`。計画を凍結して `{run_id, seed, deck: [{post_id, is_new, miss_below, time_limit}]}` を返す。`from_run` は共有リンクからの再現で、山札と `is_new` を元のランから写し、`miss_below` は作り直す |
-| `PUT /runs/{id}/turns/{t}` | 手番 `t` の結果（`protocol.md` の `end` または `via: timeout / error`）。本文は `{score, frames, via, inputs}`、読み込みの skip（A.6）は `{skipped: true}` だけ。応答は下 |
+| `PUT /runs/{id}/turns/{t}` | 手番 `t` の結果。本文は結果の種類ごとに `{via: "guest", score, frames, inputs}` / `{via: "timeout"}` / `{via: "error"}` / `{skipped: true}`（`scoring.md` A.2）。応答は下 |
 | `POST /runs/{id}/finish` | ランを閉じて、凍結した成績表を返す。何度呼んでも同じ |
 
 手番 `t` の値は計画から決まる。`packages/domain` の 1 つの関数を Host とサーバが使い、Host の申告は使わない。
@@ -65,7 +65,7 @@
 | --- | --- |
 | 山札の位置と周回 | 手番 0 は位置 0、周回 0。以後、手番ごとに山札の次の位置へ進み、末尾を越えて先頭に戻るたびに周回が 1 増える。それより前の手番で読み込みの skip になった位置は飛ばす（A.6）。Host は自分が遊んだ手番から、サーバは記録から求める。記録は Host が遊んだ列の先頭部分なので（F10）、同じ値になる |
 | `speed` | 周回から（A.8） |
-| `is_new`、`miss_below`、`time_limit` | 計画の、その位置の値。ラン中に分布や校正状態が動いても変わらない |
+| `is_new`、`miss_below`、`time_limit` | 計画の、その位置の値。ラン中に分布や校正状態が動いても変わらない。Host は `init.time_limit` に計画の値を入れ、Guest の `ready.duration` は使わない |
 | `seed` | ランの seed `S` と `t` から。`x = (S + t × 0x9E3779B9) mod 2³²` を mulberry32 の 1 回ぶんの混合に通した 32 bit 符号なし整数（暫定。`GF.rng` と同じ混合） |
 
 `PUT /runs/{id}/turns/{t}` の応答。`settled` は記録の長さ（次に足す手番の番号）。
@@ -76,7 +76,7 @@
 | `t < settled`（すでに記録にある） | 何も変えない。200 で、保存した値から同じ内容を返す。本文は見ない |
 | `t > settled`（前の手番がまだ届いていない） | 何も変えない。409 `{error: "out_of_order", settled}` |
 | `t ≥ settled` で、ランが閉じている | 何も変えない。409 `{error: "run_closed", settled}` |
-| 結果が条件を満たさない | 何も変えない。422 `{error: "invalid_result", reason}`。記録は進まない |
+| 結果が条件を満たさない | 何も変えない。422 `{error: "invalid_result", reason}`。記録は進まない。Host が送る結果では起きない（`scoring.md` A.2） |
 
 ランが閉じるのは次のどれかで、閉じた後は記録に足さない。
 
@@ -126,7 +126,7 @@
 | 監視タイマー満了（`protocol.md` A.7、`via: timeout`） | skip |
 | `error`（`via: error`） | skip |
 
-skip の手番は成績の分母に入れず、残機も減らさず、成績表には「—」で出す。ただし**手番は消費する**（上限 50 の 1 つとして数える）。ゲームの記録としては `protocol.md` A.7 のとおり（満了・error は `score: 0` として入る。読み込みの skip は記録しない）。
+skip の手番は成績の分母に入れず、残機も減らさず、成績表には「—」で出す。ただし**手番は消費する**（上限 50 の 1 つとして数える）。ゲームの分布には `protocol.md` A.7 のとおり入る（満了・error は 0 として入る。読み込みの skip は入らない）。
 
 読み込みの skip には、さらに次の規則がある。
 
@@ -137,7 +137,7 @@ skip の手番は成績の分母に入れず、残機も減らさず、成績表
 
 読み込みの skip は、Host が `PUT /runs/{id}/turns/{t}` に `{skipped: true}` を送ってサーバに伝える。サーバは記録に読み込みの skip として足し、点数もログも持たず、分布に入れない。記録は手番の順にしか足せないので、伝えないと後ろの手番も記録に入らない。送り方は他の結果と同じ（A.7）。
 
-サーバは結果を「無効」と返して skip にすることをしない。条件に外れた結果は記録に足されず（A.3）、正しい Host はそれを送らない。
+サーバは結果を「無効」と返して skip にすることをしない。条件に外れた結果は記録に足されない（A.3）。Host は Guest の報告を同じ条件で確かめてから受け取るので、Host が送る結果は条件に外れない（`scoring.md` A.2）。
 
 ## A.7 残機とミス（エンドレス）
 
