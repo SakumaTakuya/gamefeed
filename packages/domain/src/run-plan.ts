@@ -5,7 +5,6 @@
 // 成績表は記録そのもので、サーバは Host の進行を推測しない。
 // 古い `nextTurn` / `summarizeRun`（run-record.ts）は、使う側が置き換わったら消す（#157、#158）。
 
-import { isMiss, type ResultVia } from "./result.ts";
 import {
   ENDLESS_LIVES,
   type RunMode,
@@ -16,14 +15,16 @@ import {
   turnSpeed,
 } from "./run-record.ts";
 import type { Speed } from "./session.ts";
+import type { TurnVia } from "./turn-result.ts";
 
 /** 1 つのランで、読み込みの skip がこの本数になったら通信エラーで終わる（run#A.6。暫定） */
 export const LOAD_SKIP_LIMIT = 3;
 
 /**
  * 手番の扱い。
- * ok: 成立。miss: ミス。skip: 監視タイマー満了・`error`（分母に入れない）。
- * noload: 読み込みの skip（分母に入れず、その位置は以後の周回に出さない）
+ * ok: 成立。miss: ミス。skip: 満了・`error`。noload: 読み込みの skip。
+ * skip と noload は成績の分母に入れず、その位置は以後の周回に出さない（run#A.6）。
+ * noload だけが通信エラーの本数に数えられる
  */
 export type TurnOutcome = "ok" | "miss" | "skip" | "noload";
 
@@ -36,8 +37,8 @@ export type TurnAt =
  * earlier はそれより前の手番の扱いで、添字が手番番号。
  *
  * 手番 0 は位置 0、周回 0。以後、手番ごとに山札の次の位置へ進み、末尾を越えて先頭に戻るたびに
- * 周回が 1 増える。読み込みの skip になった位置は、それ以後飛ばす（run#A.6）。
- * 上限の手番より先（デイリーは 1 周より先）と、出せる位置が無くなったときは done。
+ * 周回が 1 増える。skip（満了・`error`・読み込みの skip）になった位置は、それ以後飛ばす（run#A.6）。
+ * 上限の手番より先と、出せる位置が無くなったときは done（次の手番が無い）。
  */
 export function turnAt(mode: RunMode, deckLength: number, earlier: readonly TurnOutcome[]): TurnAt {
   if (!(Number.isInteger(deckLength) && deckLength >= 1)) throw new RangeError("deck is empty");
@@ -47,7 +48,8 @@ export function turnAt(mode: RunMode, deckLength: number, earlier: readonly Turn
   // 手番 0 から順にたどる。t は求める手番、earlier[t - 1] までが済んでいる
   for (let t = 0; t <= earlier.length; t++) {
     if (t >= turnLimit(mode)) return { done: true, reason: "limit" };
-    if (t > 0 && earlier[t - 1] === "noload") skipped.add(index);
+    const last = t > 0 ? earlier[t - 1] : undefined;
+    if (last === "skip" || last === "noload") skipped.add(index);
     if (skipped.size >= deckLength) return { done: true, reason: "no_position" };
     do {
       index++;
@@ -56,7 +58,6 @@ export function turnAt(mode: RunMode, deckLength: number, earlier: readonly Turn
         lap++;
       }
     } while (skipped.has(index));
-    if (mode === "daily" && lap >= 1) return { done: true, reason: "limit" };
   }
   return { done: false, turn: earlier.length, index, lap, speed: turnSpeed(mode, lap) };
 }
@@ -73,16 +74,23 @@ export function turnSeed(runSeed: number, turn: number): number {
   return (t ^ (t >>> 14)) >>> 0;
 }
 
-/** 手番の結果から扱いを決める（run#A.6、A.7）。Host とサーバが同じ式を使う */
+/**
+ * 手番の結果から扱いを決める（run#A.6、A.7）。Host とサーバが同じ式を使う。
+ * missBelow は計画に凍結した閾値。null（新作枠、校正中、デイリー）ならミスにならない
+ */
 export function outcomeOf(
-  r: { skipped: true } | { via: ResultVia; score: number; missBelow: number | null },
+  r: { via: "guest"; score: number } | { via: Exclude<TurnVia, "guest"> },
+  missBelow: number | null,
 ): TurnOutcome {
-  if ("skipped" in r) return "noload";
+  if (r.via === "noload") return "noload";
   if (r.via !== "guest") return "skip";
-  return isMiss(r) ? "miss" : "ok";
+  return missBelow !== null && r.score < missBelow ? "miss" : "ok";
 }
 
-/** 記録から決まる終わり方。lives: 残機切れ。error: 通信エラー。limit: 上限まで */
+/**
+ * 記録から決まる終わり方。lives: 残機切れ。error: 通信エラー（読み込みの skip が規定の本数）。
+ * limit: 次の手番が無い（上限に達した、または山札の出せる位置が無くなった）
+ */
 export type LogEnd = "lives" | "error" | "limit";
 
 export interface LogState {
@@ -106,10 +114,7 @@ export function logState(mode: RunMode, deckLength: number, log: readonly TurnOu
   let ended: LogEnd | null = null;
   if (mode === "endless" && misses >= ENDLESS_LIVES) ended = "lives";
   else if (loadSkips >= LOAD_SKIP_LIMIT) ended = "error";
-  else {
-    const next = turnAt(mode, deckLength, log);
-    if (next.done) ended = next.reason === "limit" ? "limit" : "error";
-  }
+  else if (turnAt(mode, deckLength, log).done) ended = "limit";
   return { ended, misses, loadSkips };
 }
 

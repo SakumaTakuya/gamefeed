@@ -55,7 +55,16 @@ describe("readTurnResult: 本文の 4 つの形（sc#A.2。R-sc.A2-1）", () => 
 });
 
 describe("checkPlayed: 遊んだ結果の述語（sc#A.2 の 3〜5 行目。Host とサーバで同じ）", () => {
-  const ok = { score: 5, frames: 300, inputs: [[0, "d"], [10, "u"], [10, "d"], [300, "u"]] };
+  const ok = {
+    score: 5,
+    frames: 300,
+    inputs: [
+      [0, "d"],
+      [10, "u"],
+      [10, "d"],
+      [300, "u"],
+    ],
+  };
 
   it("満たせば null", () => {
     expect(checkPlayed(ok, 300)).toBeNull();
