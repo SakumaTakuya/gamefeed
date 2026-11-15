@@ -147,7 +147,10 @@ describe("logState: 記録からランが閉じたかを決める（run#A.3。R-
 
   it("読み込みの skip 3 本で error（デイリーも）", () => {
     expect(LOAD_SKIP_LIMIT).toBe(3);
-    expect(logState("endless", 12, outcomes("nonon"))).toMatchObject({ ended: "error", loadSkips: 3 });
+    expect(logState("endless", 12, outcomes("nonon"))).toMatchObject({
+      ended: "error",
+      loadSkips: 3,
+    });
     expect(logState("endless", 12, outcomes("nono")).ended).toBeNull();
     expect(logState("daily", 10, outcomes("nnn")).ended).toBe("error");
   });
