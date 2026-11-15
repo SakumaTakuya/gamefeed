@@ -11,12 +11,11 @@ const META: GameMeta = {
   target: 12,
 };
 const ID = "01M782MV00TMYMTHTGG5C6KS3T";
-const result = (over: Partial<SessionResult>): SessionResult => ({
+const result = (over: { score?: number; frames?: number } = {}): SessionResult => ({
+  via: "guest",
   score: 0,
   frames: 300,
-  via: "guest",
   scoreable: true,
-  flagged: false,
   ...over,
 });
 const base = { postId: ID, meta: META, speed: 1 as const, inputs: 0, problem: null };
@@ -51,8 +50,12 @@ describe("diagnose", () => {
   });
 
   it("end が呼ばれず監視タイマーで終わった（固まった）", () => {
-    const text = diagnose({ ...base, result: result({ via: "timeout" }), inputs: 3 });
+    const text = diagnose({ ...base, result: { via: "timeout", scoreable: true }, inputs: 3 });
     expect(text).toContain("終わり方: 時間切れ（end が届かなかった）");
+    // 満了の結果は点もフレームも持たない（pr#A.7）
+    expect(text).not.toContain("点:");
+    expect(text).not.toContain("フレーム:");
+    expect(text).toContain("入力: 3 回");
     expect(text).toContain(
       "- end が届きませんでした。onTick の中の無限ループや重い処理で固まっている可能性があります。",
     );
@@ -61,18 +64,19 @@ describe("diagnose", () => {
   it("例外で止まった", () => {
     const text = diagnose({
       ...base,
-      result: result({ via: "error", frames: undefined as never }),
+      result: { via: "error", scoreable: true },
       problem: "TypeError: x is undefined",
     });
     expect(text).toContain("終わり方: 例外で停止");
     expect(text).toContain("例外: TypeError: x is undefined");
+    expect(text).not.toContain("点:");
     expect(text).not.toContain("フレーム:");
   });
 
-  it("壁時計で短く終わった（遅い）・入力ログの順序違反", () => {
+  it("壁時計で短く終わった（遅い）", () => {
     const text = diagnose({
       ...base,
-      result: result({ score: 13, frames: 210, flagged: true }),
+      result: result({ score: 13, frames: 210 }),
       inputs: 5,
       speed: 1.5,
     });
@@ -81,7 +85,6 @@ describe("diagnose", () => {
     expect(text).toContain(
       "- 300 フレームに届かず 210 フレームで終わりました。GF.end() を呼んでいないなら、onTick か onDraw が重くて処理が追いついていません。",
     );
-    expect(text).toContain("- 入力ログの順序が乱れました（SDK の不具合の可能性）。");
   });
 
   it("結果が出る前に壊れた（プロトコル違反・ページ移動）", () => {

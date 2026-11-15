@@ -73,7 +73,7 @@ export function createHost(env: HostEnv, onChange: () => void = () => {}): Host 
     }
   }
 
-  /** 状態機械に 1 イベント通す。受理されたら true。拒否でも flagged は state に残る */
+  /** 状態機械に 1 イベント通す。受理されたら true。捨てられたら state は変わらない */
   function dispatch(event: SessionEvent): boolean {
     const r = transition(state, event, env.now());
     const changed = r.state !== state;

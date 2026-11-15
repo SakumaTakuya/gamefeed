@@ -480,11 +480,7 @@ describe("走っていた時間（start から end まで。pause の間を除�
 
   it("pause をはさんだ end は、止まっていた時間を数えない", () => {
     // 1000 ms 走って 59 秒止まり、再開してすぐ: 走っていたのは 1000 ms → 69 フレームまで
-    const resumed = run(
-      run(toRunning(0), [{ type: "pause" }], 1000),
-      [{ type: "resume" }],
-      60_000,
-    );
+    const resumed = run(run(toRunning(0), [{ type: "pause" }], 1000), [{ type: "resume" }], 60_000);
     expect(transition(resumed, end(70), 60_000)).toMatchObject({
       ok: false,
       reason: "end_realtime",
@@ -544,6 +540,8 @@ describe("R-sc.A2-2 性質: 出しうる結果はすべて受理される", () =
       let ran = 0;
       let lastEnd: { score: number; frames: number } | null = null;
 
+      /** feed の中で変わる state を、型の絞り込みを持ち越さずに読む */
+      const current = (): SessionState => state;
       const feed = (e: SessionEvent): boolean => {
         const before = state;
         const r = transition(state, e, now);
@@ -563,9 +561,9 @@ describe("R-sc.A2-2 性質: 出しうる結果はすべて受理される", () =
         now += ms;
       };
 
-      for (let step = 0; step < 40 && state.kind !== "ENDED"; step++) {
+      for (let step = 0; step < 40 && current().kind !== "ENDED"; step++) {
         advance(pick([0, 1, 16, 17, 100, 400, 1500]));
-        if (state.kind === "ENDED") break;
+        if (current().kind === "ENDED") break;
         const sessionId = random() < 0.05 ? "old" : SID;
         // SDK が進められるフレーム（実時間以下）と、入力ログの最大フレーム
         const honest = Math.min(timeLimit, Math.floor((ran / 1000) * 60 * speed));
@@ -574,11 +572,14 @@ describe("R-sc.A2-2 性質: 出しうる結果はすべて受理される", () =
         if (roll < 0.35) {
           // log: 続きの位置から始まる正しいものと、でたらめなもの
           const good = random() < 0.6;
-          const fromFrame = good ? maxFrame + int(1, 30) : pick([-1, 0, maxFrame, 0.5, int(0, 700)]);
-          const inputFrames = Array.from({ length: int(0, 4) }, () =>
-            good ? fromFrame : pick([fromFrame - 1, int(0, 700), 2.5]),
-          ).map((f, i) => (good ? f + i * int(0, 3) : f));
-          if (good) inputFrames.sort((a, b) => a - b);
+          const fromFrame = good
+            ? maxFrame + int(1, 30)
+            : pick([-1, 0, maxFrame, 0.5, int(0, 700)]);
+          const inputFrames: number[] = [];
+          for (let i = int(0, 4), f = fromFrame; i > 0; i--) {
+            f = good ? f + int(0, 3) : pick([fromFrame - 1, int(0, 700), 2.5]);
+            inputFrames.push(f);
+          }
           if (feed({ type: "log", sessionId, fromFrame, inputFrames })) {
             for (const f of inputFrames) inputs.push([f]);
           } else tally.logDropped++;
@@ -617,10 +618,11 @@ describe("R-sc.A2-2 性質: 出しうる結果はすべて受理される", () =
         now = Math.max(now, state.deadlineAt);
         expect(feed({ type: "timeout" })).toBe(true);
       }
-      expect(state.kind).toBe("ENDED");
-      if (state.kind !== "ENDED") return;
+      const final = current();
+      expect(final.kind).toBe("ENDED");
+      if (final.kind !== "ENDED") return;
 
-      const result = state.result;
+      const result = final.result;
       tally[result.via]++;
       if (result.via === "guest") {
         // 値は Guest の報告そのまま（直さない）
@@ -655,20 +657,21 @@ describe("R-sc.A2-2 性質: 出しうる結果はすべて受理される", () =
         now,
       );
       let ran = 0;
-      // pause / resume を 0〜3 回はさむ
+      /** 満了の手前までの長さだけ走らせる */
+      const play = (max: number) => {
+        if (state.kind !== "RUNNING") return;
+        const ms = int(0, Math.min(max, state.deadlineAt - now - 1));
+        ran += ms;
+        now += ms;
+      };
+      // pause / resume を 0〜3 回はさむ。最後は PAUSED のままのこともある
       for (let i = int(0, 3); i > 0; i--) {
-        const play = int(0, 800);
-        ran += play;
-        now += play;
+        play(800);
         state = run(state, [{ type: "pause" }], now);
         now += int(0, 30_000);
-        if (random() < 0.8) state = run(state, [{ type: "resume" }], now);
+        if (i > 1 || random() < 0.8) state = run(state, [{ type: "resume" }], now);
       }
-      if (state.kind === "RUNNING") {
-        const play = int(0, Math.max(0, state.deadlineAt - now - 1));
-        ran += play;
-        now += play;
-      }
+      play(20_000);
       const frames = Math.min(timeLimit, Math.floor((ran / 1000) * 60 * speed + 1e-6));
       const r = transition(state, end(frames, int(0, 100)), now);
       expect(r.ok, `speed ${speed} limit ${timeLimit} ran ${ran} frames ${frames}`).toBe(true);

@@ -1,10 +1,15 @@
 /**
- * Host 側のセッション状態機械（protocol#A.5、A.7、A.9）。
+ * Host 側のセッション状態機械（protocol#A.5、A.7〜A.9）。
  *
  * 純粋関数。I/O もタイマーも持たず、Host が「いま何時か（now, ms）」を渡す。
  * タイマーの開始・停止は effects として返し、実際のタイマーは Host が管理する。
  * 状態名は `verification/Session.tla` と同じ語彙を使う。
+ *
+ * Guest の `end` は結果の述語（sc#A.2。サーバと同じ `checkPlayed`、実時間は Host の式）で確かめ、
+ * 満たさないものは値を直さずに捨てる。だからここから出る結果は必ずサーバで受理される。
  */
+
+import { checkPlayed, hostRealtimeOk, type PlayedRejection } from "./turn-result.ts";
 
 export type Mode = "play" | "replay";
 /** `gf:input` の種別。`tilt` は予約（protocol#A.3）で、静的検査は受理しない（`ACCEPTED_INPUTS`） */
@@ -30,19 +35,22 @@ export function isSpeed(x: unknown): x is Speed {
   return (SPEEDS as readonly unknown[]).includes(x);
 }
 
-/** 1 セッションの結果（protocol#A.7）。`scoring.md` の入力になる。 */
-export interface SessionResult {
-  /** 整数 0〜2^31−1。`timeout` / `error` は 0 */
-  score: number;
-  /** 終了時のフレーム番号。`guest` は `end.frames`、`timeout` は `time_limit`。`error` では無い */
-  frames?: number;
-  /** guest: Guest の end、timeout: 監視タイマー満了、error: Guest の error */
-  via: "guest" | "timeout" | "error";
-  /** play セッションの結果だけをスコアにする（P2） */
-  scoreable: boolean;
-  /** `log` の順序違反を見つけた（protocol#A.9）。`scoring.md` では `flagged` になる */
-  flagged: boolean;
-}
+/**
+ * 1 セッションの結果（protocol#A.7、sc#A.1）。値を持つのは遊んだ結果（guest）だけで、
+ * 監視タイマーの満了（timeout）と Guest の `error` は `score` も `frames` も持たない。
+ * 4 種類目の読み込みの skip（noload）はセッションが始まらないので、ここからは出ない。
+ * `scoreable`: play セッションの結果だけを記録にする（P2）
+ */
+export type SessionResult =
+  | {
+      via: "guest";
+      /** `end.score` そのまま。整数 0〜2^31−1 */
+      score: number;
+      /** `end.frames` そのまま。整数 0〜`time_limit` */
+      frames: number;
+      scoreable: boolean;
+    }
+  | { via: "timeout" | "error"; scoreable: boolean };
 
 /** `log` の受理履歴（protocol#A.9）。`fromFrame` の単調増加と重なりの検査に使う */
 export interface LogSeen {
@@ -59,7 +67,6 @@ interface Active {
   timeLimit: number;
   speed: Speed;
   log: LogSeen;
-  flagged: boolean;
 }
 
 export type SessionState =
@@ -168,12 +175,14 @@ export type RejectReason =
   | "not_expired"
   /** `init.speed` が 5 値のどれでもない */
   | "invalid_speed"
-  /** `end.frames` > `time_limit`（protocol#A.8） */
-  | "frames_over_limit"
-  /** `log.from_frame` が減った・重なった、入力が `from_frame` より前、または入力の frame が batch 内で減った（protocol#A.9、sc#A.2）。セッションは flagged */
-  | "flagged_log_order"
-  /** `log` の最大フレームが `end.frames` を超えている（protocol#A.9）。セッションは flagged */
-  | "flagged_log_over_frames";
+  /** `log.from_frame` が減った・重なった、入力が `from_frame` より前、入力の frame が batch 内で減った、または整数でない（protocol#A.9、sc#A.2） */
+  | "log_order"
+  /**
+   * `end` が結果の述語を満たさない（protocol#A.8、sc#A.2 の表の 3〜6 行目。上の行から見る）。
+   * end_score / end_frames: 範囲の外。end_inputs: `log` の最大フレームが `end.frames` を超えている。
+   * end_realtime: 走っていた時間に対して `frames` が多すぎる
+   */
+  | `end_${PlayedRejection}`;
 
 export type TransitionResult =
   | { ok: true; state: SessionState; effects: Effect[] }
@@ -193,9 +202,19 @@ function reject(state: SessionState, reason: RejectReason): TransitionResult {
 }
 
 /**
+ * その手番が走っていた時間（ms）。`start` から now まで、`pause` の間を除く（sc#A.2 の 6 行目）。
+ * 監視タイマーの使った分と同じなので、残り時間から求める（別に数えると PAUSED の扱いが 2 か所になる）。
+ * RUNNING / PAUSED 以外は 0。
+ */
+export function ranMs(state: SessionState, now: number): number {
+  if (state.kind !== "RUNNING" && state.kind !== "PAUSED") return 0;
+  const remaining = state.kind === "RUNNING" ? state.deadlineAt - now : state.remainingMs;
+  return watchdogMs(state.timeLimit, state.speed) - remaining;
+}
+
+/**
  * 1 イベントぶんの遷移。
- * 拒否時は元の state をそのまま返す（参照同一）。例外は `flagged_*` で、
- * このときは `flagged: true` を立てた state を返す（イベント自体は捨てる）。
+ * 拒否は「起きなかったこと」で、元の state をそのまま返す（参照同一。印も付けない）。
  * @param now 単調な現在時刻（ms）。Host の Clock から渡す。
  */
 export function transition(
@@ -239,7 +258,6 @@ export function transition(
           speed: state.speed,
           deadlineAt: now + ms,
           log: noLog(),
-          flagged: false,
         },
         [{ type: "timer_start", ms }],
       );
@@ -265,14 +283,19 @@ export function transition(
       if (state.kind !== "RUNNING" && state.kind !== "PAUSED") return reject(state, "not_allowed");
       if (event.sessionId !== state.sessionId) return reject(state, "stale_session");
       const { lastFrom, maxFrame } = state.log;
-      // from_frame は前の log より後ろ。入力は from_frame 以上で、batch 内で単調非減少（sc#A.2）
+      // from_frame は前の log より後ろ。入力は from_frame 以上の整数で、batch 内で単調非減少（sc#A.2）。
+      // これを通った log をつなぐと、述語の入力ログの行（単調非減少）を満たす
       const ordered =
+        Number.isInteger(event.fromFrame) &&
         (lastFrom === null || event.fromFrame > lastFrom) &&
         event.fromFrame > maxFrame &&
         event.inputFrames.every(
-          (f, i) => f >= event.fromFrame && (i === 0 || f >= (event.inputFrames[i - 1] as number)),
+          (f, i) =>
+            Number.isInteger(f) &&
+            f >= event.fromFrame &&
+            (i === 0 || f >= (event.inputFrames[i - 1] as number)),
         );
-      if (!ordered) return reject({ ...state, flagged: true }, "flagged_log_order");
+      if (!ordered) return reject(state, "log_order");
       const newMax = event.inputFrames.reduce((m, f) => Math.max(m, f), maxFrame);
       return ok({ ...state, log: { lastFrom: event.fromFrame, maxFrame: newMax } });
     }
@@ -281,40 +304,35 @@ export function transition(
       if (state.kind !== "RUNNING" && state.kind !== "PAUSED") return reject(state, "not_allowed");
       if (event.sessionId !== state.sessionId) return reject(state, "stale_session");
       if (state.kind === "RUNNING" && now >= state.deadlineAt) return reject(state, "expired");
-      if (event.frames > state.timeLimit) return reject(state, "frames_over_limit");
-      if (state.log.maxFrame > event.frames) {
-        return reject({ ...state, flagged: true }, "flagged_log_over_frames");
+      // 結果の述語（sc#A.2）。入力ログは log のたびに順序を見ているので、ここでは最大フレームだけを渡す
+      const { maxFrame } = state.log;
+      const inputs = maxFrame < 0 ? [] : [[maxFrame]];
+      const row = checkPlayed(
+        { score: event.score, frames: event.frames, inputs },
+        state.timeLimit,
+      );
+      if (row !== null) return reject(state, `end_${row}`);
+      if (!hostRealtimeOk(event.frames, state.speed, ranMs(state, now) / 1000)) {
+        return reject(state, "end_realtime");
       }
       return ended(state, {
+        via: "guest",
         score: event.score,
         frames: event.frames,
-        via: "guest",
         scoreable: state.mode === "play",
-        flagged: state.flagged,
       });
     }
 
     case "error": {
       if (state.kind !== "RUNNING" && state.kind !== "PAUSED") return reject(state, "not_allowed");
       if (event.sessionId !== state.sessionId) return reject(state, "stale_session");
-      return ended(state, {
-        score: 0,
-        via: "error",
-        scoreable: state.mode === "play",
-        flagged: state.flagged,
-      });
+      return ended(state, { via: "error", scoreable: state.mode === "play" });
     }
 
     case "timeout": {
       if (state.kind !== "RUNNING") return reject(state, "not_allowed");
       if (now < state.deadlineAt) return reject(state, "not_expired");
-      return ended(state, {
-        score: 0,
-        frames: state.timeLimit,
-        via: "timeout",
-        scoreable: state.mode === "play",
-        flagged: state.flagged,
-      });
+      return ended(state, { via: "timeout", scoreable: state.mode === "play" });
     }
   }
 }

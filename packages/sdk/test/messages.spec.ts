@@ -349,7 +349,7 @@ describe("R-6.1-5 end（pr#A.3、pr#B.2: result と checkpoint は無い）", ()
 
 describe("R-6.1-5 Guest メッセージは domain の SessionEvent に 1 対 1 で対応する（pr#A.5）", () => {
   it("すべての Guest 発メッセージが SessionEvent に変換でき、状態機械が受理する", () => {
-    const now = 1000;
+    let now = 1000;
     let state = initialSession();
     const step = (m: GuestToHost | HostToGuest) => {
       const ev: SessionEvent = toSessionEvent(m);
@@ -380,17 +380,19 @@ describe("R-6.1-5 Guest メッセージは domain の SessionEvent に 1 対 1 �
     });
     expect(step(expectOk(parseHostMessage({ type: "pause" })))).toEqual({ type: "pause" });
     expect(step(expectOk(parseHostMessage({ type: "resume" })))).toEqual({ type: "resume" });
+    // 180 フレームぶんの実時間が経ってから end が届く（Host は実時間より多い frames を捨てる。sc#A.2）
+    now += 3000;
     const endEv = step(expectOk(parseGuestMessage(end)));
     expect(endEv).toEqual({ type: "end", sessionId: SID, score: 42, frames: 180 });
     expect(state).toMatchObject({
       kind: "ENDED",
-      result: { score: 42, frames: 180, via: "guest", scoreable: true, flagged: false },
+      result: { score: 42, frames: 180, via: "guest", scoreable: true },
     });
     expect(step(expectOk(parseHostMessage({ type: "destroy" })))).toEqual({ type: "destroy" });
     expect(state.kind).toBe("DESTROYED");
   });
 
-  it("end.frames > time_limit は状態機械が拒否する（R-6.1-5、pr#A.8）", () => {
+  it("end.frames > time_limit は状態機械が捨てる（R-6.1-5、pr#A.8）", () => {
     let state = initialSession();
     for (const m of [ready, init, { type: "start" }] as const) {
       const r = transition(
@@ -404,7 +406,7 @@ describe("R-6.1-5 Guest メッセージは domain の SessionEvent に 1 対 1 �
       state = r.state;
     }
     const over = toSessionEvent(expectOk(parseGuestMessage({ ...end, frames: 301 })));
-    expect(transition(state, over, 1)).toMatchObject({ ok: false, reason: "frames_over_limit" });
+    expect(transition(state, over, 1)).toMatchObject({ ok: false, reason: "end_frames" });
   });
 
   it("error は message を持つ SessionEvent になる", () => {
