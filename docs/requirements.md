@@ -109,9 +109,9 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-6.4-1 | 監視タイマー満了で RUNNING → ENDED（`via: timeout`、`score: 0`、`frames: time_limit`）。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | green（unit: #52。formal: `Session.tla` P11, P12、#68） |
+| R-6.4-1 | 監視タイマー満了で RUNNING → ENDED。結果は `via: timeout` で、`score` も `frames` も入力ログも持たない。以後同 session の `end` は捨てる。タイマーの長さは `time_limit ÷ (60 × speed)` 秒 ＋ 1.5 秒（pr#A.7） | unit + formal | unit: 手動時計で満了させ、遅れて `end` を入れて拒否。結果に `score` / `frames` が無い。speed 1.0 と 1.5 で長さが変わる。formal: pr#A.12 P11, P12 | `packages/domain/test/session.spec.ts`、`verification/Session.tla` | 遷移とタイマーの長さは green（unit: #52。formal: `Session.tla` P11, P12、#68）。結果の形は red（#166。実装は `score: 0`、`frames: time_limit` を入れている） |
 | R-6.4-2 | PAUSED 中はタイマーが進まない | unit | pause → 時計を進める → resume → 残り時間が減っていない | 同上 | green |
-| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED（`via: error`、`score: 0`） | unit | 遷移表の網羅。`error` の結果に `score: 0` が入る | 同上 | green（#52） |
+| R-6.4-3 | `end` は RUNNING と PAUSED で受理、INITED では拒否。`error` も同じ状態で受理して ENDED。結果は `via: error` で、値を持たない（pr#A.7） | unit | 遷移表の網羅。`error` の結果に `score` / `frames` が無い | 同上 | 遷移は green（#52）。結果の形は red（#166。実装は `score: 0` を入れている） |
 | R-pr.A4-1 | SDK は `start` から `time_limit ÷ (60 × speed)` 秒の壁時計が経過したら、フレームが足りなくても `end` を送る（`frames < time_limit`）。5 tick の追いつき上限は維持する（pr#A.4） | contract | rAF を 12 回/秒に絞った環境で speed 1.5・600 フレームのゲームを動かし、監視タイマー満了前に `end` が届き `frames < 600` | `packages/sdk/test/contract/slow-device.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
 | R-pr.A5-1 | PAUSED からの `init` は受理しない。ENDED からの `init` は受理する（pr#A.6） | unit | 遷移表の網羅 | 同上 | green |
 | R-pr.A8-1 | `replay` の `init` には元のセッションと同じ `speed` を渡し、同じ `end.score` になる（pr#A.8） | contract | 実ブラウザで speed 1.0 と 1.5 の play を記録し、それぞれ同じ speed で replay | `packages/sdk/test/contract/replay-speed.spec.ts` | partial（unit、#105: `packages/sdk/test/guest.spec.ts`。実ブラウザの contract が残り） |
