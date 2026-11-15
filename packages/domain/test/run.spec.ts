@@ -97,14 +97,20 @@ class Sim {
     return this.all.filter((e): e is Of<T> => e.type === type);
   }
 
-  /** `next` の応答: 手番を 1 つ返す */
-  issue(): HostTurn {
+  /** サーバが手番を 1 つ発行する。応答はまだ届けない（届ける関数を返す） */
+  answer(): () => void {
     expect(this.requested, "頼まれていない発行").toBeGreaterThan(0);
     this.requested--;
     const turn = this.issued++;
-    const t = { turn, sessionId: `s${turn}`, missBelow: this.missBelow(turn) };
-    this.send({ type: "turn_issued", turn: t });
-    return t;
+    const t: HostTurn = { turn, sessionId: `s${turn}`, missBelow: this.missBelow(turn) };
+    return () => {
+      this.send({ type: "turn_issued", turn: t });
+    };
+  }
+  /** `next` の応答: 手番を 1 つ返す */
+  issue(): this {
+    this.answer()();
+    return this;
   }
   /** 頼まれているぶんをすべて発行する */
   issueAll(): this {
@@ -189,6 +195,24 @@ describe("先読みとスタート（run#A.4、A.5）", () => {
     expect(sim.state.pending).toEqual([
       { turn: { turn: 0, sessionId: "s0", missBelow: 30 }, frame: "INITED" },
     ]);
+  });
+
+  it("R-8.2-3 next の応答が入れ替わって届いても、手番番号の順に始める", () => {
+    const sim = new Sim();
+    const first = sim.answer();
+    const second = sim.answer();
+    second();
+    sim.load(1).send({ type: "begin" }).fire("interlude", INTERLUDE_MS);
+    // 手番 1 は INITED だが、手番 0 が届くまで始めない
+    expect(sim.every("start")).toEqual([]);
+    expect(sim.state).toMatchObject({ phase: "interlude", timer: null });
+    first();
+    expect(sim.state.pending.map((p) => p.turn.turn)).toEqual([0, 1]);
+    expect(sim.state.timer?.name).toBe("extension");
+    sim.load(0);
+    expect(sim.effects("start")).toEqual([{ type: "start", turn: 0 }]);
+    sim.end(55).fire("flash", FLASH_MS).fire("interlude", INTERLUDE_MS);
+    expect(sim.effects("start")).toEqual([{ type: "start", turn: 1 }]);
   });
 
   it("R-8.2-3 スタートの操作で幕間を 1 秒出し、終わりに INITED の手番へ start。空いたスロットの発行を頼む", () => {
@@ -442,7 +466,7 @@ describe("ランの終わり（run#A.15 F6）", () => {
 
   it("どんな順でイベントが来ても不変条件（F1〜F5、F8）を保ち、ランは終わる", () => {
     // seed から決まる乱数で、ラン画面とサーバのふるまいを揺らす
-    for (let seed = 1; seed <= 200; seed++) {
+    for (let seed = 1; seed <= 500; seed++) {
       let a = seed;
       const rand = () => {
         a = (a * 1103515245 + 12345) & 0x7fffffff;
@@ -450,14 +474,27 @@ describe("ランの終わり（run#A.15 F6）", () => {
       };
       const sim = new Sim((turn) => (turn % 4 === 0 ? null : 30));
       const cap = 12;
+      const inflight: (() => void)[] = [];
+      const started: number[] = [];
       let steps = 0;
       sim.send({ type: "begin" });
       while (sim.state.phase !== "finished") {
         expect(++steps, `seed ${seed} が終わらない`).toBeLessThan(2000);
         const s = sim.state;
         const options: (() => void)[] = [];
-        if (sim.requested > 0) {
-          options.push(() => (sim.issued < cap ? sim.issue() : sim.serverDone()));
+        // サーバは頼まれた順に答えるが、応答が届く順は入れ替わる
+        while (sim.requested > 0) {
+          if (sim.issued < cap) inflight.push(sim.answer());
+          else {
+            sim.requested--;
+            inflight.push(() => sim.send({ type: "turn_done" }));
+          }
+        }
+        for (const deliver of inflight) {
+          options.push(() => {
+            inflight.splice(inflight.indexOf(deliver), 1);
+            deliver();
+          });
         }
         for (const p of s.pending) {
           if (p.frame === "LOADING")
@@ -485,7 +522,10 @@ describe("ランの終わり（run#A.15 F6）", () => {
           options.push(() => sim.send({ type: s.hidden ? "show" : "hide" }));
         expect(options.length, `seed ${seed} が ${s.phase} で止まった`).toBeGreaterThan(0);
         options[Math.floor(rand() * options.length)]?.();
+        for (const e of sim.out) if (e.type === "start") started.push(e.turn);
       }
+      // 始めた手番は手番番号の昇順
+      expect(started).toEqual([...started].sort((x, y) => x - y));
       expect(sim.startedAfterZero).toBe(false);
       expect(sim.every("finish")).toHaveLength(1);
       expect(aliveFrames(sim.state)).toBe(0);
@@ -530,6 +570,14 @@ describe("中断と再開（run#A.9）", () => {
     expect(sim.state).toMatchObject({ phase: "interlude", timer: null });
     sim.send({ type: "show" }).fire("interlude", INTERLUDE_MS);
     expect(sim.effects("start")).toEqual([{ type: "start", turn: 1 }]);
+  });
+
+  it("非表示の間に done が届いて手番が尽きたら、表示に戻るのを待たずに終わる", () => {
+    const sim = Sim.started(() => null);
+    sim.end(5).settleAll().fire("flash", FLASH_MS).fire("interlude", INTERLUDE_MS);
+    sim.end(5).settleAll().fire("flash", FLASH_MS).fire("interlude", INTERLUDE_MS);
+    sim.send({ type: "hide" }).serverDone().serverDone();
+    expect(sim.state.phase).toBe("finished");
   });
 
   it("中断（abort）: iframe をすべて外し、送った result の応答を待ってから finish", () => {

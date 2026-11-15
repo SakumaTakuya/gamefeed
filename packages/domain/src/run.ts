@@ -82,8 +82,10 @@ export type TimerName = "flash" | "interlude" | "extension" | "resume";
 export interface RunHostState {
   phase: RunPhase;
   current: CurrentSlot | null;
-  /** 次に出す手番。先頭が N+1 */
+  /** 次に出す手番。手番番号の順で、先頭が N+1 */
   pending: readonly PendingSlot[];
+  /** 次に始める（または skip にする）手番番号。サーバは 0 から連番で発行する（run#A.3） */
+  nextTurn: number;
   /** 応答待ちの `next` の数 */
   requesting: number;
   /** サーバが `{done: true}` を返した。もう発行を頼まない */
@@ -164,6 +166,7 @@ export function initialRunHost(lives: number = ENDLESS_LIVES): {
     phase: "idle",
     current: null,
     pending: [],
+    nextTurn: 0,
     requesting: PREFETCH_SLOTS,
     serverDone: false,
     lives,
@@ -223,8 +226,10 @@ function settle(s: RunHostState, effects: RunHostEffect[]): RunHostState {
  */
 function advance(s: RunHostState, effects: RunHostEffect[]): RunHostState {
   const head = s.pending[0];
-  if (!head) {
-    if (s.serverDone && s.requesting === 0) return close(s, effects);
+  // `next` の応答は頼んだ順に届くとは限らない。先頭が次の手番番号でなければ、間の手番がまだ届いていない
+  const missing = !head || (head.turn.turn !== s.nextTurn && s.requesting > 0);
+  if (!head || missing) {
+    if (!head && s.serverDone && s.requesting === 0) return close(s, effects);
     // 発行の応答を待つ。届いたら延長を計り始める
     return { ...s, timer: null };
   }
@@ -239,6 +244,7 @@ function advance(s: RunHostState, effects: RunHostEffect[]): RunHostState {
     phase: "running",
     current: { turn: head.turn, frame: "RUNNING" },
     pending: s.pending.slice(1),
+    nextTurn: head.turn.turn + 1,
     timer: null,
   };
   return refill(started, effects);
@@ -259,6 +265,7 @@ function skipLoad(s: RunHostState, effects: RunHostEffect[]): RunHostState {
   const next: RunHostState = {
     ...s,
     pending: s.pending.slice(1),
+    nextTurn: head.turn.turn + 1,
     skipped: [...s.skipped, head.turn.turn],
     results: {
       ...s.results,
@@ -299,12 +306,16 @@ export function runHostStep(s: RunHostState, e: RunHostEvent): RunHostResult {
       // 終わったランに届いた手番は読み込まない
       if (over(s)) return done(got, effects);
       effects.push({ type: "load", turn: e.turn.turn });
-      const next = { ...got, pending: [...s.pending, { turn: e.turn, frame: "LOADING" as const }] };
-      // 幕間の終わりに手番が無くて待っていたなら、ここから延長を計る
-      const waiting =
-        s.phase === "interlude" && s.timer === null && s.pending.length === 0 && !s.hidden;
+      // 届いた順ではなく手番番号の順に並べる（応答の順が入れ替わっても、始める順はサーバの手番どおり）
+      const pending = [...s.pending, { turn: e.turn, frame: "LOADING" as const }].sort(
+        (a, b) => a.turn.turn - b.turn.turn,
+      );
+      const next = { ...got, pending };
+      // 幕間の終わりに次の手番が無くて待っていたなら、それが届いた時点から延長を計る
+      const waiting = s.phase === "interlude" && s.timer === null && !s.hidden;
+      const arrived = pending[0]?.turn.turn === s.nextTurn || next.requesting === 0;
       return done(
-        waiting ? arm(next, "extension", INTERLUDE_EXTENSION_MS, effects) : next,
+        waiting && arrived ? arm(next, "extension", INTERLUDE_EXTENSION_MS, effects) : next,
         effects,
       );
     }
@@ -312,8 +323,9 @@ export function runHostStep(s: RunHostState, e: RunHostEvent): RunHostResult {
     case "turn_done": {
       if (s.requesting === 0) return reject(s, "stale");
       const got = { ...s, requesting: s.requesting - 1, serverDone: true };
-      const waiting = s.phase === "interlude" && s.timer === null && s.pending.length === 0;
-      return done(waiting && got.requesting === 0 ? close(got, effects) : got, effects);
+      // 待っていた発行がすべて返った。手番が残っていなければここで終わる（非表示の間でも終える）
+      const waiting = s.phase === "interlude" && s.timer === null;
+      return done(waiting && got.requesting === 0 ? advance(got, effects) : got, effects);
     }
 
     case "ready": {
