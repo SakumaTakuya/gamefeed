@@ -11,6 +11,7 @@ import {
 } from "./auth.ts";
 import { type ApiConfig, configFromEnv } from "./config.ts";
 import { createDb } from "./db/client.ts";
+import { finishRun } from "./finish.ts";
 import { createServeKv } from "./kv.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
@@ -32,6 +33,7 @@ import { deviceKindOf, issueNextTurn } from "./turns.ts";
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/runs/:id/next     手番の発行（そのランの主体だけ。run#A.3）
+//   /api/runs/:id/finish   ランを閉じて成績表を凍結する（そのランの主体だけ。run#A.3、sc#A.9）
 //   /api/sessions/:id/result  結果の受理（その手番の主体だけ。sc#A.2）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
@@ -145,6 +147,19 @@ export function createApp(input: AppInput): Hono {
       actor,
       deviceKind: deviceKindOf(c.req.header("user-agent")),
     });
+    return result.ok
+      ? c.json(result.value)
+      : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
+  });
+
+  // ランを閉じる（run#A.3）。凍結した成績表を返す。2 回目以降も同じ値
+  app.post("/api/runs/:id/finish", async (c) => {
+    c.header("cache-control", "no-store");
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    const deps = { db: publish.db, now: publish.now };
+    const actor = await ensureActor(deps, deviceId);
+    const result = await finishRun(deps, { runId: c.req.param("id"), actorId: actor.id });
     return result.ok
       ? c.json(result.value)
       : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
