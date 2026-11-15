@@ -43,7 +43,7 @@
 - #35 で Node.js を 26（LTS、2026-10-28〜、EOL 2029-04）に揃えた。`engines.node >=26`、CI と `db-migrate` も 26。Vercel は `engines` で決まるので新規デプロイから 26。
 
 ## 次の一手（順番どおりに）
-1. **ランの作り直しの実装**。依存の順に: **#155**（domain。`packages/domain/src/run-record.ts` に手番の関数と記録の集計。unit）→ #156（`POST /runs` の計画）→ #157（結果の追記、`finish`）。#158（Host）は #155 の後ならいつでも。#156〜#158 は `blocked` ラベルを外してから始める
+1. **ランの作り直しの実装**。#155 は済み（`packages/domain/src/run-plan.ts`: `turnAt(mode, deckLength, earlier)` が次の手番の位置・周回・速度を返す。`earlier` はそれより前の手番の扱い `ok` / `miss` / `skip` / `noload` の列で、`noload`（読み込みの skip）の位置を以後飛ばす。`turnSeed(runSeed, turn)`、`outcomeOf(結果)`、`logState(mode, deckLength, 扱いの列)` が `lives` / `error` / `limit` / `null`、`summarizeLog` が成績表の値。古い `nextTurn` / `summarizeRun` は `run-record.ts` に残してあり、#157 / #158 で使う側が無くなったら消す）。次は依存の順に: **#156**（`POST /runs` の計画とマイグレーション）→ #157（結果の追記、`finish`、`next` を外す）。#158（Host）は #156 と並べて進められる。#156 と #158 の `blocked` は外した
 2. **ラン本線（W3）の残り**（1 の後）。#131 だけが残り。以下は作り直し前の記録。依存の順に: #126 `actors` と `POST /api/runs`（済み）→ #127 `next`（済み）→ #128 `result`（済み）→ #129 `finish`（済み）→ #130 Host のスロット制御（済み）→ **#131 ラン画面**（`apps/web`。`runHostStep` の effects を iframe・`packages/sdk` の Host ブリッジ・API につなぐ。試遊ページ `apps/web/src/draft/` の iframe の扱いを使い回す。`X-Device-Id` は localStorage の 128 bit の乱数。`test:manual` なので、実機の確認はオーナー）
 3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) #97 の案を選ぶ (d) #103 / #106 / #141 / #145 / #147（1・2・4・6）/ #149（1・6〜8）の承認（承認されたら AI が `spec:` の PR を出す）(f) 本番への `0007` / `0008` の適用は #151 の実装が入るまで保留(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
 4. 保守: #96（日次の突き合わせジョブ）、#97 の実装（オーナーの選択後）
