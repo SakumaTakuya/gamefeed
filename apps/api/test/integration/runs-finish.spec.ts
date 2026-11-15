@@ -415,6 +415,43 @@ dbSuite("POST /api/runs/{id}/finish（run#A.3、sc#A.9）", () => {
       expect((await runRow(run))?.endedAt).toEqual(endedAt);
     });
 
+    it("受理の途中の result があれば確定を待ち、その結果を成績表に入れる", async () => {
+      await seedCalibrated();
+      const run = await createRun();
+      const turns = await issueMany(run, 2);
+      await play(turns[0] as Turn, HIGH);
+      const id = turns[1]?.session_id as string;
+      // result のトランザクションがセッションの行ロックを持ったまま止まっている状態を作る
+      let release: () => void = () => {};
+      const held = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      let locked: () => void = () => {};
+      const lockTaken = new Promise<void>((resolve) => {
+        locked = resolve;
+      });
+      const inFlight = db.transaction(async (tx) => {
+        await tx.execute(sql`select 1 from sessions where id = ${id} for update`);
+        await tx.execute(sql`
+          update sessions set state = 'submitted', via = 'guest', score = ${HIGH}, frames = ${DURATION_FRAMES},
+                 deviation = 61.5, submitted_at = now()
+          where id = ${id}`);
+        locked();
+        await held;
+      });
+      await lockTaken;
+      const pending = finish(run);
+      // finish はロックを待っている。待たずに数えると到達 1 本で確定してしまう
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect((await runRow(run))?.endedAt).toBeNull();
+      release();
+      await inFlight;
+      const report = await pending;
+      expect(report).toMatchObject({ reached: 2 });
+      expect(report.turns[1]).toMatchObject({ turn: 1, kind: "ok", deviation: 61.5 });
+      expect(await states(run)).toEqual(["submitted", "submitted"]);
+    });
+
     it("finish の後は手番を発行せず（done）、未提出だった手番の結果は 409", async () => {
       await seedCalibrated();
       const run = await createRun();

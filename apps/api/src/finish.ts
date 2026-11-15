@@ -3,7 +3,7 @@
  *
  * 到達本数・平均偏差値・記号列は `@gamefeed/domain` の `summarizeRun` が決め（sc#A.9）、ここは `sessions` を
  * 手番順に渡して `runs` に凍結する。以後、分布が動いても値は変わらない（I13）。
- * - `runs` の行ロックで `next` と直列にする。閉じた後の `next` は `{done: true}`
+ * - `runs` の行ロックで `next` と、`sessions` の行ロックで受理の途中の `result` と直列にする。閉じた後の `next` は `{done: true}`
  * - 結果のない手番（`open`）は `abandoned` にする。以後その手番の `result` は 409
  * - 2 回目以降は、凍結した値から同じ成績表を返す
  * 応答の形・2 回目の扱い・エラーは文書に無く、#147 の案で実装している。
@@ -90,11 +90,14 @@ export async function finishRun(
       for update`);
     if (!run) return { ok: false, error: "run_not_found" };
 
+    // 手番の行もロックする。受理の途中の result（セッションの行ロックを持っている）は確定を待ってから数え、
+    // これより後の result は abandoned を見て 409 になる。待たないと、受理された結果が成績表から漏れる
     const rows = await tx.execute<TurnRow>(sql`
       select s.turn, s.post_id, s.state, s.via, s.score, s.miss_below, s.deviation, s.is_new, s.speed,
              (g.meta->>'target')::int as target
       from sessions s join games g on g.hash = s.game_hash
-      where s.run_id = ${input.runId} order by s.turn`);
+      where s.run_id = ${input.runId} order by s.turn
+      for update of s`);
     const summary = summarizeRun(
       run.mode,
       rows.map((t) => ({
