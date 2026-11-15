@@ -123,7 +123,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 
 原因は、進行を Host が決めている（run#B.2）のに、サーバが `sessions` の行の集まりから進行を推測し直すこと。`next` の残機の数え方（#143 の 5）は run#B.2 の「残機と進行は Host の手元で決まる」と両立しない。作り直し案はサーバが推測をやめ、届いた順に記録を足すだけにする。最小修正案は A4 / A5 を直すが、`next`・`runs.cursor`・先読みで発行したまま捨てる手番・拒否と終わり方の食い違い・閉じないランは残る。オーナーは 2026-11-15 に作り直し案を選んだ（#151）。
 
-`RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。`Run.tla` のサーバ側（F9、`Withhold`）と `RunSync.tla` は、文書の改訂が入ったら現行でなくなる。
+`RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。文書の改訂（#153）は 2026-11-15 に入った。`RunSync.tla` と、`Run.tla` のサーバ側（F9、`Withhold`、`Run_withhold.cfg` / `Run_cheat*.cfg`）は #153 より前の設計の記録で、現行の文書には対応しない。`Run.tla` の Host 側（F1〜F8）は現行。ただし幕間の延長（`SkipLoad` の前の待ち）はモデルに元から無く、読み込みの skip を待たずに決める変更の影響は受けない。
 
 ## 境界と限界
 
