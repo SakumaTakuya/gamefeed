@@ -32,7 +32,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `session_via` | `guest`, `timeout`, `error` | `protocol.md` A.7 |
 | `verdict` | `provisional`, `accepted`, `rejected`, `flagged` | `scoring.md` A.3 |
 | `run_mode` | `endless`, `daily` | `run.md` A.2 |
-| `run_end` | `lives`, `limit`, `abandoned` | `run.md` A.7, A.9 |
+| `run_end` | `lives`, `limit`, `abandoned`, `error` | `run.md` A.6, A.7, A.9。`error` は読み込みの skip 3 本（通信エラー） |
 | `report_resolution` | `open`, `upheld`, `dismissed` | `moderation.md` |
 | `moderation_kind` | `restrict`, `restore`, `remove`, `restrict_tree`, `restore_tree`, `ban_user`, `unban_user`, `calibration_confirm`, `calibration_invalidate` | `moderation.md` A.7、`scoring.md` A.7。`unban_user` の操作は Phase 2 |
 | `device_kind` | `ios`, `android`, `other` | `scoring.md` A.7（端末差） |
@@ -123,30 +123,32 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 
 ### sessions（1 手番 = 1 行）
 
+ランの手番は、結果を記録に足したとき（`run.md` A.3）に 1 行入る。`open` / `abandoned` で入ることはない。`game_hash`・`seed`・`speed`・`time_limit`・`miss_below`・`is_new` は計画と手番番号から求めた値を写す（分布の集計と再実行で `runs` を引かずに済ませるため）。
+
 | 列 | 型 | 制約 |
 | --- | --- | --- |
 | `id` | text pk | |
 | `post_id` | text | fk posts、`ON DELETE CASCADE`。行が消えるのは `draft` だけなので、消えるセッションは試遊のもの（`moderation.md` B.6） |
-| `game_hash` | text | fk games。発行時の `posts.game_hash` を写す（下書きの試遊で内容が変わっても再現できる） |
+| `game_hash` | text | fk games。ランは計画の値、試遊は発行時の `posts.game_hash` を写す（下書きの試遊で内容が変わっても再現できる） |
 | `actor_id` | text | fk actors |
-| `device_kind` | `device_kind` | 発行時の User-Agent から |
+| `device_kind` | `device_kind` | 結果を送ったリクエストの User-Agent から |
 | `run_id` | text null | fk runs。試遊ページは NULL |
 | `turn` | int null | ランの中の手番番号（0 始まり） |
 | `mode` | `session_mode` | |
 | `seed` | bigint | 32 bit 符号なし |
 | `speed` | numeric(4,3) | 1.000 / 1.125 / 1.250 / 1.375 / 1.500 のどれか（CHECK） |
-| `time_limit` | int | 発行時の `meta.duration_frames` |
-| `miss_below` | int null | 発行時に凍結（`scoring.md` A.6）。校正前・新作枠・デイリー・試遊は NULL |
+| `time_limit` | int | 内容の `meta.duration_frames` |
+| `miss_below` | int null | 計画に凍結した値（`scoring.md` A.6）。校正前・新作枠・デイリー・試遊は NULL |
 | `is_new` | bool | 新作枠の手番 |
 | `author` | bool | 投稿者本人のセッション（`actors.user_id = posts.user_id`）。分布に入れない |
-| `state` | `session_state` | default `open` |
+| `state` | `session_state` | ランの手番は `submitted` か `skipped` |
 | `via` | `session_via` null | `submitted` のとき非 NULL |
 | `score` | int null | 0 ≤ score ≤ 2³¹−1 |
 | `frames` | int null | 1 ≤ frames ≤ `time_limit` |
 | `log_key` | text null | `replays/{session_id}.json.gz` |
 | `verdict` | `verdict` | default `provisional` |
 | `deviation` | numeric(4,1) null | 受理時の偏差値（`scoring.md` A.5）。校正前は NULL |
-| `issued_at` | timestamptz | |
+| `issued_at` | timestamptz | ランの手番は記録に足した時刻 |
 | `submitted_at` | timestamptz null | `state = submitted` のときだけ非 NULL（CHECK） |
 
 索引: `(post_id, speed, author, verdict, score)`（分布）、`(run_id, turn)` unique、`(actor_id, post_id, submitted_at)`（1 主体 5 件の窓）。
@@ -160,8 +162,12 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `theme_id` | text null | fk themes。エンドレスは NULL |
 | `date` | date null | デイリーの日付 |
 | `actor_id` | text | fk actors |
-| `deck` | text[] | 山札の `post_id`（エンドレスは 1〜12、デイリーは 10。重複なし）。予定であり、実行済みの手番は `sessions(run_id, turn)` が正 |
+| `deck` | text[] | 計画: 山札の `post_id`（エンドレスは 1〜12、デイリーは 10。重複なし）。記録は `sessions(run_id, turn)` |
 | `new_indexes` | int[] | 山札の中で新作扱い（`is_new`）にする位置。通常 1 個。校正済みが足りない間は複数、未校正がなければ空（`run.md` A.2） |
+| `game_hashes` | text[] | 計画: 山札の位置ごとの内容（作成時の `posts.game_hash`） |
+| `miss_below` | int[] | 計画: 山札の位置ごとの閾値。要素は NULL でよい（`scoring.md` A.6） |
+| `seed` | bigint | 計画: ランの seed。32 bit 符号なし（`run.md` A.3） |
+| `settled` | int | 記録の長さ。次に足す手番の番号。default 0 |
 | `from_run` | text null | fk runs。共有リンクからの再現 |
 | `lives` | int | エンドレス 3、デイリー 0 |
 | `reached` | int null | 凍結: 到達手番数（`scoring.md` A.9） |
@@ -170,7 +176,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `ended` | `run_end` null | |
 | `recorded` | bool | デイリーの初回だけ true（`run.md` A.2） |
 | `started_at` | timestamptz | |
-| `ended_at` | timestamptz null | |
+| `ended_at` | timestamptz null | 閉じた時刻。期限で閉じたランは、次に読むか書くときに `started_at` + 60 分を入れる |
 
 索引: `(actor_id, started_at)`。初回判定は部分一意索引 `(theme_id, date, actor_id) WHERE recorded` で行い、同じ主体の同日のランが同時に作られても `recorded = true` は 1 行しか入らない（2 本目は一意違反を受けて `recorded = false` で作り直す）。
 
@@ -226,13 +232,13 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | I4 | `base_status IN (limited, public, unpublished)` なら `published_at` が非 NULL。`thumb_key` は公開直後のジョブが入れる（`mcp.md` A.9） | CHECK | `product.md` 7, 8 |
 | I5 | `removed` から出る遷移はない。`unpublished` からは `limited` / `public` にだけ戻れる | トリガー | `product.md` 9、`moderation.md` |
 | I6 | `restricted`（導出）から可視への復帰は `moderation_actions.kind = restore / restore_tree` を伴う | 同一トランザクション | `moderation.md` |
-| I7 | `sessions` の `open → submitted / skipped / abandoned` は高々 1 回 | `UPDATE … WHERE state = 'open'` の更新行数 | `scoring.md` A.2 |
+| I7 | ランの手番は `turn = runs.settled` のときだけ挿入され、同じトランザクションで `settled` が 1 進む。`sessions(run_id)` の `turn` は 0 から `settled − 1` まで抜けなく並ぶ。試遊の `open → submitted / skipped / abandoned` は高々 1 回 | `runs` の行ロック、`UPDATE … WHERE state = 'open'` の更新行数 | `run.md` A.3、`scoring.md` A.2 |
 | I8 | `verdict = accepted` は検証ワーカーだけが書く | コードの経路（MVP）。ロール分離は Phase 2 | `scoring.md` A.3 |
 | I9 | `post_assets` の上限（Phase 2） | トランザクションで集計 | `game-contract.md` A.6 |
 | I10 | `game_hash`, `title`, `prompt` は `base_status = draft` の間だけ更新できる | トリガー | `product.md` 9 |
 | I11 | 1 ユーザーの `draft` は 10 件以下。`updated_at` から 30 日触られていない `draft` は削除される（行を消す。試遊セッションはカスケードで消え、R2 の `replays/` は日次ジョブで掃除） | 挿入時に件数を数える。日次ジョブ | `product.md` 9、`moderation.md` B.6 |
-| I12 | `theme_posts` は `status = open` のお題でちょうど 10 行、`position` は 0〜9 で重複なし。`sessions.speed` は 5 値のどれか。`miss_below` が非 NULL なら `run_id` が非 NULL かつそのランが `endless` かつ `is_new = false` | CHECK と発行時の検査 | `run.md` A.3, A.8 |
-| I13 | `(run_id, turn)` は一意。`ended_at` が非 NULL のランの `reached` / `avg_deviation` / `symbols` は変わらない | unique、トリガー | `scoring.md` A.9 |
+| I12 | `theme_posts` は `status = open` のお題でちょうど 10 行、`position` は 0〜9 で重複なし。`sessions.speed` は 5 値のどれか。`miss_below` が非 NULL なら `run_id` が非 NULL かつそのランが `endless` かつ `is_new = false` | CHECK と、記録に足すときの検査 | `run.md` A.3, A.8 |
+| I13 | `(run_id, turn)` は一意。`ended_at` が非 NULL のランは `settled` / `reached` / `avg_deviation` / `symbols` が変わらず、手番も足されない。`deck` / `new_indexes` / `game_hashes` / `miss_below` / `seed` は挿入後に変わらない | unique、トリガー | `run.md` A.3、`scoring.md` A.9 |
 | I14 | `likes` / `reports` は 1 投稿につき 1 主体 1 回。主体が匿名なら通報の `weight = 0` | unique、受理時の検査（`actors.user_id` を見る） | `moderation.md`、`product.md` 3 |
 | I17 | `actors.device_id` は一意。1 ユーザーに複数の `actors` があってよいが、1 つの `actors` は 1 ユーザーにしか結びつかない（`user_id` は一度埋まったら変えない） | unique、トリガー | B.3 |
 | I15 | `post_stats` は `scoring.md` A.4 の条件を満たす結果だけを含む: `author = false`、`speed = 1.0`、verdict が `provisional` / `accepted`、`frames ≥ 0.9 × time_limit`、1 主体 5 件。verdict の変更と窓からの押し出しで外す | `post_stats` 更新の条件（受理と verdict 変更の両トランザクション）、日次の再計算との突き合わせ | `scoring.md` A.3, A.4 |
@@ -291,7 +297,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 
 ## B.5 `post_stats` を別表にする理由
 
-偏差値と `miss_below` は分布の順位から出す（`scoring.md` A.5）。毎回 `sessions` を集計すると、手番の発行ごとにそのゲームの全セッションを読むことになる。昇順配列を 1 行に持てば二分探索で済み、`sessions` から再計算できるので正ではなくキャッシュ。1 万件で分位点に切り替えるのは配列の更新コストのため。
+偏差値と `miss_below` は分布の順位から出す（`scoring.md` A.5）。毎回 `sessions` を集計すると、ランの作成と結果の受理のたびにそのゲームの全セッションを読むことになる。昇順配列を 1 行に持てば二分探索で済み、`sessions` から再計算できるので正ではなくキャッシュ。1 万件で分位点に切り替えるのは配列の更新コストのため。
 
 ## B.6 `draft` を `base_status` に入れる理由
 
