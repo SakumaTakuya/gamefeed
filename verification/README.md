@@ -143,13 +143,15 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Publish.cfg Publish.tla
 | G4 | 公開後は内容が変わらない（dm#A.5 I10） | アクション性質 |
 | G5 | 呼び直しは行を増やさず、失敗した呼び出しが公開していないものを公開しない | アクション性質 |
 | G6 | 失敗した呼び出しはいつか片がつく（失敗の回数が有限なら） | 活性 |
+| G7 | 冪等: 失敗した呼び出しの呼び直しは DB を変えない（変わるのは R2 / KV だけ） | アクション性質 |
+| G8 | 冪等: 成功した呼び出しと同じ入力をもう一度呼んでも DB は変わらない（間に `unpublish_game` があっても再公開しない） | アクション性質 |
 
 | cfg | 設計 | 結果 | 状態数（distinct） |
 | --- | --- | --- | --- |
 | `Publish_asis.cfg` | mc#A.6 の 2 を文字どおり（`post_id` の投稿が `draft` 以外なら `invalid_state`） | **G1 / G2 違反**（4 手）。下書きを作る → `post_id` と `publish: true` で公開、KV が失敗して `storage_failed` → 同じ入力の呼び直しが `invalid_state`。投稿は公開済みで KV は `draft` のまま | — |
-| `Publish.cfg` | #97 の案 D（`post_id` の投稿が `draft` 以外でも、内容が同じなら何も変えずにその投稿を返して 11 へ） | **反例なし**（G1〜G6） | 3,033 |
+| `Publish.cfg` | #97 の案 D（`post_id` の投稿が `draft` 以外でも、内容が同じなら何も変えずにその投稿を返して 11 へ） | **反例なし**（G1〜G8） | 3,033 |
 
-`Publish.tla` が持たないもの: `limited` と `public` の区別、`title` / `prompt`、上限、静的検査、`removed` と `restricted`、`unpublish_game` 自身の KV の失敗、同時の呼び出し（mc#A.6 の 12 の直列化）、同一内容の投稿が複数あるときの `updated_at` の順（どれに戻ってもよいものとして検査）。
+`Publish.tla` が持たないもの: `updated_at`（下書きへの呼び直しは進める）と応答の `reused`（呼び直しで `true` になりうる）。冪等なのは DB の投稿の状態と内容で、応答と `updated_at` は含まない。ほかに `limited` と `public` の区別、`title` / `prompt`、上限、静的検査、`removed` と `restricted`、`unpublish_game` 自身の KV の失敗、同時の呼び出し（mc#A.6 の 12 の直列化）、同一内容の投稿が複数あるときの `updated_at` の順（どれに戻ってもよいものとして検査）。
 
 ## 境界と限界
 

@@ -130,5 +130,12 @@ G5 == [][pc = "failed" => /\ Rows' = Rows
 \* G6: a failed call is eventually settled (faults are bounded).
 G6 == [](pc = "failed" => <>(pc = "idle"))
 
+\* G7 (idempotence): repeating a failed call changes nothing in the DB.
+G7 == [][Retry => posts' = posts]_vars
+
+\* G8 (idempotence): calling again with the input of a successful call
+\*     changes nothing in the DB (even with unpublish_game in between).
+G8 == [][NewCall /\ input' = input /\ res = "ok" => posts' = posts]_vars
+
 Invariants == G1 /\ G2 /\ G3
 =============================================================================
