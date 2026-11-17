@@ -22,11 +22,16 @@ CONSTANTS
   Cheat,    \* BOOLEAN: Host ignores lives = 0 (F9 only; F8 is checked with FALSE)
   LiteralWindow, \* BOOLEAN: read A.15 F3 / A.5 step 7 literally, i.e. never
                  \* issue a turn numbered above cur + 2 (see README: F6 fails)
-  Withhold       \* BOOLEAN: Host may not send `result` for a turn it played
+  Withhold,      \* BOOLEAN: Host may not send `result` for a turn it played
                  \* (run#A.7 / sc#A.9 abandoned rule, #74)
+  FirstWaits,    \* BOOLEAN: read A.6 literally, i.e. the first turn is never
+                 \* load-skipped; the start waits until it is INITED (#175)
+  Stuck          \* turns whose load never completes (the post is no longer
+                 \* served, or the network is down)
 
 ASSUME Cap \in Nat /\ Lives \in Nat /\ Cheat \in BOOLEAN
 ASSUME LiteralWindow \in BOOLEAN /\ Withhold \in BOOLEAN
+ASSUME FirstWaits \in BOOLEAN /\ Stuck \subseteq 1..Cap
 
 Turns == 1..Cap
 States == {"NONE", "LOADING", "READY", "INITED", "RUNNING", "ENDED", "DESTROYED"}
@@ -85,7 +90,7 @@ Issue ==
 
 \* `ready` arrives; the Host sends `init` right away (onInit, then wait)
 Ready(t) ==
-  /\ frame[t] = "LOADING"
+  /\ frame[t] = "LOADING" /\ t \notin Stuck
   /\ frame' = [frame EXCEPT ![t] = "READY"]
   /\ UNCHANGED << cur, issued, isNew, lives, missTurns, skipped, hostDone, startedAfterZero, result, finished >>
 
@@ -111,6 +116,7 @@ Start ==
 SkipLoad ==
   /\ InInterlude /\ Candidates # {}
   /\ frame[NextTurn] \in {"LOADING", "READY"}
+  /\ FirstWaits => cur # 0
   /\ frame' = [frame EXCEPT ![NextTurn] = "DESTROYED"]
   /\ skipped' = skipped \cup {NextTurn}
   /\ result' = [result EXCEPT ![NextTurn] = "skip"]
