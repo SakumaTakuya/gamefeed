@@ -1,6 +1,6 @@
 # 形式検証（verification）
 
-仕様のうち並行性・状態遷移が絡む 4 箇所を TLA+ でモデル化し、TLC で有限境界の全状態を網羅検査する。旧 `spec.md` 13 章の「別添」はリポジトリに存在したことがなく、ここにあるモデルは 2026-11-08 に新文書（`docs/protocol.md`・`run.md`・`scoring.md`・`moderation.md`・`data-model.md`）から書き起こしたもの（#68）。
+仕様のうち並行性・状態遷移が絡む箇所を TLA+ でモデル化し、TLC で有限境界の全状態を網羅検査する。旧 `spec.md` 13 章の「別添」はリポジトリに存在したことがなく、ここにあるモデルは 2026-11-08 に新文書（`docs/protocol.md`・`run.md`・`scoring.md`・`moderation.md`・`data-model.md`）から書き起こしたもの（#68）。
 
 `scoring_check.py` は数値の検査（`scoring.md` A.11 の S1〜S6）で、TLA+ ではない。`python3 verification/scoring_check.py` で走る。
 
@@ -30,6 +30,7 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 | `RunSync.tla` | **#153 より前の設計**のランを Host（`run.ts`）とサーバ（`next` / `result` / `finish`、`summarizeRun`）に分け、順序の入れ替わり・消失・拒否のある通信で結ぶ（#151） | A1〜A6（下） | （#151 の判断材料） |
 | `RunLog.tla` | **現行**（#151 で選んだ設計）: 計画を `POST /runs` で凍結し、サーバは次の手番の結果だけを記録に足す。`next` は無い | F9〜F13 = B1〜B7（下） | R-run.A15-2 |
 | `Lifecycle.tla` | 1 投稿の校正状態（sc#A.7）× 投稿状態（mo#A.2）× 制限と、`limited → public` の昇格、`post_eligibility`（dm#A.4） | L1〜L6（この README で定義） | （R-sc.* / R-mo.* の補助） |
+| `Publish.tla` | `publish_game` のトランザクションと、コミット後の R2 / KV の失敗、同じ入力の呼び直し（mc#A.6, A.7, A.10） | G1〜G6（下） | （#97 の判断材料） |
 | `Moderation.tla` | 2 ユーザー・投稿 3 件の投稿状態・系譜・通報・自動制限・運営操作・ツリー制限・BAN（mo#A.2, A.4〜A.7、dm#A.4, A.5） | M1〜M10（mo#A.10） | R-mo.A10-1 |
 
 ### 性質の対応（文書の ID → モデルの定義）
@@ -86,6 +87,9 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 | `Run_withhold.cfg` | `result` を送らないことがある Host（run#A.7 の `abandoned` 規則、#74） | **反例なし** | 3,681,729 |
 | `Run_cheat.cfg` | 残機 0 を無視する Host（F9 用） | **反例なし** | 223,769 |
 | `Run_cheat_withhold.cfg` | 残機無視＋未提出 | **反例なし** | 6,155,229 |
+| `Run_firstwait.cfg` | run#A.6 を文字どおり（最初の手番は読み込みの skip にしない）で、手番 1 の読み込みが終わらない（#175） | **F6 違反**。手番 1・2 を作る → 2 は INITED → 1 が LOADING のまま、スタートも skip もできず停止 | — |
+| `Run_stuck.cfg` | 手番 1 の読み込みが終わらない。最初の手番も読み込みの skip にできる（`Run.tla` の既定） | **反例なし** | 65,671 |
+| `Run_stuck_all.cfg` | どの手番の読み込みも終わらない | **反例なし** | 505 |
 | `Run_literal.cfg` | A.5 step 6 / 7 を文字どおり（`cur + 2` より先を発行しない） | **F6 違反**。`start(1)` → `end` → 2 を skip → 3 を skip で候補が尽き、発行規則がなく停止 | — |
 | `Lifecycle.cfg` | `moderation.md` A.7 どおり（`restore` / `restore_tree` で昇格、#71） | **反例なし** | 1,723 |
 | `Lifecycle_asis.cfg` | #71 より前の文言（`RestorePromotes = FALSE`） | **L4 違反**（6 手）。下の穴 2 | — |
@@ -124,6 +128,33 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 原因は、進行を Host が決めている（run#B.2）のに、サーバが `sessions` の行の集まりから進行を推測し直すこと。`next` の残機の数え方（#143 の 5）は run#B.2 の「残機と進行は Host の手元で決まる」と両立しない。作り直し案はサーバが推測をやめ、届いた順に記録を足すだけにする。最小修正案は A4 / A5 を直すが、`next`・`runs.cursor`・先読みで発行したまま捨てる手番・拒否と終わり方の食い違い・閉じないランは残る。オーナーは 2026-11-15 に作り直し案を選んだ（#151）。
 
 `RunLog.tla` が持たないもの: 読み込みの skip になった山札の位置を以後の周回で飛ばす規則（山札の位置を持たない）、スロット（F1〜F5 は Host の中だけの話になり、`Run.tla` の Host 側がそのまま当てはまる）、実時間の検査、偏差値、出せなくなった投稿（読み込みの skip `noload` として `HostSkipLoad` に含まれる）。文書の改訂（#153）は 2026-11-15 に入った。`RunSync.tla` と、`Run.tla` のサーバ側（F9、`Withhold`、`Run_withhold.cfg` / `Run_cheat*.cfg`）は #153 より前の設計の記録で、現行の文書には対応しない。`Run.tla` の Host 側（F1〜F8）は現行。ただし幕間の延長（`SkipLoad` の前の待ち）はモデルに元から無く、読み込みの skip を待たずに決める変更の影響は受けない。
+
+## `publish_game` の呼び直し（2026-11-16、#97）
+
+#97 の穴は Codex のレビューで見つかった。`Lifecycle.tla` / `Moderation.tla` は公開を 1 つの原子的な遷移として持ち、内容（ハッシュ）・`post_id` の有無・R2 / KV・呼び直しを持たないので、TLC では見えなかった。`Publish.tla` は作者 1 人の `publish_game` を、トランザクション（mc#A.6 の 2〜10）→ R2（11）→ KV（12）に分け、11 / 12 がコミットの後に失敗しうるものとして書く。`storage_failed` を受けたクライアントは同じ入力で呼び直す（mc#A.10）。間に `unpublish_game` が入りうる。投稿 2 件、内容 2 種類、失敗 2 回まで。
+
+```sh
+java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Publish_asis.cfg Publish.tla
+java -cp ../tla2tools.jar tlc2.TLC -deadlock -config Publish.cfg Publish.tla
+```
+
+| ID | 性質 | 種類 |
+| --- | --- | --- |
+| G1 | 同じ入力の呼び直しは拒まれない（結果は成功か `storage_failed`） | 不変条件 |
+| G2 | 呼び直し待ちの呼び出しが無いとき、すべての投稿で R2 と KV が DB と一致する（公開したのに配れない投稿が残らない） | 不変条件 |
+| G3 | 成功で返った投稿は R2 と KV にある | 不変条件 |
+| G4 | 公開後は内容が変わらない（dm#A.5 I10） | アクション性質 |
+| G5 | 呼び直しは行を増やさず、失敗した呼び出しが公開していないものを公開しない | アクション性質 |
+| G6 | 失敗した呼び出しはいつか片がつく（失敗の回数が有限なら） | 活性 |
+| G7 | 冪等: 失敗した呼び出しの呼び直しは DB を変えない（変わるのは R2 / KV だけ） | アクション性質 |
+| G8 | 冪等: 成功した呼び出しと同じ入力をもう一度呼んでも DB は変わらない（間に `unpublish_game` があっても再公開しない） | アクション性質 |
+
+| cfg | 設計 | 結果 | 状態数（distinct） |
+| --- | --- | --- | --- |
+| `Publish_asis.cfg` | mc#A.6 の 2 を文字どおり（`post_id` の投稿が `draft` 以外なら `invalid_state`） | **G1 / G2 違反**（4 手）。下書きを作る → `post_id` と `publish: true` で公開、KV が失敗して `storage_failed` → 同じ入力の呼び直しが `invalid_state`。投稿は公開済みで KV は `draft` のまま | — |
+| `Publish.cfg` | #97 の案 D（`post_id` の投稿が `draft` 以外でも、内容が同じなら何も変えずにその投稿を返して 11 へ） | **反例なし**（G1〜G8） | 3,033 |
+
+`Publish.tla` が持たないもの: `updated_at`（下書きへの呼び直しは進める）と応答の `reused`（呼び直しで `true` になりうる）。冪等なのは DB の投稿の状態と内容で、応答と `updated_at` は含まない。ほかに `limited` と `public` の区別、`title` / `prompt`、上限、静的検査、`removed` と `restricted`、`unpublish_game` 自身の KV の失敗、同時の呼び出し（mc#A.6 の 12 の直列化）、同一内容の投稿が複数あるときの `updated_at` の順（どれに戻ってもよいものとして検査）。
 
 ## 境界と限界
 
