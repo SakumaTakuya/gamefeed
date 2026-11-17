@@ -173,7 +173,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     await other.close();
   });
 
-  it("R-mc.A3-2 publish_game の成功は structuredContent に {post_id, status, url, warnings, reused}。下書き → 公開で url が変わる", async () => {
+  it("R-mc.A3-2 publish_game の成功は structuredContent に {post_id, status, url, title, warnings}。下書き → 公開で url が変わる", async () => {
     const client = await connect();
     const html = gameHtml();
     const draft = await client.callTool({ name: "publish_game", arguments: { html } });
@@ -183,8 +183,8 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       post_id: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
       status: "draft",
       url: `${APP}/draft/${d.post_id}`,
+      title: "まるタップ",
       warnings: [],
-      reused: false,
     });
     // content のテキストにも同じ JSON が入る（structuredContent を読まないクライアント向け）
     expect(textJson(draft.content)).toEqual(d);
@@ -197,8 +197,8 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       post_id: d.post_id,
       status: "limited",
       url: `${APP}/g/${d.post_id}`,
+      title: "まるタップ",
       warnings: [],
-      reused: false,
     });
     await client.close();
   });

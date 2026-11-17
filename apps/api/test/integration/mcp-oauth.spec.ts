@@ -295,7 +295,7 @@ dbSuite("R-9-1 MCP OAuth 2.1（DCR・PKCE・.well-known）", () => {
     expect(structured).toMatchObject({
       status: "draft",
       url: `${baseURL}/draft/${structured.post_id}`,
-      reused: false,
+      title: "PoC",
     });
     // トークンの sub のユーザーの投稿として入り、users 行ができている（mc#A.2、A.5）
     const [row] = await db

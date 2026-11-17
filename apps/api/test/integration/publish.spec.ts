@@ -150,15 +150,15 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
   // ---- 典型 ------------------------------------------------------------------------
 
-  it("R-mc.A3-2 新規は下書きになり、{post_id, status, url, warnings, reused} を返す。posts / games / R2 / KV に書く（mc#A.6）", async () => {
+  it("R-mc.A3-2 新規は下書きになり、{post_id, status, url, title, warnings} を返す。posts / games / R2 / KV に書く（mc#A.6）", async () => {
     const html = gameHtml();
     const v = await ok({ html });
     expect(v).toEqual({
       post_id: expect.stringMatching(/^[0-9A-HJKMNP-TV-Z]{26}$/),
       status: "draft",
       url: `${APP}/draft/${v.post_id}`,
+      title: "まるタップ",
       warnings: [],
-      reused: false,
     });
 
     const hash = sha256(html);
@@ -268,7 +268,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     now = new Date(now.getTime() + 60_000);
     const html2 = gameHtml({ salt: "2", title: "二つ目" });
     const v2 = await ok({ html: html2, post_id: v1.post_id });
-    expect(v2).toEqual({ ...v1, reused: false });
+    expect(v2).toEqual({ ...v1, title: "二つ目" });
     const p = await post(v1.post_id);
     expect(p).toMatchObject({ gameHash: sha256(html2), title: "二つ目", baseStatus: "draft" });
     expect(p.updatedAt).toEqual(now);
@@ -300,7 +300,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
   it("R-mo.A2-1 publish: true は trust_score 30 未満なら limited。published_at が入り、url はゲームページ、KV は ok", async () => {
     const v = await ok({ html: gameHtml(), publish: true });
-    expect(v).toMatchObject({ status: "limited", url: `${APP}/g/${v.post_id}`, reused: false });
+    expect(v).toMatchObject({ status: "limited", url: `${APP}/g/${v.post_id}` });
     const p = await post(v.post_id);
     expect(p.baseStatus).toBe("limited");
     expect(p.publishedAt).toEqual(now);
@@ -320,7 +320,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const html = gameHtml();
     const d = await ok({ html });
     const v = await ok({ html, post_id: d.post_id, publish: true });
-    expect(v).toMatchObject({ post_id: d.post_id, status: "limited", reused: false });
+    expect(v).toMatchObject({ post_id: d.post_id, status: "limited" });
     await db.update(s.users).set({ trustScore: 30 }).where(eq(s.users.id, ME));
     await ok({ html: gameHtml({ salt: "next" }), publish: true });
     expect((await post(d.post_id)).baseStatus).toBe("limited");
@@ -329,14 +329,15 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
   // ---- 同一内容（mc#A.7、C3） ----------------------------------------------------------
 
-  it("R-mc.A7-1 同じ HTML を post_id なしで 2 回・3 回送っても下書きは 1 つ（reused: true）。title / prompt は更新される", async () => {
+  it("R-mc.A7-1 同じ HTML を post_id なしで 2 回・3 回送っても下書きは 1 つ（同じ post_id）。title / prompt は更新され、出力の title も結果の題名", async () => {
     const html = gameHtml();
     const v1 = await ok({ html, title: "一", prompt: "p1" });
     now = new Date(now.getTime() + 1000);
     const v2 = await ok({ html, title: "二", prompt: "p2" });
     const v3 = await ok({ html });
-    expect(v2).toEqual({ ...v1, reused: true });
-    expect(v3).toEqual({ ...v1, reused: true });
+    expect(v1.title).toBe("一");
+    expect(v2).toEqual({ ...v1, title: "二" });
+    expect(v3).toEqual({ ...v1, title: "まるタップ" });
     expect(await count("posts")).toBe(1);
     expect(await count("games")).toBe(1);
     // 3 回目は title / prompt を省略したので既定値（<title> と空）
@@ -349,23 +350,24 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(storage.puts).toBe(1);
   });
 
-  it("R-mc.A7-1 下書きが 10 件あっても、当日の上限に達していても、同じ HTML は reused で通る", async () => {
+  it("R-mc.A7-1 下書きが 10 件あっても、当日の上限に達していても、同じ HTML は既存の下書きに戻って通る", async () => {
     const html = gameHtml();
     const v = await ok({ html });
     for (let i = 0; i < 4; i++) await ok({ html: gameHtml({ salt: `r${i}` }) });
     await seedDrafts(5);
     expect((await err({ html: gameHtml({ salt: "new" }) })).code).toBe("limit");
-    expect(await ok({ html })).toEqual({ ...v, reused: true });
+    expect(await ok({ html })).toEqual(v);
     // 拒否される内容でも、同一内容の確認が先（mc#A.6 の 3）なので静的検査を通さない
     expect(await count("posts")).toBe(10);
   });
 
-  it("R-mc.A7-1 公開済みと同じ HTML は、その投稿を status そのままで返す。title / prompt は変えず、publish: true でも何もしない", async () => {
+  it("R-mc.A7-1 公開済みと同じ HTML は、その投稿を status そのままで返す。title / prompt は変えず（出力の title も元のまま）、publish: true でも何もしない", async () => {
     const html = gameHtml();
     const v = await ok({ html, title: "元", prompt: "元の文", publish: true });
     now = new Date(now.getTime() + 1000);
     const again = await ok({ html, title: "別", prompt: "別の文", publish: true });
-    expect(again).toEqual({ ...v, reused: true });
+    expect(again).toEqual(v);
+    expect(again.title).toBe("元");
     const p = await post(v.post_id);
     expect(p).toMatchObject({ title: "元", prompt: "元の文", baseStatus: "limited" });
     expect(p.updatedAt).not.toEqual(now);
@@ -379,17 +381,17 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const r = await ok({ html: h2, publish: true });
     await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, u.post_id));
     await db.update(s.posts).set({ indivRestricted: true }).where(eq(s.posts.id, r.post_id));
-    expect(await ok({ html: h1 })).toEqual({ ...u, status: "unpublished", reused: true });
-    expect(await ok({ html: h2 })).toEqual({ ...r, status: "restricted", reused: true });
+    expect(await ok({ html: h1 })).toEqual({ ...u, status: "unpublished" });
+    expect(await ok({ html: h2 })).toEqual({ ...r, status: "restricted" });
     expect(kv.values.get(u.post_id)).toEqual({ hash: sha256(h1), status: "no" });
     expect(kv.values.get(r.post_id)).toEqual({ hash: sha256(h2), status: "no" });
   });
 
-  it("R-mc.A7-1 post_id なしで同じ HTML の下書きに publish: true を付けても公開しない（status: draft、reused: true。mc#A.6 の 3）", async () => {
+  it("R-mc.A7-1 post_id なしで同じ HTML の下書きに publish: true を付けても公開しない（status: draft。mc#A.6 の 3）", async () => {
     const html = gameHtml();
     const d = await ok({ html });
     const again = await ok({ html, publish: true });
-    expect(again).toEqual({ ...d, reused: true });
+    expect(again).toEqual(d);
     const p = await post(d.post_id);
     expect(p).toMatchObject({ baseStatus: "draft", publishedAt: null });
     expect(kv.values.get(d.post_id)?.status).toBe("draft");
@@ -406,7 +408,6 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect(await ok({ html })).toMatchObject({
       post_id: draft.post_id,
       status: "draft",
-      reused: true,
     });
 
     await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, live.post_id));
@@ -427,7 +428,6 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     const html = gameHtml();
     const theirs = await ok({ html }, OTHER);
     const mine = await ok({ html });
-    expect(mine.reused).toBe(false);
     expect(mine.post_id).not.toBe(theirs.post_id);
     expect(await count("games")).toBe(1);
     expect(await count("posts")).toBe(2);
@@ -445,7 +445,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     now = new Date("2026-11-11T14:59:59Z");
     expect((await err({ html: gameHtml({ salt: "n5" }) })).reason).toBe("rate");
     now = new Date("2026-11-11T15:00:00Z");
-    expect((await ok({ html: gameHtml({ salt: "n5" }) })).reused).toBe(false);
+    expect((await ok({ html: gameHtml({ salt: "n5" }) })).status).toBe("draft");
   });
 
   it("R-9-4 置き換え（post_id 指定）は数えない。6 回置き換えても通り、その後も新規を 4 件出せる", async () => {
@@ -520,7 +520,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
     now = new Date(now.getTime() + 5000);
     const v = await ok({ html, title: "題" });
-    expect(v).toMatchObject({ status: "draft", reused: true });
+    expect(v).toMatchObject({ status: "draft", title: "題" });
     expect(await count("posts")).toBe(1);
     expect((await game(hash)).storedAt).toEqual(now);
     expect(storage.objects.get(`games/${hash}.html`)).toBe(html);
@@ -533,7 +533,7 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
     expect((await err({ html, publish: true })).code).toBe("storage_failed");
     expect(kv.puts).toBe(0);
     const v = await ok({ html, publish: true });
-    expect(v).toMatchObject({ status: "limited", reused: true });
+    expect(v).toMatchObject({ status: "limited" });
     expect(kv.values.get(v.post_id)).toEqual({ hash: sha256(html), status: "ok" });
   });
 
@@ -552,11 +552,78 @@ dbSuite("publish_game（mc#A.6 / A.7 / A.10）", () => {
 
     const puts = storage.puts;
     const w = await ok({ html, publish: true });
-    expect(w).toMatchObject({ status: "limited", reused: true });
+    expect(w).toMatchObject({ status: "limited" });
     expect(kv.values.get(w.post_id)).toEqual({ hash: sha256(html), status: "ok" });
     // R2 は書き直さない（stored_at が入っている）
     expect(storage.puts).toBe(puts);
     expect(await count("posts")).toBe(2);
+  });
+
+  // ---- post_id つきの呼び直し（mc#A.7 の表、#97。verification/Publish.tla の反例と G1・G7・G8） ----
+
+  it("R-mc.A6-1 post_id + publish: true で KV が失敗しても、同じ入力の呼び直しは拒まれず、公開済みの投稿に戻って KV を書く（#97）", async () => {
+    const html = gameHtml();
+    const d = await ok({ html, title: "題" });
+    kv.failures = 3;
+    const input = { html, title: "題", post_id: d.post_id, publish: true };
+    expect((await err(input)).code).toBe("storage_failed");
+    // 公開はコミット済みで、KV は draft のまま（Publish_asis.cfg の反例の 3 手目）
+    const published = await post(d.post_id);
+    expect(published.baseStatus).toBe("limited");
+    expect(kv.values.get(d.post_id)?.status).toBe("draft");
+
+    now = new Date(now.getTime() + 5000);
+    const v = await ok(input);
+    expect(v).toEqual({ ...d, status: "limited", url: `${APP}/g/${d.post_id}` });
+    expect(kv.values.get(d.post_id)).toEqual({ hash: sha256(html), status: "ok" });
+    // 呼び直しは DB を変えない（G7）
+    expect(await post(d.post_id)).toEqual(published);
+    expect(await count("posts")).toBe(1);
+  });
+
+  it("R-mc.A6-1 post_id で内容を置き換えて公開する呼び出しで R2 が失敗しても、同じ入力の呼び直しで R2 と KV が書かれる（#97）", async () => {
+    const d = await ok({ html: gameHtml({ salt: "a" }) });
+    const html = gameHtml({ salt: "b" });
+    storage.failures = 1;
+    const logged = vi.spyOn(console, "error").mockImplementation(() => {});
+    const input = { html, post_id: d.post_id, publish: true };
+    expect((await err(input)).code).toBe("storage_failed");
+    logged.mockRestore();
+    expect((await game(sha256(html))).storedAt).toBeNull();
+
+    const v = await ok(input);
+    expect(v).toMatchObject({ post_id: d.post_id, status: "limited" });
+    expect((await game(sha256(html))).storedAt).not.toBeNull();
+    expect(kv.values.get(d.post_id)).toEqual({ hash: sha256(html), status: "ok" });
+    expect(await count("posts")).toBe(1);
+  });
+
+  it("R-mc.A7-1 成功した post_id つきの呼び出しを同じ入力でもう一度呼んでも、同じ出力で DB は変わらない。非公開の後でも再公開しない（C3、G8）", async () => {
+    const html = gameHtml();
+    const d = await ok({ html, title: "元" });
+    const input = { html, title: "元", post_id: d.post_id, publish: true };
+    const v1 = await ok(input);
+    const before = await post(d.post_id);
+    now = new Date(now.getTime() + 5000);
+    expect(await ok(input)).toEqual(v1);
+    // 公開後は title を渡しても変わらず、出力の title は投稿の題名
+    expect(await ok({ ...input, title: "別" })).toEqual(v1);
+    expect(await post(d.post_id)).toEqual(before);
+
+    await db.update(s.posts).set({ baseStatus: "unpublished" }).where(eq(s.posts.id, d.post_id));
+    expect(await ok(input)).toEqual({ ...v1, status: "unpublished" });
+    expect((await post(d.post_id)).baseStatus).toBe("unpublished");
+    expect(kv.values.get(d.post_id)).toEqual({ hash: sha256(html), status: "no" });
+  });
+
+  it("R-mc.A10-1 removed の post_id は、内容が同じでも invalid_state", async () => {
+    const html = gameHtml();
+    const v = await ok({ html, publish: true });
+    await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, v.post_id));
+    expect((await err({ html, post_id: v.post_id })).code).toBe("invalid_state");
+    expect((await err({ html: gameHtml({ salt: "x" }), post_id: v.post_id })).code).toBe(
+      "invalid_state",
+    );
   });
 
   it("se#A.5 KV に書くのは書く時点で DB に確定している状態（並行する非公開の no を、古い ok で上書きしない）", async () => {
