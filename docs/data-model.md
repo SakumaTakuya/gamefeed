@@ -162,7 +162,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `theme_id` | text null | fk themes。エンドレスは NULL |
 | `date` | date null | デイリーの日付 |
 | `actor_id` | text | fk actors |
-| `deck` | text[] | 計画: 山札の `post_id`（エンドレスは 1〜12、デイリーは 10。重複なし）。記録は `sessions(run_id, turn)` |
+| `deck` | text[] | 計画: 山札の `post_id`（エンドレスは 1〜12、デイリーは 1〜10。作成時点で出せる投稿だけ。`run.md` A.2。重複なし）。記録は `sessions(run_id, turn)` |
 | `new_indexes` | int[] | 山札の中で新作扱い（`is_new`）にする位置。通常 1 個。校正済みが足りない間は複数、未校正がなければ空（`run.md` A.2） |
 | `game_hashes` | text[] | 計画: 山札の位置ごとの内容（作成時の `posts.game_hash`） |
 | `miss_below` | int[] | 計画: 山札の位置ごとの閾値。要素は NULL でよい（`scoring.md` A.6） |
