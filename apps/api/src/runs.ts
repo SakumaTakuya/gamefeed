@@ -3,7 +3,7 @@
  *
  * 山札を確定して `runs` に 1 行入れる。手番（`sessions`）は `next` が発行するので、ここでは作らない。
  * 山札の組み方は `@gamefeed/domain` の `buildEndlessDeck`、ここは候補を DB から集めるだけ。
- * 応答の形・エラー・`from_run` の扱い・「引いた」の定義は文書に無く、#141 の案で実装している。
+ * 応答の形・エラー・「引いた」の定義は文書に無く、#141 の案で実装している。`from_run` は run#A.3（#175）。
  */
 
 import {
@@ -76,13 +76,34 @@ async function deckCandidates(deps: RunDeps, actorId: string): Promise<DeckCandi
   return rows.map((r) => ({ postId: r.id, kind: r.eligibility, drawnAt: r.drawn_at }));
 }
 
-/** `from_run` の山札をそのまま写す（投稿の状態は見直さない。出せなくなった投稿は next が飛ばす。mo#A.3） */
+/**
+ * `from_run` の山札を写す（run#A.3）。作成時点で出せない投稿（`limited` / `public` 以外）は落とし、
+ * 残りの順と新作扱いの位置は保つ。校正状態は見直さない。計画には出せる投稿だけが入る（run#A.2、#175）。
+ * 元のランが無ければ null、全部落ちたら山札が空の Deck を返す。
+ */
 async function copyDeck(db: Db, fromRun: string): Promise<Deck | null> {
   const [src] = await db
     .select({ deck: runs.deck, newIndexes: runs.newIndexes })
     .from(runs)
     .where(and(eq(runs.id, fromRun), eq(runs.mode, "endless")));
-  return src ?? null;
+  if (!src) return null;
+  if (src.deck.length === 0) return { deck: [], newIndexes: [] };
+  const rows = await db.execute<{ id: string }>(sql`
+    select id from post_status
+    where id in (${sql.join(
+      src.deck.map((id) => sql`${id}`),
+      sql`, `,
+    )}) and status in ('limited', 'public')`);
+  const servable = new Set(rows.map((r) => r.id));
+  const wasNew = new Set(src.newIndexes);
+  const deck: string[] = [];
+  const newIndexes: number[] = [];
+  src.deck.forEach((postId, i) => {
+    if (!servable.has(postId)) return;
+    if (wasNew.has(i)) newIndexes.push(deck.length);
+    deck.push(postId);
+  });
+  return { deck, newIndexes };
 }
 
 /** エンドレスのランを作る。山札はこの時点で確定し、以後変わらない（run#A.3） */
@@ -95,6 +116,7 @@ export async function createRun(
   if (input.fromRun !== undefined) {
     built = await copyDeck(deps.db, input.fromRun);
     if (!built) return { ok: false, error: "run_not_found" };
+    if (built.deck.length === 0) return { ok: false, error: "no_games" };
   } else {
     built = buildEndlessDeck(await deckCandidates(deps, actorId), deps.random);
     if (!built) return { ok: false, error: "no_games" };
