@@ -87,6 +87,9 @@ java -cp ../tla2tools.jar tlc2.TLC -deadlock -config RunLog_faults.cfg RunLog.tl
 | `Run_withhold.cfg` | `result` を送らないことがある Host（run#A.7 の `abandoned` 規則、#74） | **反例なし** | 3,681,729 |
 | `Run_cheat.cfg` | 残機 0 を無視する Host（F9 用） | **反例なし** | 223,769 |
 | `Run_cheat_withhold.cfg` | 残機無視＋未提出 | **反例なし** | 6,155,229 |
+| `Run_firstwait.cfg` | run#A.6 を文字どおり（最初の手番は読み込みの skip にしない）で、手番 1 の読み込みが終わらない（#175） | **F6 違反**。手番 1・2 を作る → 2 は INITED → 1 が LOADING のまま、スタートも skip もできず停止 | — |
+| `Run_stuck.cfg` | 手番 1 の読み込みが終わらない。最初の手番も読み込みの skip にできる（`Run.tla` の既定） | **反例なし** | 65,671 |
+| `Run_stuck_all.cfg` | どの手番の読み込みも終わらない | **反例なし** | 505 |
 | `Run_literal.cfg` | A.5 step 6 / 7 を文字どおり（`cur + 2` より先を発行しない） | **F6 違反**。`start(1)` → `end` → 2 を skip → 3 を skip で候補が尽き、発行規則がなく停止 | — |
 | `Lifecycle.cfg` | `moderation.md` A.7 どおり（`restore` / `restore_tree` で昇格、#71） | **反例なし** | 1,723 |
 | `Lifecycle_asis.cfg` | #71 より前の文言（`RestorePromotes = FALSE`） | **L4 違反**（6 手）。下の穴 2 | — |
