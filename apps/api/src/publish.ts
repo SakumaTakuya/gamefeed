@@ -7,7 +7,16 @@
  */
 
 import { createHash } from "node:crypto";
-import { type Finding, graphemeCount, staticCheck, utf8ByteLength } from "@gamefeed/domain";
+import {
+  type Finding,
+  graphemeCount,
+  type PublishBase,
+  type PublishTarget,
+  publishStep,
+  sameContentTarget,
+  staticCheck,
+  utf8ByteLength,
+} from "@gamefeed/domain";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "./db/client.ts";
 import { games, posts, users } from "./db/schema.ts";
@@ -84,8 +93,9 @@ export interface PublishOutput {
   post_id: string;
   status: PostStatus;
   url: string;
+  /** 結果の投稿の題名（mc#A.3） */
+  title: string;
   warnings: { code: string; message: string }[];
-  reused: boolean;
 }
 
 export type ToolErrorCode =
@@ -150,8 +160,9 @@ interface Committed {
   postId: string;
   hash: string;
   status: PostStatus;
+  /** 結果の投稿の題名（mc#A.3） */
+  title: string;
   warnings: { code: string; message: string }[];
-  reused: boolean;
 }
 
 export async function publishGame(
@@ -205,62 +216,80 @@ export async function publishGame(
       );
     }
 
-    // 2. post_id があれば自分の draft であること
-    let target: { id: string } | undefined;
+    // 2. post_id があれば自分の投稿であること
+    // 3. 対象の投稿を決めて、mc#A.7 の表（domain の publishStep）を引く。上限と静的検査より先
+    interface Row {
+      id: string;
+      base: PublishBase;
+      title: string;
+    }
+    let target: PublishTarget & { post?: Row };
     if (input.post_id !== undefined) {
       const [p] = await tx
-        .select({ id: posts.id, userId: posts.userId, baseStatus: posts.baseStatus })
+        .select({
+          id: posts.id,
+          userId: posts.userId,
+          base: posts.baseStatus,
+          title: posts.title,
+          gameHash: posts.gameHash,
+        })
         .from(posts)
         .where(eq(posts.id, input.post_id))
         .for("update");
       if (!p || p.userId !== userId) return fail("not_found", NOT_FOUND);
-      if (p.baseStatus !== "draft") {
-        return fail(
-          "invalid_state",
-          "この投稿は下書きではないので内容を置き換えられません。公開後は内容を変えられないので、post_id を付けずに新しい下書きとして投稿してください。",
-        );
-      }
-      target = { id: p.id };
-    }
-
-    // 3. 同一内容（mc#A.7）。上限と静的検査より先
-    if (!target) {
-      const same = await tx
-        .select({ id: posts.id, baseStatus: posts.baseStatus })
+      target = { by: "post_id", base: p.base, sameContent: p.gameHash === hash, post: p };
+    } else {
+      const same: Row[] = await tx
+        .select({ id: posts.id, base: posts.baseStatus, title: posts.title })
         .from(posts)
         .where(and(eq(posts.userId, userId), eq(posts.gameHash, hash)))
         .orderBy(desc(posts.updatedAt), desc(posts.id))
         .for("update");
-      if (same.some((p) => p.baseStatus === "removed")) {
-        return fail(
-          "invalid_state",
-          "同じ内容の投稿が運営によって削除されています。この内容は再投稿できません。",
-        );
-      }
-      const hit = same[0];
-      if (hit) {
-        const [g] = await tx.select({ meta: games.meta }).from(games).where(eq(games.hash, hash));
-        const meta = (g?.meta ?? {}) as {
-          title?: string;
-          warnings?: { code: string; message: string }[];
-        };
-        if (hit.baseStatus === "draft") {
-          const title = givenTitle ?? meta.title ?? "";
-          if (!titleOk(title)) return fail("invalid", titleTooLong());
-          await tx.update(posts).set({ title, prompt, updatedAt: now }).where(eq(posts.id, hit.id));
-        }
-        return {
-          postId: hit.id,
-          hash,
-          status: await statusOf(tx, hit.id),
-          warnings: meta.warnings ?? [],
-          reused: true,
-        };
-      }
+      target = sameContentTarget(same);
     }
+    const step = publishStep(target);
+    const hit = "post" in target ? target.post : undefined;
+
+    if (step === "removed") {
+      return fail(
+        "invalid_state",
+        hit && target.by === "post_id"
+          ? "この投稿は運営によって削除されています。内容を置き換えることはできません。"
+          : "同じ内容の投稿が運営によって削除されています。この内容は再投稿できません。",
+      );
+    }
+    if (step === "immutable") {
+      return fail(
+        "invalid_state",
+        "この投稿は下書きではないので内容を置き換えられません。公開後は内容を変えられないので、post_id を付けずに新しい下書きとして投稿してください。",
+      );
+    }
+    if ((step === "refresh" || step === "keep") && hit) {
+      // 既存の投稿を返す。上限も静的検査も通さず、公開もしない（8 を通らない）
+      const [g] = await tx.select({ meta: games.meta }).from(games).where(eq(games.hash, hash));
+      const meta = (g?.meta ?? {}) as {
+        title?: string;
+        warnings?: { code: string; message: string }[];
+      };
+      let title = hit.title;
+      if (step === "refresh") {
+        title = givenTitle ?? meta.title ?? "";
+        if (!titleOk(title)) return fail("invalid", titleTooLong());
+        await tx.update(posts).set({ title, prompt, updatedAt: now }).where(eq(posts.id, hit.id));
+      }
+      return {
+        postId: hit.id,
+        hash,
+        status: await statusOf(tx, hit.id),
+        title,
+        warnings: meta.warnings ?? [],
+      };
+    }
+    // ここから先は create（新規）か replace（下書きの置き換え）
+    const replacing = step === "replace" && hit ? hit : undefined;
 
     // 4. 上限（新規だけ。置き換えは数えない）
-    if (!target) {
+    if (!replacing) {
       const [d] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(posts)
@@ -324,8 +353,8 @@ export async function publishGame(
 
     // 7. posts
     let postId: string;
-    if (target) {
-      postId = target.id;
+    if (replacing) {
+      postId = replacing.id;
       await tx
         .update(posts)
         .set({ gameHash: hash, title, prompt, updatedAt: now })
@@ -356,7 +385,7 @@ export async function publishGame(
     }
 
     // 10. コミット
-    return { postId, hash, status: await statusOf(tx, postId), warnings, reused: false };
+    return { postId, hash, status: await statusOf(tx, postId), title, warnings };
   });
 
   if ("ok" in committed) return committed;
@@ -396,8 +425,8 @@ export async function publishGame(
       post_id: committed.postId,
       status: committed.status,
       url: `${deps.appOrigin}/${committed.status === "draft" ? "draft" : "g"}/${committed.postId}`,
+      title: committed.title,
       warnings: committed.warnings,
-      reused: committed.reused,
     },
   };
 }

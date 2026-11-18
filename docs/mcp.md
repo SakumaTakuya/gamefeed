@@ -43,16 +43,18 @@
 | `html` | string | 必須。128 KB まで（`game-contract.md` A.2） |
 | `title` | string? | 省略時は `<title>`。前後の空白を除いて 1〜40 文字（書記素クラスタ数。`gf:verb` と同じ数え方）。省略して `<title>` が 40 文字を超えるなら `invalid`（切り詰めない。B.8） |
 | `prompt` | string? | 作者が AI に頼んだ文。1000 文字まで（書記素クラスタ数）。省略時は空 |
-| `post_id` | string? | 既存の下書きを置き換える。自分の `draft` 以外は error |
+| `post_id` | string? | 対象の投稿。自分の `draft` なら内容を置き換える。公開後の投稿は、`html` がその投稿と同じなら何も変えずにその投稿を返し、違えば error（A.7） |
 | `publish` | boolean? | `true` でそのまま公開する。既定 `false` |
 
 | 出力 | 型 | 意味 |
 | --- | --- | --- |
 | `post_id` | string | `gf:` 接頭辞なしの ULID |
-| `status` | `draft` / `limited` / `public` / `unpublished` / `restricted` | 結果の投稿状態。`unpublished` / `restricted` は同一内容の既存投稿を返したとき（A.7）だけ |
+| `status` | `draft` / `limited` / `public` / `unpublished` / `restricted` | 結果の投稿状態。`unpublished` / `restricted` は既存の投稿を返したとき（A.7）だけ |
+| `title` | string | 結果の投稿の題名。公開後の既存の投稿を返したときは、入力の `title` ではなくその投稿の題名（公開後は不変） |
 | `url` | string | `draft` なら試遊 URL、公開後はゲームページ（A.9） |
 | `warnings` | `[{code, message}]` | 静的検査の警告（`game-contract.md` A.11） |
-| `reused` | boolean | 同一内容の既存投稿を返したとき `true`（A.7） |
+
+出力は結果の投稿の状態だけから決まる。「この呼び出しで新しく作ったか」は返さない（B.3）。間に他の操作がなければ、同じ入力の呼び直しは同じ出力を返す。
 
 ### `list_my_games`
 
@@ -126,8 +128,8 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 1 トランザクション（`db.transaction`）で 2〜10 を行い、11〜12 はコミット後。
 
 1. トークンから `sub` を取り、`ensureUser`（A.5）。`users` を `FOR SHARE` し、`status` が `active` でなければ error（`banned` → 401、`post_restricted` → `post_restricted`）
-2. `post_id` があれば、自分の `draft` であることを確かめる。他人・存在しない → `not_found`。自分の `draft` 以外 → `invalid_state`
-3. `game_hash = sha256(html)` を計算する。`post_id` がなければ同一内容の確認（A.7）: 自分の投稿に同じ `game_hash` があれば、上限も静的検査も通さずにその投稿を返す（`removed` なら `invalid_state`）。下書きなら `title` / `prompt` を更新してコミットし、11 へ（8 を通らないので、`publish: true` が付いていても公開しない。A.7）
+2. `post_id` があれば、自分の投稿であることを確かめる。他人・存在しない → `not_found`
+3. `game_hash = sha256(html)` を計算し、対象の投稿を決めて A.7 の表を引く。対象は、`post_id` があればその投稿、なければ自分の投稿のうち同じ `game_hash` を持つもの。表の結果が「返す」なら、上限も静的検査も通さずにその投稿を返す（コミットして 11 へ。8 を通らないので公開しない）。`invalid_state` ならそこで終わる。「置き換え」「新規」なら 4 へ進む
 4. `post_id` がなければ、上限を見る: 自分の `draft` が 10 件 → `limit`（`reason: drafts`）。当日の新規下書きが `PUBLISH_LIMIT_NEW` / `PUBLISH_LIMIT`（`moderation.md` A.5）→ `limit`（`reason: rate`）。置き換えは数えない。「当日」は JST の 0 時で区切り、`posts.created_at` が当日の自分の行を状態を問わず数える（B.8）
 5. 静的検査（`game-contract.md` A.11）。拒否が 1 つでもあれば `rejected`（`errors[]` に `code`, `message`, `fix`, `line?`）。何も書かない
 6. `games` に `ON CONFLICT (hash) DO NOTHING` で入れる（`meta` は検査結果、`stored_at` は NULL）
@@ -138,20 +140,29 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 11. `games.stored_at` が NULL なら HTML を R2 に置き（A.8）、成功したら `stored_at` を入れる。失敗したら `storage_failed`（12 を書かない）
 12. KV `serve:<post_id>` を書く（`security.md` A.5）。`stored_at` が NULL の間は書かない。投稿ごとに直列化し、書く時点で DB に確定している状態を読み直して書く（並行する `unpublish_game` の `no` を古い `ok` で上書きしない）。失敗は 3 回までリトライし、それでも書けなければ `storage_failed`
 
-6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 の同一内容で同じ投稿に戻り、11 だけやり直す。12 が失敗したときも同じで、呼び直しは KV だけ書き直す（同一内容で戻ったときも 12 は毎回行う）。12 の失敗を成功として返さないのは、KV に無い投稿は試遊も配信もできず、呼び出し側に再試行のきっかけがないため（#95 のレビュー）。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
+6 と 11 の順（DB → R2）は、R2 にあって DB にないものを作らないため。R2 の成否は「この呼び出しが行を挿入したか」ではなく `stored_at` で判定するので、11 が失敗した後に同じ入力を呼び直すと 3 で同じ投稿に戻り、11 だけやり直す。`post_id` と `publish: true` を付けた呼び出しでも同じで、呼び直しの時点で投稿は公開済みだが内容が同じなので、3 はその投稿を返す（#97）。12 が失敗したときも同じで、呼び直しは KV だけ書き直す（同一内容で戻ったときも 12 は毎回行う）。12 の失敗を成功として返さないのは、KV に無い投稿は試遊も配信もできず、呼び出し側に再試行のきっかけがないため（#95 のレビュー）。日次の突き合わせは `stored_at` が NULL のまま 1 時間以上経った `games` を再アップロードする。
 
 ## A.7 同一内容
 
 #42 の 3。`games` は HTML のハッシュで重複排除される。
 
-| 状況 | 規則 |
+対象の投稿は、`post_id` があればその投稿。なければ、自分の投稿のうち同じ `game_hash` を持つもの（「同一内容で見つけた投稿」）。どちらもなければ対象なし。対象が決まった後の規則は下の表 1 つで、`post_id` の有無で分かれるのは `draft` の行だけ。
+
+| 対象の決め方 | 対象の状態 | `html` | 結果 |
+| --- | --- | --- | --- |
+| 対象なし | — | — | 新規。A.6 の 4 へ |
+| `post_id` | `draft` | 問わない | 置き換え。A.6 の 4 へ（上限は見ない）。`publish: true` なら公開する |
+| 同一内容で見つけた | `draft` | 同じ | 返す。新しい行を作らず、その下書きの `title` / `prompt` を更新する。省略された項目も既定値（`<title>` / 空）で上書きする。`publish: true` が付いていても公開しない（`status: draft` のまま返る。公開するには `post_id` を付けて呼ぶ）。上限と当日の件数は消費しない |
+| どちらでも | `limited` / `public` / `unpublished`（`restricted` を含む） | 同じ | 返す。何も変えない（`title` / `prompt` も。公開後は不変）。`status` と `title` はその投稿のもの。`publish: true` が付いていても何もしない（`unpublished` を再公開しない） |
+| `post_id` | `limited` / `public` / `unpublished`（`restricted` を含む） | 違う | `invalid_state`（公開後は内容を変えられない） |
+| どちらでも | `removed` | 問わない | `invalid_state`（運営が消した投稿を置き換えさせない、消した内容を再投稿させない） |
+
+| 補足 | 規則 |
 | --- | --- |
-| `post_id` なしで、自分の `draft` に同じ `game_hash` がある | 新しい行を作らず、その下書きの `title` / `prompt` を更新して同じ `post_id` を返す（`reused: true`）。省略された項目も既定値（`<title>` / 空）で上書きする。`publish: true` が付いていても公開しない（`status: draft` のまま返る。公開するには `post_id` を付けて呼ぶ）。上限と当日の件数は消費しない |
-| `post_id` なしで、自分の `limited` / `public` / `unpublished` に同じ `game_hash` がある | 新しい行を作らず、その投稿を返す（`reused: true`、`status` はその投稿の状態）。`title` / `prompt` は変えない（公開後は不変）。`publish: true` が付いていても何もしない |
-| `post_id` なしで、自分の `removed` に同じ `game_hash` がある | 別投稿として扱わない。error `invalid_state`（運営が消した内容を再投稿させない） |
-| 自分の投稿の複数が同じ `game_hash` を持つ（置き換えは同一内容を確認しないので起こりうる） | `removed` が 1 つでもあれば `invalid_state`。なければ `updated_at` が最も新しい投稿を上の行の規則で返す |
-| `post_id` あり | 同一内容の確認はしない。置き換え先が決まっている |
+| 自分の投稿の複数が同じ `game_hash` を持つ（置き換えは他の投稿との重複を見ないので起こりうる）ときの、同一内容で見つけた投稿 | `removed` が 1 つでもあれば `invalid_state`。なければ `updated_at` が最も新しい投稿 |
 | 他人の投稿と同じ `game_hash` | 気にしない（`games` の行を共有するだけ。`data-model.md` B.1） |
+
+表は「対象の状態 × `html` が同じか × `post_id` の有無」の全組み合わせを尽くす。実装は `packages/domain` の純粋関数 1 つにし、`verification/Publish.tla` の `Tx` と対応させる（G1〜G8）。
 
 同一内容の確認は上限と静的検査より先（A.6 の 3）。上限に達していても、同じ内容の再送は既存の投稿に戻るだけで新しい行を作らない。
 
@@ -187,7 +198,7 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 | --- | --- | --- | --- |
 | `rejected` | 422 | 静的検査の拒否。`errors[]` に `code`, `message`, `fix`, `line?` | `fix` のとおり直して同じ `post_id` で再投稿 |
 | `not_found` | 404 | `post_id` が自分の投稿でない（存在を漏らさない） | 作者に確認 |
-| `invalid_state` | 409 | `post_id` が `draft` でない、`removed` の内容の再投稿、`unpublish_game` に `removed` | 新しい下書きとして出す |
+| `invalid_state` | 409 | `post_id` の投稿が公開後で `html` が違う、`post_id` の投稿が `removed`、`removed` の内容の再投稿、`unpublish_game` に `removed` | 新しい下書きとして出す |
 | `limit` | 429 | `reason: drafts`（10 件）/ `rate`（当日の件数） | 作者に伝える。`drafts` なら不要な下書きを「作る」ページで消してもらう |
 | `post_restricted` | 403 | `users.status = post_restricted` | 作者に伝える（運営に連絡） |
 | `storage_failed` | 503 | R2 または KV への書き込み失敗（`publish_game`）、KV への書き込み失敗（`unpublish_game`） | 同じ入力でもう一度呼ぶ |
@@ -211,7 +222,7 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 | --- | --- | --- |
 | C1 | ツール 3 本とリソース 1 つだけが `tools/list` / `resources/list` に出る | R-mc.A3-1 |
 | C2 | `publish_game` は静的検査の拒否で何も書かない（`games` / `posts` / R2 / KV） | A.6 の 4、R-9-3 |
-| C3 | 同じ入力を 2 回呼んでも投稿は 1 つ（`reused`）。上限を消費しない | A.7、R-mc.A7-1 |
+| C3 | 同じ入力を 2 回呼んでも投稿は 1 つで、2 回目は投稿の状態と内容を変えず、同じ出力を返す（`post_id` の有無を問わない。1 回目が `storage_failed` でも）。上限を消費しない | A.7、R-mc.A7-1、`verification/Publish.tla` G1・G7・G8 |
 | C4 | `publish: true` の結果は `trust_score` で `limited` / `public`（`moderation.md` A.2） | R-mo.A2-1 |
 | C5 | 初回のツール呼び出しで `users` 行ができ、`handle` が一意 | R-mc.A5-1 |
 | C6 | 他人の `post_id` は `not_found` で、存在しない ID と同じ応答 | R-mc.A10-1 |
@@ -234,6 +245,10 @@ Better Auth の `databaseHooks.user.create.after` で作る案は、PoC で既�
 AI は同じ HTML を 2 回送ることがある（再試行、`post_id` を忘れた、会話が切れて再開した）。そのたびに下書きが増えると I11 の 10 件をすぐ食い潰す。`games` がハッシュで重複排除されるので、同じユーザーの同じ内容は同じ投稿とみなすのが自然。公開済みの投稿と同じ内容が来たときに新しい下書きを作らないのは、「同じゲームが 2 本一覧に並ぶ」状態を作らないため。別の投稿として出したいなら 1 バイトでも変える（`gf:target` でもよい）。
 
 同一内容の下書きに戻ったとき `publish: true` を無視するのは、「同じ内容の再送は既存の投稿に戻るだけ」という規則を 1 つに保つため（#91）。戻った先で公開まで進める案は、AI が `post_id` を忘れた「公開して」が 1 往復減るが、再試行のつもりの再送が公開（取り消せない不変化）を起こしうるので採らない。応答が `status: draft` なので、AI は `post_id` を付けて呼び直せる。省略された `title` / `prompt` を既定値で上書きするのは、入力の規則をそのまま適用すれば同じ呼び出しの再試行が冪等になるため。渡された項目だけ更新する案は、同じ入力でも前の状態によって結果が変わる。
+
+`post_id` の投稿が公開後でも、内容が同じなら拒まずに返す（#97）。守りたいのは「公開後は内容を変えない」（`data-model.md` I10）で、禁じるのは内容を変える要求だけでよい。以前の規則は「`post_id` の投稿が `draft` でなければ `invalid_state`」で、状態を見ていた。`publish: true` は成功すると自分の事前条件（`draft`）を消すので、11 / 12 が失敗した後の「同じ入力でもう一度呼ぶ」（A.10）が `invalid_state` になり、投稿は公開済みなのに R2 / KV に届かないまま残った（`verification/Publish_asis.cfg` の反例、4 手）。採らなかった案: (a) この場合だけを 2 の例外として足す。振る舞いは同じだが、`post_id` の有無で規則が 2 つに分かれたままになる。(b) `storage_failed` のとき AI に `post_id` を外して呼び直させる。サーバは変えずに済むが、呼び方を変える指示を AI が守ることに頼る。(c) 「同じ入力でもう一度呼ぶ」の約束をやめる。直す手段がなくなる。
+
+出力に `reused`（同一内容の既存投稿を返したら `true`）を持たない（#97）。出力のうちこれだけが結果の状態ではなく「今回の呼び出しで何が起きたか」で、同じ入力の呼び直しで `false` から `true` に変わる。サーバも web も読んでおらず、AI が次に何をするかは `status` で決まる（上の `status: draft`）。`reused` だけが手がかりだったのは、公開後の投稿に戻ったとき入力の `title` が反映されないことで、これは結果の `title` を返して分かるようにした。
 
 ## B.4 R2 に SDK なしで書く理由
 

@@ -101,7 +101,7 @@ Nov 3, 2026 に改訂、Nov 14, 2026 に実装済みの判断を反映。前提�
 | DB | Supabase 無料枠の Postgres | 無料で十分。固有機能を使っても構わない |
 | ログインと認可サーバ | Better Auth（Googleログイン）＋MCPプラグイン。アプリ自身が OAuth 2.1 の認可サーバになり、DCR・CIMD・PKCE・`.well-known` を出す（`@better-auth/mcp`）。MCPルートは MCP 公式 SDK v2 の `createMcpHandler` | Museのカスタムコネクタは DCR＋OAuth が必須（認証なしはコネクタとして登録されない）。2026-11-05 に Muse と Claude の実機で通った（#5）。切替は不要になった |
 | トークン方針 | アクセストークン24時間以上、リフレッシュトークン30日、ローテーション後も旧トークンに猶予を持たせる | 検証記事では、コールドスタート中の再試行と1時間で切れるリフレッシュトークンで401が頻発した。Vercelはコールドスタートが短いが猶予は入れる |
-| MCPツール | `publish_game`（下書き → `publish: true` で公開。同一内容は `reused`）、`list_my_games`、`unpublish_game` の3つと、SDKの約束事を返すリソース1つ | Museのカスタムコネクタはツール単位の許可設定がないので、最小・非破壊に保つ |
+| MCPツール | `publish_game`（下書き → `publish: true` で公開。同一内容は既存の投稿に戻る）、`list_my_games`、`unpublish_game` の3つと、SDKの約束事を返すリソース1つ | Museのカスタムコネクタはツール単位の許可設定がないので、最小・非破壊に保つ |
 | 投稿の入口 | サイトに「このプロンプトをMuse/Claudeに貼る」のコピーボタン1つ。接続後は「GameFeedにこのゲームを投稿して」で完了 | 手軽でないと誰も投稿しない。貼り付けフォームは受け皿として後回し（#16） |
 | ゲームHTMLの保存と配信 | Cloudflare R2＋KV＋Worker。配信オリジンは `workers.dev` の 1 つで、投稿は `/p/<post_id>/` のパスで分け、投稿ごとの CSP と `sandbox` で隔離する（#21、se#A.1）。Worker が KV の配信可否を見て R2 から読み、SDK を注入して返す | 別オリジンは自前で代替不可。ドメインを買わずに済む。無料枠で足りる |
 | 対象端末 | iOS Safari は現行と1つ前のメジャー、Android Chrome は最新。デスクトップは「動けばよい」。W4 の実機確認は iPhone 実機1台を必須 | ランはモバイル縦画面が主。Safari の iframe・音声・性能の癖は実機でしか分からない |
