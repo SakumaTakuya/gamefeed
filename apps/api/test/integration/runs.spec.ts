@@ -506,14 +506,52 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       expect((await runRows()).find((r) => r.id === again.run_id)?.fromRun).toBe(copy.run_id);
     });
 
-    it("R-run.A3-2 元のランの後で状態が変わった投稿も山札に残る（出すかは next が決める。mo#A.3）", async () => {
-      await seedPosts("c", 12);
+    it("R-run.A3-2 元のランの後で出せなくなった投稿（removed / unpublished / restricted）は落とし、残りの順と新作扱いの位置を保つ（run#A.2、#175）", async () => {
+      await seedPosts("c", 11);
+      await seedPosts("u", 1, { calibration: "uncalibrated" });
       const original = await created(await postRuns({ mode: "endless" }));
-      await db.execute(sql`update posts set base_status = 'removed' where id = 'c0'`);
+      const gone = original.deck.filter((d) => !d.is_new).slice(0, 3);
+      const [removed, unpublished, restricted] = gone.map((d) => d.post_id);
+      await db.execute(sql`update posts set base_status = 'removed' where id = ${removed}`);
+      await db.execute(sql`update posts set base_status = 'unpublished' where id = ${unpublished}`);
+      await db.execute(sql`update posts set indiv_restricted = true where id = ${restricted}`);
       const copy = await created(
         await postRuns({ mode: "endless", from_run: original.run_id }, { device: DEVICE_B }),
       );
-      expect(copy.deck).toEqual(original.deck);
+      const dead = new Set([removed, unpublished, restricted]);
+      expect(copy.deck).toEqual(original.deck.filter((d) => !dead.has(d.post_id)));
+      expect(copy.deck).toHaveLength(9);
+      expect(copy.deck.filter((d) => d.is_new)).toHaveLength(1);
+      // 元のランの山札は変わらない（計画は凍結）
+      const src = (await runRows()).find((r) => r.id === original.run_id);
+      expect(src?.deck).toEqual(original.deck.map((d) => d.post_id));
+    });
+
+    it("R-run.A3-2 公開のまま校正状態が review / invalid になった投稿も落とす（新規のランと同じ基準。sc#A.8）", async () => {
+      await seedPosts("c", 12);
+      const original = await created(await postRuns({ mode: "endless" }));
+      await db.execute(sql`update posts set calibration = 'invalid' where id = 'c0'`);
+      await db.execute(sql`update posts set calibration = 'review' where id = 'c1'`);
+      const copy = await created(
+        await postRuns({ mode: "endless", from_run: original.run_id }, { device: DEVICE_B }),
+      );
+      expect(copy.deck).toEqual(
+        original.deck.filter((d) => d.post_id !== "c0" && d.post_id !== "c1"),
+      );
+      expect(copy.deck).toHaveLength(10);
+    });
+
+    it("R-run.A3-2 山札の投稿が全部出せなくなっていたら 409 no_games で、ランを作らない", async () => {
+      await seedPosts("c", 3);
+      const original = await created(await postRuns({ mode: "endless" }));
+      await db.execute(sql`update posts set base_status = 'unpublished'`);
+      const before = (await runRows()).length;
+      await expectError(
+        await postRuns({ mode: "endless", from_run: original.run_id }, { device: DEVICE_B }),
+        409,
+        "no_games",
+      );
+      expect((await runRows()).length).toBe(before);
     });
 
     it("R-run.A3-2 無いランの from_run は 404 run_not_found で、ランを作らない", async () => {
