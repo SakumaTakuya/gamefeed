@@ -77,8 +77,8 @@ async function deckCandidates(deps: RunDeps, actorId: string): Promise<DeckCandi
 }
 
 /**
- * `from_run` の山札を写す（run#A.3）。作成時点で出せない投稿（`limited` / `public` 以外）は落とし、
- * 残りの順と新作扱いの位置は保つ。校正状態は見直さない。計画には出せる投稿だけが入る（run#A.2、#175）。
+ * `from_run` の山札を写す（run#A.3）。作成時点でランに出せない投稿は落とし、残りの順と新作扱いの位置は保つ。
+ * 基準は新規のランと同じ `post_eligibility`（sc#A.8）。計画にはランに出せる投稿だけが入る（run#A.2、#175）。
  * 元のランが無ければ null、全部落ちたら山札が空の Deck を返す。
  */
 async function copyDeck(db: Db, fromRun: string): Promise<Deck | null> {
@@ -89,11 +89,11 @@ async function copyDeck(db: Db, fromRun: string): Promise<Deck | null> {
   if (!src) return null;
   if (src.deck.length === 0) return { deck: [], newIndexes: [] };
   const rows = await db.execute<{ id: string }>(sql`
-    select id from post_status
+    select id from post_eligibility
     where id in (${sql.join(
       src.deck.map((id) => sql`${id}`),
       sql`, `,
-    )}) and status in ('limited', 'public')`);
+    )}) and eligibility in ('normal', 'new')`);
   const servable = new Set(rows.map((r) => r.id));
   const wasNew = new Set(src.newIndexes);
   const deck: string[] = [];

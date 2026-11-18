@@ -527,7 +527,7 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       expect(src?.deck).toEqual(original.deck.map((d) => d.post_id));
     });
 
-    it("R-run.A3-2 校正状態が変わった投稿（review / invalid）は落とさない（配信はされる。run#A.3）", async () => {
+    it("R-run.A3-2 公開のまま校正状態が review / invalid になった投稿も落とす（新規のランと同じ基準。sc#A.8）", async () => {
       await seedPosts("c", 12);
       const original = await created(await postRuns({ mode: "endless" }));
       await db.execute(sql`update posts set calibration = 'invalid' where id = 'c0'`);
@@ -535,7 +535,10 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       const copy = await created(
         await postRuns({ mode: "endless", from_run: original.run_id }, { device: DEVICE_B }),
       );
-      expect(copy.deck).toEqual(original.deck);
+      expect(copy.deck).toEqual(
+        original.deck.filter((d) => d.post_id !== "c0" && d.post_id !== "c1"),
+      );
+      expect(copy.deck).toHaveLength(10);
     });
 
     it("R-run.A3-2 山札の投稿が全部出せなくなっていたら 409 no_games で、ランを作らない", async () => {
