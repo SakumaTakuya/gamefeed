@@ -64,6 +64,20 @@
       "when": 1794665831923,
       "tag": "0008_runs_cursor",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1795016154422,
+      "tag": "0009_runs_plan",
+      "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1795016188481,
+      "tag": "0010_runs_plan_triggers",
+      "breakpoints": true
     }
   ]
 }

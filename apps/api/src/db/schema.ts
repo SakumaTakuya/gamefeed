@@ -12,6 +12,7 @@ import {
   bigint,
   boolean,
   check,
+  customType,
   date,
   doublePrecision,
   index,
@@ -48,7 +49,8 @@ export const sessionMode = pgEnum("session_mode", ["play", "replay"]);
 export const sessionVia = pgEnum("session_via", ["guest", "timeout", "error"]);
 export const verdict = pgEnum("verdict", ["provisional", "accepted", "rejected", "flagged"]);
 export const runMode = pgEnum("run_mode", ["endless", "daily"]);
-export const runEnd = pgEnum("run_end", ["lives", "limit", "abandoned"]);
+// error は通信エラー（読み込みの skip 3 本。run#A.6）
+export const runEnd = pgEnum("run_end", ["lives", "limit", "abandoned", "error"]);
 export const reportResolution = pgEnum("report_resolution", ["open", "upheld", "dismissed"]);
 export const moderationKind = pgEnum("moderation_kind", [
   "restrict",
@@ -241,6 +243,29 @@ export const sessions = pgTable(
 
 // ---- runs（ラン。凍結値を持つ。dm#B.2） ---------------------------------------------------
 
+/**
+ * 要素が NULL でよい integer[]。drizzle の `integer().array()` は NULL の要素を NaN に読むので、自前で読み書きする。
+ * postgres-js は環境によって、数の配列（NULL の要素は NaN か null）か文字列（`{12,NULL}`）で渡してくる。
+ * 整数の列に NaN は入らないので、NaN は NULL として読んでよい。
+ */
+const nullableIntArray = customType<{ data: (number | null)[]; driverData: unknown }>({
+  dataType: () => "integer[]",
+  toDriver: (value) => `{${value.map((v) => (v === null ? "NULL" : String(v))).join(",")}}`,
+  fromDriver: (value) => {
+    const items: unknown[] = Array.isArray(value)
+      ? value
+      : String(value)
+          .slice(1, -1)
+          .split(",")
+          .filter((x) => x !== "");
+    return items.map((x) => {
+      if (x === null || x === "NULL") return null;
+      const n = Number(x);
+      return Number.isNaN(n) ? null : n;
+    });
+  },
+});
+
 export const runs = pgTable(
   "runs",
   {
@@ -251,10 +276,19 @@ export const runs = pgTable(
     actorId: text("actor_id")
       .notNull()
       .references(() => actors.id),
-    /** 山札の post_id（エンドレスは 1〜12、デイリーは 10）。予定。実行済みの手番は sessions(run_id, turn) が正 */
+    // 計画（run#A.3）: deck / new_indexes / game_hashes / miss_below / seed。挿入後は変えられない（I13。トリガー runs_plan_immutable）
+    /** 山札の post_id（エンドレスは 1〜12、デイリーは 1〜10。作成時点で出せる投稿だけ）。記録は sessions(run_id, turn) */
     deck: text("deck").array().notNull(),
     /** 山札の中で新作扱い（is_new）にする位置。通常 1 個、校正済みが足りない間は複数、未校正がなければ空（run#A.2、#123） */
     newIndexes: integer("new_indexes").array().notNull(),
+    /** 山札の位置ごとの内容（作成時の posts.game_hash）。time_limit はこの内容の meta.duration_frames */
+    gameHashes: text("game_hashes").array().notNull(),
+    /** 山札の位置ごとの閾値（sc#A.6）。校正前・新作扱い・デイリー・分布 20 件未満の位置は NULL */
+    missBelow: nullableIntArray("miss_below").notNull(),
+    /** ランの seed。32 bit 符号なし。手番の seed はこれと手番番号から求める（run#A.3） */
+    seed: bigint("seed", { mode: "number" }).notNull(),
+    /** 記録の長さ。次に足す手番の番号（I7） */
+    settled: integer("settled").notNull().default(0),
     fromRun: text("from_run").references((): AnyPgColumn => runs.id),
     /**
      * 山札の通算位置（周回をまたいで数える）。next が次に見る位置。出せなくなった投稿を
@@ -282,6 +316,14 @@ export const runs = pgTable(
     ),
     check("runs_lives_nonnegative", sql`${t.lives} >= 0`),
     check("runs_cursor_nonnegative", sql`${t.cursor} >= 0`),
+    check(
+      "runs_plan_lengths",
+      sql`cardinality(${t.gameHashes}) = cardinality(${t.deck}) AND cardinality(${t.missBelow}) = cardinality(${t.deck}) AND array_position(${t.gameHashes}, NULL) IS NULL`,
+    ),
+    // NULL の要素は比較が UNKNOWN になるので通る（閾値なし）。値があるなら 0 以上
+    check("runs_miss_below_nonnegative", sql`0 <= ALL(${t.missBelow})`),
+    check("runs_seed_u32", sql`${t.seed} BETWEEN 0 AND 4294967295`),
+    check("runs_settled_nonnegative", sql`${t.settled} >= 0`),
     check(
       "runs_new_indexes_in_deck",
       // 配列に NULL があると ALL の比較が UNKNOWN になり CHECK を通るので、NULL の要素も拒否する
