@@ -187,9 +187,9 @@ export async function putTurn(
     const res = await fetch(`/api/runs/${encodeURIComponent(runId)}/turns/${turn}`, {
       method: "PUT",
       headers: jsonHeaders(device),
+      // keepalive は付けない。本文の上限（64 KiB）を超えると、ページが開いていても通信エラーになる。
+      // 入力ログには大きさの上限が無いので、超えた手番は何度送り直しても記録に入らなくなる
       body: JSON.stringify(body),
-      // ページを閉じる直前に送った結果も届くようにする
-      keepalive: true,
     });
     return readTurnReply(res.status, await res.json().catch(() => null));
   } catch {
