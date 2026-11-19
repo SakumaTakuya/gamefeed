@@ -3,6 +3,7 @@
 import type { GameMeta, Speed } from "@gamefeed/domain";
 import { createHost, type Host } from "@gamefeed/sdk";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
 import { diagnose } from "./diagnose.ts";
 
@@ -187,18 +188,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
   return (
     <main style={styles.stage}>
       <div style={styles.frameBox}>
-        {!dead && (
-          <iframe
-            ref={frameRef}
-            title="ゲーム"
-            src={src}
-            sandbox="allow-scripts"
-            referrerPolicy="no-referrer"
-            {...{ credentialless: "" }}
-            onLoad={onLoad}
-            style={styles.frame}
-          />
-        )}
+        {!dead && <GameFrame ref={frameRef} src={src} visible onLoad={onLoad} />}
 
         {/* Host の UI は iframe より上のレイヤに置く（se#A.3）。遊んでいる間は何もかぶせない */}
         {state.kind !== "RUNNING" && (
@@ -296,14 +286,6 @@ const styles = {
     aspectRatio: "9 / 16",
     background: "#111",
     overflow: "hidden",
-  },
-  frame: {
-    position: "absolute",
-    inset: 0,
-    width: "100%",
-    height: "100%",
-    border: 0,
-    display: "block",
   },
   overlay: {
     position: "absolute",

@@ -41,8 +41,12 @@ export interface Host {
   readonly problem: string | null;
   /** Guest から届いた生のメッセージ。 */
   receive(raw: unknown): void;
-  /** READY / ENDED から新しいセッションを準備する。送れたら true。 */
-  init(opts?: { speed?: Speed }): boolean;
+  /**
+   * READY / ENDED から新しいセッションを準備する。送れたら true。
+   * ランは計画の `time_limit` と手番の seed を渡す（run#A.3。`ready.duration` は使わない）。
+   * 省いたら `ready.duration` と `env.newSeed()`（試遊ページ）。
+   */
+  init(opts?: { speed?: Speed; timeLimit?: number; seed?: number }): boolean;
   start(): boolean;
   pause(): boolean;
   resume(): boolean;
@@ -126,14 +130,14 @@ export function createHost(env: HostEnv, onChange: () => void = () => {}): Host 
       if (state.kind !== "READY" && state.kind !== "ENDED") return false;
       const sessionId = env.newSessionId();
       const speed = opts.speed ?? 1;
-      const timeLimit = state.meta.duration;
+      const timeLimit = opts.timeLimit ?? state.meta.duration;
       if (!dispatch({ type: "init", sessionId, mode: "play", timeLimit, speed })) return false;
       inputs = [];
       problem = null;
       env.post({
         type: "init",
         session_id: sessionId,
-        seed: env.newSeed(),
+        seed: opts.seed ?? env.newSeed(),
         mode: "play",
         time_limit: timeLimit,
         speed,
