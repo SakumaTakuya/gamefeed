@@ -1,10 +1,10 @@
 /**
  * 主体（actors）の upsert と `POST /api/runs`（エンドレスの山札）の integration テスト。
- * dm#A.1 / A.3、run#A.2 / A.3 / A.10、sc#A.8。R-dm.A1-1、R-run.A3-2、R-sc.A8-1。
+ * dm#A.1 / A.3、run#A.2 / A.3 / A.10、sc#A.6 / A.8。R-dm.A1-1、R-run.A3-2、R-sc.A6-1、R-sc.A8-1。
  * Postgres と Better Auth は本物（ログインは testUtils）。乱数は seed から決まるものを渡す。
  * `device_id` の受け渡しなど仕様に未記載の点は #141 の案。
  */
-import { ENDLESS_DECK_SIZE, ENDLESS_LIVES } from "@gamefeed/domain";
+import { ENDLESS_DECK_SIZE, ENDLESS_LIVES, missBelow } from "@gamefeed/domain";
 import { testUtils } from "better-auth/plugins";
 import { sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -124,6 +124,20 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
         warnings: [],
       },
     });
+    await db.insert(s.games).values({
+      hash: "h-2",
+      size: 2048,
+      r2Key: "games/h-2.html",
+      meta: {
+        title: "避けろ！",
+        verb: "避けろ！",
+        input: "tap",
+        duration_frames: 480,
+        target: 30,
+        deterministic: true,
+        warnings: [],
+      },
+    });
   });
 
   // ---- fixtures -----------------------------------------------------------------
@@ -134,13 +148,15 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
     calibration?: Calibration;
     thumb?: boolean;
     restricted?: boolean;
+    /** 内容。既定は h-1（300 フレーム）、h-2 は 480 フレーム */
+    hash?: "h-1" | "h-2";
   }
   async function seedPost(id: string, o: PostOpts = {}): Promise<string> {
     const status = o.status ?? "public";
     await db.insert(s.posts).values({
       id,
       userId: "author",
-      gameHash: "h-1",
+      gameHash: o.hash ?? "h-1",
       title: id,
       prompt: "",
       treeId: id,
@@ -165,9 +181,25 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
   const seedPosts = (prefix: string, n: number, o: PostOpts = {}) =>
     Promise.all(Array.from({ length: n }, (_, i) => seedPost(`${prefix}${i}`, o)));
 
+  /** 分布（post_stats）を直接入れる。scores は昇順に並べて入れる（dm#A.3） */
+  async function seedStats(postId: string, scores: number[]): Promise<number[]> {
+    const sorted = [...scores].sort((a, b) => a - b);
+    await db
+      .insert(s.postStats)
+      .values({ postId, n: sorted.length, scores: sorted })
+      .onConflictDoUpdate({
+        target: s.postStats.postId,
+        set: { n: sorted.length, scores: sorted },
+      });
+    return sorted;
+  }
+  /** 0〜99 に散らした n 件の点数 */
+  const spread = (n: number, step = 7) => Array.from({ length: n }, (_, i) => (i * step) % 100);
+
   interface RunBody {
     run_id: string;
-    deck: { post_id: string; is_new: boolean }[];
+    seed: number;
+    deck: { post_id: string; is_new: boolean; miss_below: number | null; time_limit: number }[];
   }
   async function postRuns(
     body: unknown,
@@ -204,6 +236,9 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       actorId,
       deck,
       newIndexes: [],
+      gameHashes: deck.map(() => "h-1"),
+      missBelow: deck.map(() => null),
+      seed: 0,
       lives: 3,
       startedAt: new Date(NOW.getTime() - daysAgo * DAY),
     });
@@ -322,6 +357,10 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
         actorId: actor?.id,
         deck: body.deck.map((d) => d.post_id),
         newIndexes: body.deck.flatMap((d, i) => (d.is_new ? [i] : [])),
+        gameHashes: body.deck.map(() => "h-1"),
+        missBelow: body.deck.map((d) => d.miss_below),
+        seed: body.seed,
+        settled: 0,
         fromRun: null,
         lives: ENDLESS_LIVES,
         reached: null,
@@ -332,6 +371,13 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
         endedAt: null,
       });
       expect(run?.startedAt.toISOString()).toBe(NOW.toISOString());
+      // 計画: ランの seed は 32 bit 符号なし、位置ごとの time_limit は内容の duration_frames（run#A.3）
+      expect(Number.isInteger(body.seed)).toBe(true);
+      expect(body.seed).toBeGreaterThanOrEqual(0);
+      expect(body.seed).toBeLessThanOrEqual(0xffffffff);
+      expect(body.deck.map((d) => d.time_limit)).toEqual(body.deck.map(() => 300));
+      // 分布が無いので、どの位置も閾値を持たない（sc#A.6）
+      expect(body.deck.map((d) => d.miss_below)).toEqual(body.deck.map(() => null));
       // ラン作成では手番を発行しない（next が発行する。#127）
       expect(await db.select().from(s.sessions)).toEqual([]);
     });
@@ -348,6 +394,8 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       }
       expect(new Set(decks.map((d) => d.deck.map((x) => x.post_id).join(","))).size).toBe(8);
       expect(new Set(decks.map((d) => d.deck.findIndex((x) => x.is_new))).size).toBeGreaterThan(2);
+      // ランの seed もサーバの乱数から（run#A.3）
+      expect(new Set(decks.map((d) => d.seed)).size).toBe(8);
     });
 
     it("R-sc.A8-1 校正状態 4 つ × public / limited: uncalibrated は新作扱い、public の calibrated は正規枠、ほかは入らない", async () => {
@@ -360,7 +408,7 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       await seedPost("lim-rev", { status: "limited", calibration: "review" });
       await seedPost("lim-inv", { status: "limited", calibration: "invalid" });
       const { deck } = await created(await postRuns({ mode: "endless" }));
-      expect([...deck].sort((a, b) => (a.post_id < b.post_id ? -1 : 1))).toEqual([
+      expect([...deck].sort((a, b) => (a.post_id < b.post_id ? -1 : 1))).toMatchObject([
         { post_id: "lim-unc", is_new: true },
         { post_id: "pub-cal", is_new: false },
         { post_id: "pub-unc", is_new: true },
@@ -386,7 +434,7 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       await db.insert(s.treeLocks).values({ rootPostId: "locked", actionId: action?.id as number });
 
       const { deck } = await created(await postRuns({ mode: "endless" }));
-      expect(deck).toEqual([{ post_id: "ok", is_new: false }]);
+      expect(deck).toMatchObject([{ post_id: "ok", is_new: false }]);
     });
 
     it("R-sc.A8-1 校正済みが足りなければ未校正で埋め、埋めた位置も is_new。それでも足りなければ短くなる（#123）", async () => {
@@ -401,7 +449,7 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       await db.execute(sql`delete from posts where id like 'u%' and id <> 'u0'`);
       const short = await created(await postRuns({ mode: "endless" }, { device: DEVICE_B }));
       expect(short.deck).toHaveLength(6);
-      expect(short.deck.filter((d) => d.is_new)).toEqual([{ post_id: "u0", is_new: true }]);
+      expect(short.deck.filter((d) => d.is_new)).toMatchObject([{ post_id: "u0", is_new: true }]);
     });
 
     it("R-sc.A8-1 未校正が 0 本なら新作枠なしで校正済みだけの 12 本", async () => {
@@ -469,6 +517,184 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       expect(ids).toContain("c11");
       expect(ids.filter((p) => p === "c10" || p === "c12")).toHaveLength(1);
       expect(ids.filter((p) => p === "c13" || p === "c14")).toEqual([]);
+    });
+  });
+
+  // ---- 計画の凍結（run#A.3、sc#A.6、dm#A.5 I13） ------------------------------------------
+
+  describe("計画（miss_below・time_limit・game_hashes・seed）", () => {
+    it("R-sc.A6-1 miss_below は校正済み・新作扱いでない・分布 20 件以上の位置だけが持ち、作成時点の分布から求めた値", async () => {
+      // c0: 20 件（境界）、c1: 60 件、c2: 19 件（足りない）、c3: 分布の行なし、c4: 全部 0（閾値 0）
+      await seedPosts("c", 5);
+      const d0 = await seedStats("c0", spread(20));
+      const d1 = await seedStats("c1", spread(60, 13));
+      await seedStats("c2", spread(19));
+      await seedStats(
+        "c4",
+        Array.from({ length: 30 }, () => 0),
+      );
+      // u0: 未校正（新作扱い）。分布が 20 件あっても閾値を持たない
+      await seedPost("u0", { calibration: "uncalibrated" });
+      await seedStats("u0", spread(25));
+
+      const body = await created(await postRuns({ mode: "endless" }));
+      const at = (id: string) => body.deck.find((d) => d.post_id === id);
+      expect(body.deck.map((d) => d.post_id).sort()).toEqual(["c0", "c1", "c2", "c3", "c4", "u0"]);
+      expect(at("c0")).toMatchObject({ is_new: false, miss_below: missBelow(d0) });
+      expect(at("c1")).toMatchObject({ is_new: false, miss_below: missBelow(d1) });
+      expect(at("c2")).toMatchObject({ is_new: false, miss_below: null });
+      expect(at("c3")).toMatchObject({ is_new: false, miss_below: null });
+      expect(at("c4")).toMatchObject({ is_new: false, miss_below: 0 });
+      expect(at("u0")).toMatchObject({ is_new: true, miss_below: null });
+      expect(at("c0")?.miss_below).toBeGreaterThan(0);
+
+      const [run] = await runRows();
+      expect(run?.missBelow).toEqual(body.deck.map((d) => d.miss_below));
+    });
+
+    it("R-sc.A6-1 校正済みが足りず未校正で埋めた位置（is_new）も閾値を持たない", async () => {
+      await seedPosts("c", 2);
+      const d0 = await seedStats("c0", spread(40));
+      await seedPosts("u", 3, { calibration: "uncalibrated" });
+      for (const id of ["u0", "u1", "u2"]) await seedStats(id, spread(40));
+      const body = await created(await postRuns({ mode: "endless" }));
+      for (const d of body.deck) {
+        if (d.post_id === "c0")
+          expect(d).toMatchObject({ is_new: false, miss_below: missBelow(d0) });
+        else expect(d.miss_below).toBeNull();
+      }
+      expect(body.deck.filter((d) => d.is_new)).toHaveLength(3);
+    });
+
+    it("R-run.A3-2 time_limit と game_hashes は位置ごとの内容から。応答と runs の行が同じ並び", async () => {
+      await seedPosts("c", 4);
+      await seedPosts("d", 3, { hash: "h-2" });
+      await seedPost("u0", { calibration: "uncalibrated", hash: "h-2" });
+      const body = await created(await postRuns({ mode: "endless" }));
+      expect(body.deck).toHaveLength(8);
+      for (const d of body.deck) {
+        expect(d.time_limit).toBe(d.post_id.startsWith("c") ? 300 : 480);
+      }
+      const [run] = await runRows();
+      expect(run?.gameHashes).toEqual(
+        body.deck.map((d) => (d.post_id.startsWith("c") ? "h-1" : "h-2")),
+      );
+      expect(run?.deck).toEqual(body.deck.map((d) => d.post_id));
+    });
+
+    it("R-sc.A6-1 作成の後に分布が動いても、作ったランの計画は変わらない。次のランは新しい分布で求める", async () => {
+      await seedPost("c0");
+      const before = await seedStats("c0", spread(20));
+      const first = await created(await postRuns({ mode: "endless" }, { device: DEVICE_A }));
+      const after = await seedStats(
+        "c0",
+        Array.from({ length: 50 }, (_, i) => 500 + i * 3),
+      );
+      expect(missBelow(after)).not.toBe(missBelow(before));
+      const second = await created(await postRuns({ mode: "endless" }, { device: DEVICE_B }));
+      expect(first.deck[0]?.miss_below).toBe(missBelow(before));
+      expect(second.deck[0]?.miss_below).toBe(missBelow(after));
+      const rows = await runRows();
+      expect(rows.find((r) => r.id === first.run_id)?.missBelow).toEqual([missBelow(before)]);
+      expect(rows.find((r) => r.id === second.run_id)?.missBelow).toEqual([missBelow(after)]);
+    });
+
+    it("R-run.A3-2 from_run は山札と is_new を写し、miss_below は作成時点の分布で作り直す。seed は新しく引く", async () => {
+      await seedPosts("c", 3);
+      await seedPost("u0", { calibration: "uncalibrated" });
+      const before = await seedStats("c0", spread(20));
+      await seedStats("c1", spread(19));
+      const original = await created(await postRuns({ mode: "endless" }, { device: DEVICE_A }));
+
+      // 元のランの後: c0 の分布が変わり、c1 は 20 件に届き、新作枠だった u0 は校正済みになった
+      const after = await seedStats(
+        "c0",
+        Array.from({ length: 40 }, (_, i) => 1000 + i),
+      );
+      const c1 = await seedStats("c1", spread(20));
+      await db.execute(sql`update posts set calibration = 'calibrated' where id = 'u0'`);
+      await seedStats("u0", spread(30));
+
+      const copy = await created(
+        await postRuns({ mode: "endless", from_run: original.run_id }, { device: DEVICE_B }),
+      );
+      const pick = (b: RunBody, id: string) => b.deck.find((d) => d.post_id === id);
+      expect(copy.deck.map((d) => [d.post_id, d.is_new, d.time_limit])).toEqual(
+        original.deck.map((d) => [d.post_id, d.is_new, d.time_limit]),
+      );
+      expect(pick(original, "c0")?.miss_below).toBe(missBelow(before));
+      expect(pick(copy, "c0")?.miss_below).toBe(missBelow(after));
+      expect(pick(original, "c1")?.miss_below).toBeNull();
+      expect(pick(copy, "c1")?.miss_below).toBe(missBelow(c1));
+      // 写した is_new の位置は、今は校正済みでも新作扱いのまま（閾値を持たない）
+      expect(pick(copy, "u0")).toMatchObject({ is_new: true, miss_below: null });
+      expect(copy.seed).not.toBe(original.seed);
+
+      const rows = await runRows();
+      const src = rows.find((r) => r.id === original.run_id);
+      const dst = rows.find((r) => r.id === copy.run_id);
+      expect(dst?.gameHashes).toEqual(src?.gameHashes);
+      expect(dst?.missBelow).toEqual(copy.deck.map((d) => d.miss_below));
+      expect(dst?.seed).toBe(copy.seed);
+      // 元のランの計画は変わらない
+      expect(src?.missBelow).toEqual(original.deck.map((d) => d.miss_below));
+    });
+
+    it("R-run.A3-2 from_run で投稿が落ちたら、game_hashes と miss_below も残った位置に詰める", async () => {
+      await seedPosts("c", 3);
+      await seedPost("d0", { hash: "h-2" });
+      for (const id of ["c0", "c1", "c2", "d0"]) await seedStats(id, spread(30));
+      const original = await created(await postRuns({ mode: "endless" }));
+      const dropped = original.deck[1]?.post_id as string;
+      await db.execute(sql`update posts set base_status = 'unpublished' where id = ${dropped}`);
+      const copy = await created(await postRuns({ mode: "endless", from_run: original.run_id }));
+      const kept = original.deck.filter((d) => d.post_id !== dropped);
+      expect(copy.deck).toEqual(kept);
+      const run = (await runRows()).find((r) => r.id === copy.run_id);
+      expect(run?.deck).toEqual(kept.map((d) => d.post_id));
+      expect(run?.gameHashes).toEqual(kept.map((d) => (d.post_id === "d0" ? "h-2" : "h-1")));
+      expect(run?.missBelow).toEqual(kept.map((d) => d.miss_below));
+    });
+
+    it("R-run.A3-2 計画の列（deck / new_indexes / game_hashes / miss_below / seed）は挿入後に変えられない（I13）", async () => {
+      await seedPosts("c", 3);
+      await seedStats("c0", spread(30));
+      const body = await created(await postRuns({ mode: "endless" }));
+      const before = (await runRows())[0];
+      for (const set of [
+        "deck = array_append(deck, 'c0')",
+        "deck = array[deck[2], deck[1], deck[3]]",
+        "new_indexes = '{0}'",
+        "game_hashes = '{h-2,h-2,h-2}'",
+        "miss_below = '{1,2,3}'",
+        "miss_below = '{NULL,NULL,NULL}'",
+        "seed = seed + 1",
+      ]) {
+        // drizzle は DB のエラーを cause に包む
+        const err = await db
+          .execute(sql.raw(`update runs set ${set} where id = '${body.run_id}'`))
+          .then(
+            () => null,
+            (e: unknown) => (e instanceof Error && e.cause instanceof Error ? e.cause : e),
+          );
+        expect(err, set).toBeInstanceOf(Error);
+        expect((err as Error).message, set).toMatch(/I13/);
+      }
+      // 記録の長さと、同じ値の書き戻しは通る
+      await db.execute(
+        sql.raw(
+          `update runs set settled = 1, deck = deck, seed = seed where id = '${body.run_id}'`,
+        ),
+      );
+      const after = (await runRows())[0];
+      expect(after).toMatchObject({
+        deck: before?.deck,
+        newIndexes: before?.newIndexes,
+        gameHashes: before?.gameHashes,
+        missBelow: before?.missBelow,
+        seed: before?.seed,
+        settled: 1,
+      });
     });
   });
 
@@ -576,6 +802,9 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
         actorId: "a-daily",
         deck: Array.from({ length: 10 }, (_, i) => `c${i}`),
         newIndexes: [0],
+        gameHashes: Array.from({ length: 10 }, () => "h-1"),
+        missBelow: Array.from({ length: 10 }, () => null),
+        seed: 0,
         lives: 0,
       });
       await expectError(

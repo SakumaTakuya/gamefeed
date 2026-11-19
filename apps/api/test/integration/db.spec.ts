@@ -114,12 +114,17 @@ dbSuite("data-model.md データモデル", () => {
     );
   }
   async function seedRun(tx: Db, id = "r-1", extra: Partial<typeof s.runs.$inferInsert> = {}) {
+    // 計画の列は山札と同じ長さで入れる（runs_plan_lengths）
+    const deck = extra.deck ?? Array.from({ length: 12 }, () => "p-1");
     await tx.insert(s.runs).values({
       id,
       mode: "endless",
       actorId: "a-1",
-      deck: Array.from({ length: 12 }, () => "p-1"),
+      deck,
       newIndexes: [11],
+      gameHashes: deck.map(() => "h-1"),
+      missBelow: deck.map(() => null),
+      seed: 0,
       lives: 3,
       ...extra,
     });
@@ -212,7 +217,7 @@ dbSuite("data-model.md データモデル", () => {
       expect(enums.session_via).toEqual(["guest", "timeout", "error"]);
       expect(enums.verdict).toEqual(["provisional", "accepted", "rejected", "flagged"]);
       expect(enums.run_mode).toEqual(["endless", "daily"]);
-      expect(enums.run_end).toEqual(["lives", "limit", "abandoned"]);
+      expect(enums.run_end).toEqual(["lives", "limit", "abandoned", "error"]);
       expect(enums.report_resolution).toEqual(["open", "upheld", "dismissed"]);
       expect(enums.moderation_kind).toEqual([
         "restrict",
@@ -248,7 +253,6 @@ dbSuite("data-model.md データモデル", () => {
         "sessions.checkpoint",
         "sessions.opened_at",
         "sessions.user_id",
-        "runs.seed",
         "runs.game_ids",
         "runs.results",
         "runs.cleared",
@@ -819,9 +823,10 @@ dbSuite("data-model.md データモデル", () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
         await seedRun(tx);
-        await tx.execute(sql`update runs set reached = 5 where id = 'r-1'`);
+        await tx.execute(sql`update runs set reached = 5, settled = 2 where id = 'r-1'`);
+        // 閉じる更新そのものは settled を進めてよい（3 回目のミスを足して閉じる。run#A.3）
         await tx.execute(
-          sql`update runs set reached = 7, avg_deviation = 52.3, ended = 'lives', ended_at = now() where id = 'r-1'`,
+          sql`update runs set reached = 7, avg_deviation = 52.3, settled = 3, ended = 'lives', ended_at = now() where id = 'r-1'`,
         );
         for (const col of [
           "reached = 8",
@@ -829,6 +834,7 @@ dbSuite("data-model.md データモデル", () => {
           "symbols = 'x'",
           "ended = 'limit'",
           "ended_at = now() + interval '1 second'",
+          "settled = 4",
         ]) {
           await rejects(
             tx,
@@ -836,6 +842,71 @@ dbSuite("data-model.md データモデル", () => {
             /I13/,
           );
         }
+      });
+    });
+
+    it("計画の列は終了前でも変えられない。同じ値の書き戻しは通る（#156）", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        await seedRun(tx, "r-1", {
+          deck: ["p-1"],
+          newIndexes: [0],
+          missBelow: [12],
+          seed: 4294967295,
+        });
+        for (const col of [
+          "deck = '{p-2}'",
+          "new_indexes = '{}'",
+          "game_hashes = '{h-x}'",
+          "miss_below = '{13}'",
+          "miss_below = '{NULL}'",
+          "seed = 1",
+        ]) {
+          await rejects(
+            tx,
+            (t) => t.execute(sql.raw(`update runs set ${col} where id = 'r-1'`)),
+            /計画は挿入後に変更できない.*I13/,
+          );
+        }
+        await tx.execute(
+          sql`update runs set deck = '{p-1}', new_indexes = '{0}', miss_below = '{12}', seed = 4294967295, settled = 1 where id = 'r-1'`,
+        );
+        const [row] = await tx.select().from(s.runs);
+        expect(row).toMatchObject({ deck: ["p-1"], missBelow: [12], seed: 4294967295, settled: 1 });
+      });
+    });
+
+    it("計画の列は山札と同じ長さ。閾値は 0 以上か NULL、seed は 32 bit 符号なし、settled は 0 以上（#156）", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        await seedRun(tx, "r-ok", { deck: ["p-1", "p-1"], newIndexes: [], missBelow: [0, null] });
+        await rejects(
+          tx,
+          (t) => seedRun(t, "r-x", { deck: ["p-1", "p-1"], newIndexes: [], gameHashes: ["h-1"] }),
+          /runs_plan_lengths/,
+        );
+        await rejects(
+          tx,
+          (t) => seedRun(t, "r-x", { deck: ["p-1"], newIndexes: [], missBelow: [null, null] }),
+          /runs_plan_lengths/,
+        );
+        await rejects(
+          tx,
+          (t) =>
+            t.execute(
+              sql`insert into runs (id, mode, actor_id, deck, new_indexes, game_hashes, miss_below, seed, lives) values ('r-x', 'endless', 'a-1', '{p-1}', '{}', '{NULL}', '{NULL}', 0, 3)`,
+            ),
+          /runs_plan_lengths/,
+        );
+        await rejects(
+          tx,
+          (t) => seedRun(t, "r-x", { deck: ["p-1", "p-1"], newIndexes: [], missBelow: [null, -1] }),
+          /runs_miss_below_nonnegative/,
+        );
+        for (const seed of [-1, 4294967296]) {
+          await rejects(tx, (t) => seedRun(t, "r-x", { seed }), /runs_seed_u32/);
+        }
+        await rejects(tx, (t) => seedRun(t, "r-x", { settled: -1 }), /runs_settled_nonnegative/);
       });
     });
 
@@ -878,7 +949,7 @@ dbSuite("data-model.md データモデル", () => {
             tx,
             (t) =>
               t.execute(
-                sql`insert into runs (id, mode, actor_id, deck, new_indexes, lives) values ('r-x', 'endless', 'a-1', '{p-1,p-1}', ${literal}::int[], 3)`,
+                sql`insert into runs (id, mode, actor_id, deck, new_indexes, game_hashes, miss_below, seed, lives) values ('r-x', 'endless', 'a-1', '{p-1,p-1}', ${literal}::int[], '{h-1,h-1}', '{NULL,NULL}', 0, 3)`,
               ),
             /runs_new_indexes_in_deck/,
           );
