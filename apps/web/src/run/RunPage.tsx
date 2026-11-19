@@ -1,6 +1,7 @@
 // ラン画面（run#A.4〜A.11、A.14、product#4.4）。エンドレスのスタート画面から成績表まで。
 // 進行は domain のラン Host、配線は `controller.ts`。ここは `view` を描き、iframe と操作をつなぐだけ。
 import { useEffect, useReducer, useRef, useState } from "react";
+import { GameFrame } from "../game-frame.tsx";
 import { createRun, finishRun, putTurn, type RunPlan } from "./api.ts";
 import { createRunController, type RunController, type RunView } from "./controller.ts";
 import { deviceId } from "./device-id.ts";
@@ -177,20 +178,16 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
       }
     >
       {view.frames.map((f) => (
-        <iframe
+        <GameFrame
           key={f.iframe}
           ref={(el) => {
             if (el) els.current.set(f.iframe, el);
             else els.current.delete(f.iframe);
           }}
-          title="ゲーム"
           src={f.src}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-          {...{ credentialless: "" }}
+          // 先読みは不可視（run#A.4）
+          visible={f.visible}
           onLoad={() => ctl.frameLoaded(f.iframe)}
-          // 先読みは不可視（run#A.4）。大きさは表示中と同じにして、ゲームが正しい大きさで準備できるようにする
-          style={f.visible ? styles.frame : styles.hiddenFrame}
         />
       ))}
       <Layer ctl={ctl} view={view} runId={plan.runId} onAgain={onAgain} />
@@ -365,15 +362,6 @@ function Stage({ header, children }: { header: React.ReactNode; children: React.
 const HOST_SKIN = { color: "#fff", background: "#16161d" } as const;
 const HEADER_HEIGHT = "2.5rem";
 
-const frame = {
-  position: "absolute",
-  inset: 0,
-  width: "100%",
-  height: "100%",
-  border: 0,
-  display: "block",
-} satisfies React.CSSProperties;
-
 const styles = {
   stage: {
     position: "fixed",
@@ -402,8 +390,6 @@ const styles = {
     background: "#111",
     overflow: "hidden",
   },
-  frame,
-  hiddenFrame: { ...frame, visibility: "hidden", pointerEvents: "none" },
   layer: {
     ...HOST_SKIN,
     position: "absolute",
