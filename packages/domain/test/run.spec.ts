@@ -822,7 +822,8 @@ describe("ランの終わり（run#A.15 F6）", () => {
       }
     }
     expect([...seen].sort()).toEqual(["abandoned", "error", "limit", "lives"]);
-  });
+    // seed 600 通りで 4 秒あまりかかる。既定の 5 秒だと遅いランナーで時間切れになる（#187）
+  }, 60_000);
 });
 
 describe("中断と再開（run#A.9）", () => {
