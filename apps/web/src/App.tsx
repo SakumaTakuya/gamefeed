@@ -2,9 +2,11 @@
 // ラン再生は domain の状態機械を呼ぶだけの薄い殻にする。
 import { DraftPage } from "./draft/DraftPage.tsx";
 import { routeOf } from "./route.ts";
+import { RunPage } from "./run/RunPage.tsx";
 
 export function App() {
   const route = routeOf(location.pathname);
   if (route.page === "draft") return <DraftPage postId={route.postId} />;
+  if (route.page === "run") return <RunPage fromRun={route.fromRun} />;
   return <main>GameFeed</main>;
 }
