@@ -120,6 +120,22 @@ describe("1 セッションの流れ（pr#A.4, A.5）", () => {
     expect(host.state.kind).toBe("ENDED");
   });
 
+  it("R-run.A3-3 init に timeLimit と seed を渡すと、ready.duration と newSeed の代わりにその値を使う（run#A.3）", () => {
+    const { host, guest, toGuest, advance } = setup();
+    guest.ready(META);
+    expect(host.init({ speed: 1.25, timeLimit: 240, seed: 7 })).toBe(true);
+    expect(toGuest).toEqual([
+      { type: "init", session_id: "s-1", seed: 7, mode: "play", time_limit: 240, speed: 1.25 },
+    ]);
+    expect(host.state).toMatchObject({ kind: "INITED", timeLimit: 240, speed: 1.25 });
+    host.start();
+    // 240 フレームを 1.25 倍で: 3.2 秒。META.duration（180）の 2.4 秒では終わらない
+    advance(2500);
+    expect(host.state.kind).toBe("RUNNING");
+    advance(800);
+    expect(host.state).toMatchObject({ kind: "ENDED", result: { via: "guest", frames: 240 } });
+  });
+
   it("ENDED から init し直すと、新しい session_id で遊び直せる（pr#A.6）。入力ログは空に戻る", () => {
     const { host, guest, advance } = setup();
     guest.GF.onTick((f) => {
