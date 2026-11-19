@@ -6,6 +6,7 @@ import {
   type LoggedTurn,
   logState,
   outcomeOf,
+  RUN_EXPIRY_MS,
   summarizeLog,
   type TurnOutcome,
   turnAt,
@@ -141,6 +142,10 @@ describe("outcomeOf: 結果の扱い（run#A.6、A.7）", () => {
 describe("logState: 記録からランが閉じたかを決める（run#A.3。R-run.A7-2、R-run.A6-1）", () => {
   it("空の記録は開いている", () => {
     expect(logState("endless", 12, [])).toEqual({ ended: null, misses: 0, loadSkips: 0 });
+  });
+
+  it("ランの期限は作成から 60 分（run#A.3。暫定）", () => {
+    expect(RUN_EXPIRY_MS).toBe(60 * 60 * 1000);
   });
 
   it("3 回目のミスで lives", () => {

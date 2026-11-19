@@ -3,7 +3,6 @@
 // 手番の位置・周回・速度・seed は、計画とそれより前の手番の扱いから決まる。Host は自分が遊んだ手番から、
 // サーバは記録から、同じ関数で求める。記録は Host が遊んだ列の先頭部分なので（run#A.15 F10）同じ値になる。
 // 成績表は記録そのもので、サーバは Host の進行を推測しない。
-// 古い `nextTurn` / `summarizeRun`（run-record.ts）は、使う側が置き換わったら消す（#157、#158）。
 
 import {
   ENDLESS_LIVES,
@@ -19,6 +18,8 @@ import type { TurnVia } from "./turn-result.ts";
 
 /** 1 つのランで、読み込みの skip がこの本数になったら通信エラーで終わる（run#A.6。暫定） */
 export const LOAD_SKIP_LIMIT = 3;
+/** ランの期限。作成からこの時間が過ぎたランは閉じている（run#A.3、sc#A.2。暫定） */
+export const RUN_EXPIRY_MS = 60 * 60 * 1000;
 
 /**
  * 手番の扱い。

@@ -3,7 +3,6 @@
 // 結果は 4 種類の直和: 遊んだ結果（guest）・満了（timeout）・error・読み込みの skip（noload）。
 // 値を持つのは遊んだ結果だけ。遊んだ結果の述語は Host とサーバが同じ関数で確かめ、Host は満たさない
 // Guest の報告を値を直さずに捨てる。だから Host が送る結果は必ずサーバで受理される。
-// 古い `checkResult` / `entersDistribution` / `calibrationCheck`（result.ts）は、使う側が置き換わったら消す（#157）。
 
 import { CALIBRATION_MIN_PLAYS } from "./deviation.ts";
 import {

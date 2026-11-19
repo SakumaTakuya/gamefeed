@@ -46,7 +46,8 @@ export const calibration = pgEnum("calibration", [
 ]);
 export const sessionState = pgEnum("session_state", ["open", "submitted", "skipped", "abandoned"]);
 export const sessionMode = pgEnum("session_mode", ["play", "replay"]);
-export const sessionVia = pgEnum("session_via", ["guest", "timeout", "error"]);
+// 結果の種類（sc#A.1）。noload は読み込みの skip（セッションが始まらなかった）
+export const sessionVia = pgEnum("session_via", ["guest", "timeout", "error", "noload"]);
 export const verdict = pgEnum("verdict", ["provisional", "accepted", "rejected", "flagged"]);
 export const runMode = pgEnum("run_mode", ["endless", "daily"]);
 // error は通信エラー（読み込みの skip 3 本。run#A.6）
@@ -180,7 +181,7 @@ export const sessions = pgTable(
     postId: text("post_id")
       .notNull()
       .references(() => posts.id, { onDelete: "cascade" }),
-    /** 発行時の posts.game_hash を写す（dm#B.4） */
+    /** ランは計画の値、試遊は発行時の posts.game_hash を写す（dm#B.4） */
     gameHash: text("game_hash")
       .notNull()
       .references(() => games.hash),
@@ -194,9 +195,9 @@ export const sessions = pgTable(
     // seed は 32bit 符号なし（protocol#A.3 の例 2891734521）なので bigint
     seed: bigint("seed", { mode: "number" }).notNull(),
     speed: numeric("speed", { precision: 4, scale: 3 }).notNull(),
-    /** 発行時の meta.duration_frames */
+    /** 内容の meta.duration_frames */
     timeLimit: integer("time_limit").notNull(),
-    /** 発行時に凍結（sc#A.6）。校正前・新作枠・デイリー・試遊は NULL */
+    /** 計画に凍結した値（sc#A.6）。校正前・新作枠・デイリー・試遊は NULL */
     missBelow: integer("miss_below"),
     isNew: boolean("is_new").notNull().default(false),
     /** 投稿者本人のセッション。分布に入れない */
@@ -223,10 +224,10 @@ export const sessions = pgTable(
     check("sessions_via_iff_submitted", sql`(${t.via} IS NOT NULL) = (${t.state} = 'submitted')`),
     // gc#A.4: 0 ≤ score ≤ 2^31−1（integer の上限）
     check("sessions_score_nonnegative", sql`${t.score} IS NULL OR ${t.score} >= 0`),
-    // sc#A.2: 1 ≤ frames ≤ time_limit
+    // sc#A.2: 0 ≤ frames ≤ time_limit（開始直後に終わった結果も遊んだ結果。#162）
     check(
       "sessions_frames_range",
-      sql`${t.frames} IS NULL OR (${t.frames} >= 1 AND ${t.frames} <= ${t.timeLimit})`,
+      sql`${t.frames} IS NULL OR (${t.frames} >= 0 AND ${t.frames} <= ${t.timeLimit})`,
     ),
     check("sessions_time_limit_positive", sql`${t.timeLimit} >= 1`),
     // I12: speed は 5 値のどれか（run#A.8）
@@ -290,11 +291,6 @@ export const runs = pgTable(
     /** 記録の長さ。次に足す手番の番号（I7） */
     settled: integer("settled").notNull().default(0),
     fromRun: text("from_run").references((): AnyPgColumn => runs.id),
-    /**
-     * 山札の通算位置（周回をまたいで数える）。next が次に見る位置。出せなくなった投稿を
-     * 手番を消費せずに飛ばす（mo#A.3）と手番数より先に進むので、sessions からは導けない（#127）
-     */
-    cursor: integer("cursor").notNull().default(0),
     lives: integer("lives").notNull(),
     // 凍結値（I13。ended_at が入った後は変えられない。トリガー runs_frozen_after_end）
     reached: integer("reached"),
@@ -315,7 +311,6 @@ export const runs = pgTable(
       sql`(${t.mode} = 'daily') = (${t.themeId} IS NOT NULL AND ${t.date} IS NOT NULL)`,
     ),
     check("runs_lives_nonnegative", sql`${t.lives} >= 0`),
-    check("runs_cursor_nonnegative", sql`${t.cursor} >= 0`),
     check(
       "runs_plan_lengths",
       sql`cardinality(${t.gameHashes}) = cardinality(${t.deck}) AND cardinality(${t.missBelow}) = cardinality(${t.deck}) AND array_position(${t.gameHashes}, NULL) IS NULL`,
@@ -435,11 +430,16 @@ export const postStats = pgTable(
       .primaryKey()
       .references(() => posts.id),
     n: integer("n").notNull().default(0),
+    /** 失敗の数（満了と error。sc#A.4）。分布には入れず、校正の失敗率に使う（sc#A.7） */
+    failures: integer("failures").notNull().default(0),
     /** 昇順。上限 10,000 件（暫定） */
     scores: integer("scores").array().notNull().default([]),
     updatedAt: timestamp("updated_at", { withTimezone: true }).notNull().defaultNow(),
   },
-  (t) => [check("post_stats_n_matches_scores", sql`${t.n} = cardinality(${t.scores})`)],
+  (t) => [
+    check("post_stats_n_matches_scores", sql`${t.n} = cardinality(${t.scores})`),
+    check("post_stats_failures_nonnegative", sql`${t.failures} >= 0`),
+  ],
 );
 
 // ---- Phase 2（定義だけ先に置く） ------------------------------------------------------------

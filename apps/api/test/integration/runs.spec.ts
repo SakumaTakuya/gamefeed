@@ -378,7 +378,7 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       expect(body.deck.map((d) => d.time_limit)).toEqual(body.deck.map(() => 300));
       // 分布が無いので、どの位置も閾値を持たない（sc#A.6）
       expect(body.deck.map((d) => d.miss_below)).toEqual(body.deck.map(() => null));
-      // ラン作成では手番を発行しない（next が発行する。#127）
+      // ラン作成では記録に何も入らない（手番は結果を足したときに入る。run#A.3）
       expect(await db.select().from(s.sessions)).toEqual([]);
     });
 
