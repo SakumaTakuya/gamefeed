@@ -8,9 +8,20 @@ describe("routeOf", () => {
     expect(routeOf(`/draft/${id}/`)).toEqual({ page: "draft", postId: id });
   });
 
+  it("/ はエンドレスのスタート画面、/r/<run_id> はその山札で新しいランを作る（run#A.14）", () => {
+    const id = "01M782MV00TMYMTHTGG5C6KS3T";
+    expect(routeOf("/")).toEqual({ page: "run", fromRun: null });
+    expect(routeOf(`/r/${id}`)).toEqual({ page: "run", fromRun: id });
+    expect(routeOf(`/r/${id}/`)).toEqual({ page: "run", fromRun: id });
+  });
+
   it("形式外の ID や他のパスはホーム", () => {
     for (const p of [
-      "/",
+      "/r",
+      "/r/",
+      "/r/abc",
+      "/r/01M782MV00TMYMTHTGG5C6KS3T/x",
+      "/x",
       "/draft",
       "/draft/",
       "/draft/abc",
