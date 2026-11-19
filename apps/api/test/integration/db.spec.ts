@@ -214,7 +214,7 @@ dbSuite("data-model.md データモデル", () => {
       expect(enums.calibration).toEqual(["uncalibrated", "calibrated", "review", "invalid"]);
       expect(enums.session_state).toEqual(["open", "submitted", "skipped", "abandoned"]);
       expect(enums.session_mode).toEqual(["play", "replay"]);
-      expect(enums.session_via).toEqual(["guest", "timeout", "error"]);
+      expect(enums.session_via).toEqual(["guest", "timeout", "error", "noload"]);
       expect(enums.verdict).toEqual(["provisional", "accepted", "rejected", "flagged"]);
       expect(enums.run_mode).toEqual(["endless", "daily"]);
       expect(enums.run_end).toEqual(["lives", "limit", "abandoned", "error"]);
@@ -464,14 +464,14 @@ dbSuite("data-model.md データモデル", () => {
       });
     });
 
-    it("frames は 1〜time_limit（sc#A.2）", async () => {
+    it("frames は 0〜time_limit（sc#A.2。開始直後に終わった結果も遊んだ結果）", async () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
-        await tx.insert(s.sessions).values(session({ id: "s-1", frames: 1 }));
+        await tx.insert(s.sessions).values(session({ id: "s-1", frames: 0 }));
         await tx.insert(s.sessions).values(session({ id: "s-2", frames: 300 }));
         await rejects(
           tx,
-          (t) => t.insert(s.sessions).values(session({ id: "s-3", frames: 0 })),
+          (t) => t.insert(s.sessions).values(session({ id: "s-3", frames: -1 })),
           /sessions_frames_range/,
         );
         await rejects(
@@ -845,6 +845,33 @@ dbSuite("data-model.md データモデル", () => {
       });
     });
 
+    it("閉じたランには手番を足せない。開いているランには足せる（#157）", async () => {
+      await rolledBack(async (tx) => {
+        await seedAll(tx);
+        await seedRun(tx);
+        const turn = (n: number) =>
+          session({
+            id: `s-${n}`,
+            runId: "r-1",
+            turn: n,
+            state: "submitted",
+            via: "noload",
+            submittedAt: new Date(),
+          });
+        await tx.insert(s.sessions).values(turn(0));
+        await tx.execute(
+          sql`update runs set settled = 1, reached = 1, ended = 'abandoned', ended_at = now() where id = 'r-1'`,
+        );
+        await rejects(
+          tx,
+          (t) => t.insert(s.sessions).values(turn(1)),
+          /閉じたランに手番は足せない.*I13/,
+        );
+        // 試遊（run_id NULL）は関係ない
+        await tx.insert(s.sessions).values(session({ id: "s-draft" }));
+      });
+    });
+
     it("計画の列は終了前でも変えられない。同じ値の書き戻しは通る（#156）", async () => {
       await rolledBack(async (tx) => {
         await seedAll(tx);
@@ -1074,10 +1101,17 @@ dbSuite("data-model.md データモデル", () => {
           /games_size_max/,
         );
         await tx.insert(s.postStats).values({ postId: "p-1", n: 2, scores: [3, 10] });
+        const [stat] = await tx.select().from(s.postStats);
+        expect(stat?.failures, "失敗の数の既定は 0（sc#A.4）").toBe(0);
         await rejects(
           tx,
           (t) => t.insert(s.postStats).values({ postId: "p-1", n: 1, scores: [3, 10] }),
           /post_stats_n_matches_scores|unique|duplicate/,
+        );
+        await rejects(
+          tx,
+          (t) => t.execute(sql`update post_stats set failures = -1 where post_id = 'p-1'`),
+          /post_stats_failures_nonnegative/,
         );
       });
     });

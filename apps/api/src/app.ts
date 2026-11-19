@@ -18,9 +18,8 @@ import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
-import { type ReplayStorage, submitResult } from "./results.ts";
 import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
-import { deviceKindOf, issueNextTurn } from "./turns.ts";
+import { deviceKindOf, parseTurn, type ReplayStorage, settleTurn } from "./turns.ts";
 
 // REST API・Better Auth・MCP サーバはすべてこの app に載せる。
 // Vercel からは /api/index.ts 経由で、ローカルは src/dev.ts から起動する。
@@ -32,9 +31,8 @@ import { deviceKindOf, issueNextTurn } from "./turns.ts";
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
-//   /api/runs/:id/next     手番の発行（そのランの主体だけ。run#A.3）
+//   /api/runs/:id/turns/:t 手番 t の結果を記録に足す（そのランの主体だけ。run#A.3、sc#A.2）
 //   /api/runs/:id/finish   ランを閉じて成績表を凍結する（そのランの主体だけ。run#A.3、sc#A.9）
-//   /api/sessions/:id/result  結果の受理（その手番の主体だけ。sc#A.2）
 //   /api/mcp               MCP エンドポイント（POST のみ。アクセストークン必須）
 // Vercel の rewrite は vercel.json。/.well-known/* も関数に流す必要がある。
 
@@ -47,7 +45,7 @@ export interface AppDeps {
   gamesSigningSecret?: string;
   /** 入力ログの置き場（R2）。無ければ結果は受理するが入力ログは保存しない（dm#A.6） */
   replays?: ReplayStorage;
-  /** [0, 1) の乱数。山札の抽選（run#A.10）と手番の seed に使う。既定は Math.random。テストは seed から決まるものを渡す */
+  /** [0, 1) の乱数。山札の抽選（run#A.10）とランの seed に使う。既定は Math.random。テストは seed から決まるものを渡す */
   random?: () => number;
 }
 
@@ -57,9 +55,12 @@ const RUN_ERROR_STATUS = {
   no_games: 409,
 } as const satisfies Record<RunError, number>;
 
-const RESULT_ERROR_STATUS = {
-  session_not_found: 404,
-  session_not_open: 409,
+const TURN_ERROR_STATUS = {
+  run_not_found: 404,
+  invalid_request: 400,
+  out_of_order: 409,
+  run_closed: 409,
+  invalid_result: 422,
 } as const;
 
 export type AppInput = AppDeps | { missing: string[] };
@@ -79,7 +80,6 @@ export function createApp(input: AppInput): Hono {
       "/api/posts/*",
       "/api/runs",
       "/api/runs/*",
-      "/api/sessions/*",
       MCP_PATH,
     ]) {
       app.all(path, notConfigured);
@@ -132,24 +132,41 @@ export function createApp(input: AppInput): Hono {
       : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
   });
 
-  // 手番の発行（run#A.3）。ランを作った主体だけが呼べる。上限か残機切れなら {done: true}
-  app.post("/api/runs/:id/next", async (c) => {
+  // 手番 t の結果を記録に足す（run#A.3、sc#A.2）。ランを作った主体だけが送れる。
+  // 本文は記録の次の手番のときにだけ読む（記録にある手番は本文を見ずに同じ内容を返す）
+  app.put("/api/runs/:id/turns/:t", async (c) => {
     c.header("cache-control", "no-store");
     const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
     if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    const turn = parseTurn(c.req.param("t"));
+    if (turn === null) return c.json({ error: "invalid_request" }, 400);
+    const body: unknown = await c.req.json().catch(() => undefined);
+    // ログイン中なら主体に user_id を結ぶ（作者本人の結果を分布に入れないため。sc#A.4）
     const session = c.req.header("cookie")
       ? await auth.api.getSession({ headers: c.req.raw.headers })
       : null;
-    const deps = { db: publish.db, now: publish.now, random };
+    const deps = {
+      db: publish.db,
+      now: publish.now,
+      ...(input.replays ? { replays: input.replays } : {}),
+    };
     const actor = await ensureActor(deps, deviceId, session?.user.id);
-    const result = await issueNextTurn(deps, {
+    const result = await settleTurn(deps, {
       runId: c.req.param("id"),
+      turn,
       actor,
       deviceKind: deviceKindOf(c.req.header("user-agent")),
+      body,
     });
-    return result.ok
-      ? c.json(result.value)
-      : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
+    if (result.ok) return c.json(result.value);
+    const status = TURN_ERROR_STATUS[result.error];
+    if (result.error === "invalid_result") {
+      return c.json({ error: result.error, reason: result.reason }, status);
+    }
+    if (result.error === "out_of_order" || result.error === "run_closed") {
+      return c.json({ error: result.error, settled: result.settled }, status);
+    }
+    return c.json({ error: result.error }, status);
   });
 
   // ランを閉じる（run#A.3）。凍結した成績表を返す。2 回目以降も同じ値
@@ -163,32 +180,6 @@ export function createApp(input: AppInput): Hono {
     return result.ok
       ? c.json(result.value)
       : c.json({ error: result.error }, RUN_ERROR_STATUS[result.error]);
-  });
-
-  // 結果の受理（sc#A.2）。手番を発行された主体だけが送れる。拒否は「このセッションは無効」（Host は skip にする）
-  app.put("/api/sessions/:id/result", async (c) => {
-    c.header("cache-control", "no-store");
-    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
-    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
-    const body: unknown = await c.req.json().catch(() => null);
-    if (typeof body !== "object" || body === null || Array.isArray(body)) {
-      return c.json({ error: "invalid_request" }, 400);
-    }
-    const deps = {
-      db: publish.db,
-      now: publish.now,
-      ...(input.replays ? { replays: input.replays } : {}),
-    };
-    const actor = await ensureActor(deps, deviceId);
-    const result = await submitResult(deps, {
-      sessionId: c.req.param("id"),
-      actorId: actor.id,
-      body,
-    });
-    if (result.ok) return c.json(result.value);
-    return result.error === "invalid_result"
-      ? c.json({ error: result.error, reason: result.reason }, 422)
-      : c.json({ error: result.error }, RESULT_ERROR_STATUS[result.error]);
   });
 
   const mcpHandler = createMcpFetchHandler(publish);

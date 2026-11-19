@@ -1,32 +1,33 @@
 /**
  * ランを閉じる（run.md A.3、A.7）。`POST /api/runs/{id}/finish` の本体。
  *
- * 到達本数・平均偏差値・記号列は `@gamefeed/domain` の `summarizeRun` が決め（sc#A.9）、ここは `sessions` を
- * 手番順に渡して `runs` に凍結する。以後、分布が動いても値は変わらない（I13）。
- * - `runs` の行ロックで `next` と、`sessions` の行ロックで受理の途中の `result` と直列にする。閉じた後の `next` は `{done: true}`
- * - 結果のない手番（`open`）は `abandoned` にする。以後その手番の `result` は 409
- * - 2 回目以降は、凍結した値から同じ成績表を返す
- * 応答の形・2 回目の扱い・エラーは文書に無く、#147 の案で実装している。
+ * 成績表は記録そのもの（`sessions(run_id, turn)` の行）で、サーバは Host の進行を推測しない。
+ * 到達本数・平均偏差値・記号列・終わった理由は `@gamefeed/domain` の `summarizeLog` が記録から決め（sc#A.9）、
+ * ここは `runs` に凍結する。以後、分布が動いても値は変わらない（I13）。
+ * - `runs` の行ロックで、同じランへの結果の追記・ほかの `finish` と直列にする
+ * - 記録で閉じたラン（3 回目のミスなど）と期限で閉じたランは、閉じたときに凍結した値を返す
+ * - 何度呼んでも同じ成績表を返す
+ * 誰が呼べるか、応答の形、校正中の比の出し方は文書に無く、#161 の D の案で実装している。
  */
 
-import { type RecordedTurn, type RunMode, ratioOf, summarizeRun } from "@gamefeed/domain";
-import { sql } from "drizzle-orm";
+import { type RunMode, ratioOf } from "@gamefeed/domain";
 import type { Db } from "./db/client.ts";
+import { deviationOfRow, freezeRun, openRun, outcomeOfRow } from "./run-log.ts";
 
 export interface FinishDeps {
   db: Db;
   now: () => Date;
 }
 
-/** 成績表の 1 手番（run#A.11 の科目欄）。記録から捨てた手番は載らない */
+/** 成績表の 1 手番（run#A.11 の科目欄）。記録にある手番だけが載る */
 export interface ReportTurn {
   turn: number;
   post_id: string;
-  /** ok: 成立。miss: ミス。skip: 成績に入らない（「—」） */
+  /** ok: 成立。miss: ミス。skip: 成績に入らない（「—」。満了・`error`・読み込みの skip） */
   kind: "ok" | "miss" | "skip";
-  /** 受理時の偏差値。校正中・新作扱い・skip・結果のない手番は null */
+  /** 受理時の偏差値。校正中・新作扱い・skip は null */
   deviation: number | null;
-  /** 偏差値のない成立した手番の `min(1, score / target)`（校正中の表示）。それ以外は null */
+  /** 偏差値のない遊んだ結果の `min(1, score / target)`（校正中の表示）。それ以外は null */
   ratio: number | null;
   is_new: boolean;
   speed: number;
@@ -36,9 +37,9 @@ export interface ReportTurn {
 export interface RunReport {
   run_id: string;
   mode: RunMode;
-  /** lives: 残機切れ。limit: 上限まで。abandoned: 途中で終えた */
-  ended: "lives" | "limit" | "abandoned";
-  /** 到達手番数（skip を含む） */
+  /** lives: 残機切れ。limit: 次の手番が無い。error: 通信エラー。abandoned: 中断・期限・通信が届かなかった */
+  ended: "lives" | "limit" | "abandoned" | "error";
+  /** 到達手番数 = 記録の長さ（skip を含む） */
   reached: number;
   avg_deviation: number | null;
   /** デイリーの記号列。エンドレスは null */
@@ -47,30 +48,6 @@ export interface RunReport {
 }
 
 export type FinishResult = { ok: true; value: RunReport } | { ok: false; error: "run_not_found" };
-
-interface RunRow extends Record<string, unknown> {
-  mode: RunMode;
-  deck: string[];
-  cursor: number;
-  reached: number | null;
-  avg_deviation: string | null;
-  symbols: string | null;
-  ended: RunReport["ended"] | null;
-  ended_at: Date | string | null;
-}
-
-interface TurnRow extends Record<string, unknown> {
-  turn: number;
-  post_id: string;
-  state: RecordedTurn["state"];
-  via: RecordedTurn["via"];
-  score: number | null;
-  miss_below: number | null;
-  deviation: string | null;
-  is_new: boolean;
-  speed: string;
-  target: number;
-}
 
 /**
  * ランを閉じて成績表を返す。既に閉じたランは凍結した値をそのまま返す。
@@ -82,88 +59,41 @@ export async function finishRun(
 ): Promise<FinishResult> {
   return deps.db.transaction(async (txn): Promise<FinishResult> => {
     const tx = txn as unknown as Db;
+    const now = deps.now();
+    const opened = await openRun(tx, input, now);
+    if (!opened) return { ok: false, error: "run_not_found" };
+    const { log } = opened;
+    // 開いていれば、ここで閉じる（run#A.3 の閉じる条件「finish が届いた」）
+    const run =
+      opened.run.endedAt === null ? await freezeRun(tx, opened.run, log, now) : opened.run;
 
-    // next と同じ行ロック。数えている間に手番が増えない。同時の finish も直列になる
-    const [run] = await tx.execute<RunRow>(sql`
-      select mode, deck, cursor, reached, avg_deviation, symbols, ended, ended_at
-      from runs where id = ${input.runId} and actor_id = ${input.actorId}
-      for update`);
-    if (!run) return { ok: false, error: "run_not_found" };
-
-    // 手番の行もロックする。受理の途中の result（セッションの行ロックを持っている）は確定を待ってから数え、
-    // これより後の result は abandoned を見て 409 になる。待たないと、受理された結果が成績表から漏れる
-    const rows = await tx.execute<TurnRow>(sql`
-      select s.turn, s.post_id, s.state, s.via, s.score, s.miss_below, s.deviation, s.is_new, s.speed,
-             (g.meta->>'target')::int as target
-      from sessions s join games g on g.hash = s.game_hash
-      where s.run_id = ${input.runId} order by s.turn
-      for update of s`);
-    const summary = summarizeRun(
-      run.mode,
-      rows.map((t) => ({
-        state: t.state,
-        via: t.via,
-        score: t.score,
-        missBelow: t.miss_below,
-        deviation: t.deviation === null ? null : Number(t.deviation),
-        deckIndex: run.deck.indexOf(t.post_id),
-      })),
-      run.cursor,
-    );
-
-    // 手番ごとの値は sessions に凍結されている（受理時の偏差値と miss_below）。閉じた後は sessions も
-    // 変わらない（open は残らない）ので、2 回目以降も同じ並びになる
-    const turns: ReportTurn[] = [];
-    summary.turns.forEach((t, i) => {
-      const row = rows[i];
-      if (!row || t.kind === "dropped") return;
-      const played = t.kind !== "skip" && t.deviation === null && row.score !== null;
-      turns.push({
+    // 手番ごとの値は sessions に凍結されている（受理時の偏差値と miss_below）。閉じたランに手番は
+    // 足されないので、2 回目以降も同じ並びになる。比は不変の score と meta.target から毎回計算する
+    const turns = log.map((row): ReportTurn => {
+      const outcome = outcomeOfRow(row);
+      const skip = outcome === "skip" || outcome === "noload";
+      const dev = skip ? null : deviationOfRow(row);
+      return {
         turn: row.turn,
         post_id: row.post_id,
-        kind: t.kind,
-        deviation: t.deviation,
-        ratio: played ? ratioOf(row.score as number, row.target) : null,
+        kind: skip ? "skip" : outcome,
+        deviation: dev,
+        ratio: !skip && dev === null && row.score !== null ? ratioOf(row.score, row.target) : null,
         is_new: row.is_new,
         speed: Number(row.speed),
-      });
+      };
     });
-
-    const frozen = (
-      ended: RunReport["ended"],
-      reached: number,
-      avg: number | null,
-      symbols: string | null,
-    ): FinishResult => ({
+    return {
       ok: true,
       value: {
-        run_id: input.runId,
+        run_id: run.id,
         mode: run.mode,
-        ended,
-        reached,
-        avg_deviation: avg,
-        symbols,
+        ended: run.ended ?? "abandoned",
+        reached: run.reached ?? log.length,
+        avg_deviation: run.avgDeviation === null ? null : Number(run.avgDeviation),
+        symbols: run.symbols,
         turns,
       },
-    });
-
-    if (run.ended_at !== null && run.ended !== null) {
-      // 凍結済み。見出しの値は runs に保存したものを返す（I13）
-      const avg = run.avg_deviation === null ? null : Number(run.avg_deviation);
-      return frozen(run.ended, run.reached ?? 0, avg, run.symbols);
-    }
-
-    const now = deps.now().toISOString();
-    // 結果のない手番は abandoned（run#A.7）。以後の result は「open でない」ので 409
-    await tx.execute(
-      sql`update sessions set state = 'abandoned' where run_id = ${input.runId} and state = 'open'`,
-    );
-    await tx.execute(sql`
-      update runs
-      set reached = ${summary.reached},
-          avg_deviation = ${summary.avgDeviation === null ? null : summary.avgDeviation.toFixed(1)},
-          symbols = ${summary.symbols}, ended = ${summary.ended}::run_end, ended_at = ${now}::timestamptz
-      where id = ${input.runId}`);
-    return frozen(summary.ended, summary.reached, summary.avgDeviation, summary.symbols);
+    };
   });
 }

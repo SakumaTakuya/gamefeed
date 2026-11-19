@@ -6,7 +6,7 @@
 
 import { createHash, createHmac } from "node:crypto";
 import type { GameStorage } from "./publish.ts";
-import type { ReplayStorage } from "./results.ts";
+import type { ReplayStorage } from "./turns.ts";
 
 export interface R2Config {
   accessKeyId: string;
