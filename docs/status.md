@@ -3,7 +3,16 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-19）
-- **#158 は済み**（ラン Host を計画で進める、2026-11-19）。`packages/domain/src/run.ts` を書き直した。これで古いモデル（`next`、延長 3 秒、`{skipped: true}`）はどこにも残っていない。ラン本線の残りは #131（ラン画面）だけ
+- **#131 は済み**（ラン画面、2026-11-19）。`/` がエンドレスのスタート画面、`/r/<run_id>` がその山札で新しいランを作る（`apps/web/src/route.ts`）。これでラン本線（W3）のコードは揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-1〜RT-6）で、その前に本番の `db-migrate`（`0007`〜`0012`）と **#185**（本番にランに出せるゲームが 0 本。`thumb_key` を入れるジョブが無い。当面は SQL で手で入れる案）が要る
+  - `apps/web/src/run/controller.ts` の `createRunController({plan, gamesOrigin, env, onChange})` が配線。`runHostStep` の effects を実行し、起きたことをイベントで戻す。DOM に触らず、iframe への送信・タイマー・API は `RunEnv` で受ける。iframe 1 枚につき SDK の `createHost` を 1 つ持つ。進行の判断はここに置かない（domain だけ）
+  - `init` には計画の `time_limit` と `turnSeed(S, t)` を渡す（SDK の `Host.init({speed, timeLimit, seed})`。省くと試遊ページと同じく `ready.duration` と `newSeed()`）。遊んだ結果の本文（`score` / `frames` / 入力ログ）は `end` のときに手番番号で持ち、`send_result` で送る
+  - `RunPage.tsx` は `view` を描くだけ。iframe は `apps/web/src/game-frame.tsx` の `GameFrame` で描く（se#A.3 の属性はここでだけ決める。試遊ページも同じ部品。`<iframe` をほかの場所に書くと `test/game-frame.spec.tsx` が落ちる）。先読みは `visibility: hidden` で同じ大きさ。Host の層（幕間・結果・成績表）はヘッダーと同じ色で iframe の上
+  - **#184 を直した**: 試遊ページの iframe に `credentialless` が付いていなかった（React 19 は真偽値の属性として扱い、`credentialless: ""` では付かない。`true` を渡す）。2026-11-13 からの本番はこの属性なしだった。配信オリジンが Cookie を持たないので実害は無い
+  - `device_id` は `apps/web/src/run/device-id.ts`（localStorage の `gf:device_id`、128 bit を base64url 22 文字）。API の呼び出しと応答の読み方は `run/api.ts`（`readPlan` / `readTurnReply` / `readReport`。形を確かめてから使う）。表示の文字は `run/display.ts`
+  - 文書に無く、この PR で決めた点（PR 本文。#161 の E に足す候補）: ランは画面を開いた時点で作る（スタートの前。先読みのため）、ラン Host より先に iframe が死んだとき（2 回目の `load`、スキーマ違反）は表示中なら `error`・INITED の後なら `start` の時点で `error`・INITED の前なら読み込みの skip、`finish` が取れなければ「もう一度受け取る」、`/r/<run_id>` の「もう一回」は新しい山札で `/` に戻る、ページを閉じるときに `finish` は呼ばない（サーバが 60 分で閉じる）
+  - やっていないもの: 元のランの成績表を `/r/<run_id>` で見る（成績表を読む API が無い）、成績表の一覧（作者・いいね・通報・ゲームページ）、成績表の画像、音、幕間の入力アイコン（今は文字）、デイリー。Issue はまだ切っていない
+  - テスト: `apps/web/test/run-controller.spec.ts`（SDK の Guest ランタイムをメモリ上で iframe の代わりにつなぎ、サーバは「手番の順にしか足さない」だけの代役。時計はテストが進める）。実ブラウザでは 1 度も動かしていない（この環境にブラウザが無い）。PR の前に jsdom に `RunPage` を描いてスタートから成績表まで通した（コミットしていない。#184 はこれで見つけた）
+- **#158 は済み**（ラン Host を計画で進める、2026-11-19）。`packages/domain/src/run.ts` を書き直した。これで古いモデル（`next`、延長 3 秒、`{skipped: true}`）はどこにも残っていない
   - `initialRunHost({mode, missBelow})`（`missBelow` は計画の位置ごとの閾値。長さが山札の本数）が最初の 2 手番の `load` とタイマー `first`（10 秒）を返す。`request_next` / `turn_issued` / `turn_done` は無い。スロットは `prefetch` が `turnAt` で埋める（まだ決まっていない手番は成立として位置を求める）
   - **effects とイベントは手番番号でなく iframe の番号で指す**（`load {iframe, turn, index, lap, speed}`、`init` / `start` / `pause` / `resume` / `destroy {iframe}`、イベント `ready` / `inited` / `end {iframe}`）。skip で位置がずれた先読みは同じ手番番号のまま作り直すので、手番番号では古い iframe の `ready` と区別できない。ラン画面は iframe の番号で iframe を持ち、`load` の `index` から `post_id`・`time_limit`、`turn` から `turnSeed` を引く
   - `end` は `{iframe, result}`（`result` は `{via: "guest", score}` / `{via: "timeout"}` / `{via: "error"}`）。扱いは `outcomeOf` で決め、`state.outcomes` / `state.vias`（添字が手番番号）に足す。ランの終わりは `logState(outcomes)`（サーバと同じ関数）で、`state.ended` は `lives` / `limit` / `error` / `abandoned`。`error` なら成績表でなく通信エラーの画面（`finish` は呼ぶ）
@@ -66,10 +75,10 @@
 
 ## 次の一手（順番どおりに）
 1. **ランの作り直しの実装は済み**（#155 → #165 → #166 → #156 → #157 → #158）。domain の部品: `turn-result.ts`（`readTurnResult` / `checkPlayed` / `hostRealtimeOk` / `serverRealtimeOk` / `tallyOf` / `calibrationVerdict`）、`run-plan.ts`（`turnAt` / `turnSeed` / `outcomeOf` / `logState` / `summarizeLog`）、`session.ts`（`end` を述語で確かめて捨てる。テストで `end` を入れるときは `frames` ぶんの実時間が経った時刻を渡す）、`run.ts`（上）。文書に無い細目は #161 の案で実装してある
-2. **ラン本線（W3）の残り**。**次は #131**（`blocked` を外す。依存の #156 / #157 / #158 は済み。本番のマイグレーションはオーナー）。以下は作り直し前の記録（effects の名前は古い。今の形は上の #158）。依存の順に: #126 `actors` と `POST /api/runs`（済み）→ #127 `next`（済み）→ #128 `result`（済み）→ #129 `finish`（済み）→ #130 Host のスロット制御（済み）→ **#131 ラン画面**（`apps/web`。`runHostStep` の effects を iframe・`packages/sdk` の Host ブリッジ・API につなぐ。試遊ページ `apps/web/src/draft/` の iframe の扱いを使い回す。`X-Device-Id` は localStorage の 128 bit の乱数。`test:manual` なので、実機の確認はオーナー）
-3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) 本番への `0007`〜`0012` の適用（Actions の `db-migrate`。#157 が入ったので当ててよい。当てるまで本番の `POST /api/runs` は失敗する）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
+2. **ラン本線（W3）のコードは済み**（#126 → #127 → #128 → #129 → #130 → 作り直し → #131）。残りは実機確認（下の 3 の (f)(g)(h)）。実機で直す点が出たら Issue を切る
+3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) 本番への `0007`〜`0012` の適用（Actions の `db-migrate`。#157 が入ったので当ててよい。当てるまで本番の `POST /api/runs` は失敗する）(g) **#185 の判断**（本番にランに出せるゲームが無い。案 1 は確認に使う投稿に SQL で `thumb_key` を入れる）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(f) と (g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
 4. 保守: #96（日次の突き合わせジョブ）
-5. Issue を切る: 試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
+5. Issue を切る: ラン画面の残り（成績表の一覧と導線、元のランの成績表、音、入力アイコン）、試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
 6. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新
 
 `gh api "repos/SakumaTakuya/gamefeed/issues?milestone=3&state=open"` で W3 の残りを見る（W3 は `milestone: 3`）。`blocked` ラベルの Issue は本文の依存先が閉じるまで触らない。
@@ -89,7 +98,8 @@
 - Google OAuth は「テスト中」のため、テストユーザーに登録したアカウントしかログインできない。友達を招く前にオーナーが「本番環境へ公開」するか、テストユーザーに追加する。
 - se#A.4 の `Cross-Origin-Resource-Policy: cross-origin` で不透明オリジンの `<img>` が通ること（PT-5.3-5）は実ブラウザ未確認。KV の遅延（se#A.5 の 60 秒）も未実測。
 - 配信 Worker の KV の読み取りは既定のキャッシュ（60 秒）のまま。SDK の注入は文字列の最初の `<head>` に入れるので、コメントの中に `<head>` を書いたゲームでは位置がずれる（#109）。
-- 試遊ページ（`DraftPage.tsx`）とラン以降の画面は自動テストがない。実ブラウザの確認はオーナーの実機だけ（2026-11-14 に試遊 1 回）。
+- 試遊ページ（`DraftPage.tsx`）とラン画面（`RunPage.tsx`）の React の部分は自動テストがない（ラン画面の配線 `controller.ts` は unit がある）。実ブラウザの確認はオーナーの実機だけ（試遊は 2026-11-14 に 1 回、ラン画面は未実施）。
+- ラン画面で実ブラウザでしか分からないこと: `visibility: hidden` の iframe が先読みで `ready` まで進むか（特に iOS Safari）、不可視から表示に切り替えた直後の `start` で 1 フレーム目が描かれるか、iframe 3 枚のメモリ。
 - Biome の `recommended` で info が 1 件出る。実害なし。
 - `sandbox-pentest.md` の攻撃 HTML はまだ実ブラウザで 1 度も走らせていない。配信 Worker と試遊ページはできたので、`fixtures/games/pentest/index.html` に落として走らせる（Gate 0。Issue 未作成）。
 
