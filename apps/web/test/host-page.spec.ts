@@ -26,8 +26,8 @@ describe("Host のページの拡大を止める（#190）", () => {
     });
   });
 
-  it("ラン画面と試遊ページの枠がこの指定を使う", () => {
-    for (const file of ["run/RunPage.tsx", "draft/DraftPage.tsx"]) {
+  it("ラン画面・試遊ページ・ゲームページの枠がこの指定を使う", () => {
+    for (const file of ["run/RunPage.tsx", "draft/DraftPage.tsx", "game/GamePage.tsx"]) {
       const src = readFileSync(fileURLToPath(new URL(`../src/${file}`, import.meta.url)), "utf8");
       expect(src, file).toMatch(/stage: \{\s*\.\.\.HOST_STAGE,/);
     }
