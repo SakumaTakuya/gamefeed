@@ -1,11 +1,18 @@
 // ゲームページに出すものの組み立て（run#A.14、mo#A.3、product#9）。
-import type { GameMeta, SessionState } from "@gamefeed/domain";
+
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import type { GameMeta, SessionState } from "@gamefeed/domain";
 import { describe, expect, it } from "vitest";
 import { gameView, UNAVAILABLE_TEXT } from "../src/game/view.ts";
 
-const meta: GameMeta = { title: "まるタップ", verb: "タップ！", input: "tap", duration: 180, target: 10 };
+const meta: GameMeta = {
+  title: "まるタップ",
+  verb: "タップ！",
+  input: "tap",
+  duration: 180,
+  target: 10,
+};
 const session = { meta, sessionId: "s-1", mode: "play" } as const;
 const of = (state: SessionState, halted: "navigated" | "no_ready" | null = null) =>
   gameView({ state, meta: "meta" in state ? state.meta : null, halted });

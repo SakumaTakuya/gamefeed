@@ -5,7 +5,13 @@ import { createGuest, type Guest, type HostToGuest } from "@gamefeed/sdk";
 import { describe, expect, it } from "vitest";
 import { createSinglePlayer, READY_TIMEOUT_MS } from "../src/single/player.ts";
 
-const META: GameMeta = { title: "まるタップ", verb: "タップ！", input: "tap", duration: 180, target: 10 };
+const META: GameMeta = {
+  title: "まるタップ",
+  verb: "タップ！",
+  input: "tap",
+  duration: 180,
+  target: 10,
+};
 const STEP_MS = 1000 / 60;
 
 function setup(opts: { score?: number; game?: (guest: Guest) => void } = {}) {
@@ -58,7 +64,8 @@ function setup(opts: { score?: number; game?: (guest: Guest) => void } = {}) {
       clock.t = Math.min(until, clock.t + STEP_MS);
       guest?.frame();
       for (;;) {
-        const i = timers.findIndex((t) => t.at <= clock.t + 1e-6);
+        // 満了時刻より前に呼ぶと、状態機械が監視タイマーの満了を捨てる（誤差を足さない）
+        const i = timers.findIndex((t) => t.at <= clock.t);
         if (i < 0) break;
         timers.splice(i, 1)[0]?.cb();
       }
@@ -121,7 +128,7 @@ describe("createSinglePlayer（iframe 1 枚で 1 本だけ遊ぶ）", () => {
   it("ゲームが end を送らずに固まったら、監視タイマーで時間切れになる（pr#A.7）", () => {
     const { player, load, advance } = setup({
       game: (g) => {
-        // 終わりの合図を握りつぶす代わりに、描画を止めたゲームを作る: frame を呼んでも進まないよう例外なしで固める
+        // 固まったゲーム: 描画のタイミングが来ても何も進まない
         g.frame = () => {};
       },
     });
