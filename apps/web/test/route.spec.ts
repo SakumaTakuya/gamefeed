@@ -15,6 +15,12 @@ describe("routeOf", () => {
     expect(routeOf(`/r/${id}/`)).toEqual({ page: "run", fromRun: id });
   });
 
+  it("R-run.A14-1 /g/<post_id> はゲームページ（run#A.14、mc#A.9）。末尾スラッシュも受ける", () => {
+    const id = "01M782MV00TMYMTHTGG5C6KS3T";
+    expect(routeOf(`/g/${id}`)).toEqual({ page: "game", postId: id });
+    expect(routeOf(`/g/${id}/`)).toEqual({ page: "game", postId: id });
+  });
+
   it("形式外の ID や他のパスはホーム", () => {
     for (const p of [
       "/r",
@@ -28,6 +34,11 @@ describe("routeOf", () => {
       "/draft/01m782mv00tmymthtgg5c6ks3t",
       "/draft/01M782MV00TMYMTHTGG5C6KS3T/x",
       "/p/x",
+      "/g",
+      "/g/",
+      "/g/abc",
+      "/g/01m782mv00tmymthtgg5c6ks3t",
+      "/g/01M782MV00TMYMTHTGG5C6KS3T/x",
     ]) {
       expect(routeOf(p), p).toEqual({ page: "home" });
     }

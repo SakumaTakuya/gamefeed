@@ -1,11 +1,12 @@
 // 下書きの試遊ページ（mc#A.9、product#9 の 3、protocol#A.11）。
 // 作者がログインして試遊トークンを取り、配信オリジンのゲームを iframe に入れて遊ぶ。
-import type { GameMeta, Speed } from "@gamefeed/domain";
-import { createHost, type Host } from "@gamefeed/sdk";
-import { useCallback, useEffect, useReducer, useRef, useState } from "react";
+import type { Speed } from "@gamefeed/domain";
+import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
+import type { Halt } from "../single/player.ts";
+import { useSinglePlayer } from "../single/use-single-player.ts";
 import { diagnose } from "./diagnose.ts";
 
 type Access =
@@ -17,8 +18,6 @@ type Access =
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 const SPEED: Speed = 1;
-/** 最初の load から ready までに待つ時間（ms）。過ぎたら読み込み失敗として扱う */
-const READY_TIMEOUT_MS = 5000;
 
 /** 試遊トークンを取り、iframe の URL を作る（se#A.5）。 */
 async function loadAccess(postId: string): Promise<Access> {
@@ -99,73 +98,20 @@ function SignIn() {
   );
 }
 
+/** Host の側で iframe を止めた理由（作者向けの文面） */
+const HALT_TEXT: Record<Halt, string> = {
+  navigated: "ゲームが別のページへ移動しようとしたため止めました",
+  no_ready:
+    "ゲームから ready が届きませんでした。配信が 404（試遊トークンの期限切れなど）か、ゲームの読み込み中に例外が出ています",
+};
+
 function Player({ postId, src }: { postId: string; src: string }) {
-  const frameRef = useRef<HTMLIFrameElement>(null);
-  const hostRef = useRef<Host | null>(null);
-  const loads = useRef(0);
-  /** 最後に届いたメタ宣言。破棄した後も診断に載せるために持っておく */
-  const lastMeta = useRef<GameMeta | null>(null);
-  /** iframe を外した理由（ページ移動など、Host 側で見つけたもの） */
-  const [halted, setHalted] = useState<string | null>(null);
+  // iframe 1 枚の扱い（ready → init、2 回目の load で破棄、ready 待ちの時間切れ）はゲームページと同じ部品
+  const { player, frameRef } = useSinglePlayer(SPEED);
   const [copied, setCopied] = useState(false);
-  const [, rerender] = useReducer((n: number) => n + 1, 0);
 
-  // Host ブリッジは iframe 1 つにつき 1 つ。再描画や StrictMode の再実行で作り直さない
-  if (!hostRef.current) {
-    hostRef.current = createHost(
-      {
-        // Guest は不透明オリジン（sandbox）なので、宛先のオリジンは指定できない（protocol#A.1）
-        post: (m) => frameRef.current?.contentWindow?.postMessage(m, "*"),
-        now: () => performance.now(),
-        setTimer: (cb, ms) => window.setTimeout(cb, ms),
-        clearTimer: (h) => window.clearTimeout(h as number),
-        newSessionId: () => crypto.randomUUID(),
-        newSeed: () => crypto.getRandomValues(new Uint32Array(1))[0] ?? 0,
-      },
-      rerender,
-    );
-  }
-  const host = hostRef.current;
-  const state = host.state;
-
-  useEffect(() => {
-    const onMessage = (ev: MessageEvent) => {
-      // 不透明オリジンなので origin は見ず、送り元が自分の iframe であることを確かめる（protocol#A.1）
-      const frame = frameRef.current?.contentWindow;
-      if (!frame || ev.source !== frame) return;
-      host.receive(ev.data);
-    };
-    window.addEventListener("message", onMessage);
-    return () => window.removeEventListener("message", onMessage);
-  }, [host]);
-
-  // ready が届いたら、すぐ遊べるように準備しておく
-  useEffect(() => {
-    if (state.kind === "READY") host.init({ speed: SPEED });
-  }, [state.kind, host]);
-
-  const onLoad = useCallback(() => {
-    loads.current += 1;
-    // 2 回目以降の load は iframe 自身の遷移。即座に破棄する（se#A.3）
-    if (loads.current > 1) {
-      host.destroy();
-      setHalted("ゲームが別のページへ移動しようとしたため止めました");
-      return;
-    }
-    // 読み込めたのに ready が届かない（配信が 404、SDK より前の例外など）なら、待ち続けずに知らせる
-    window.setTimeout(() => {
-      if (host.state.kind !== "LOADING") return;
-      host.destroy();
-      setHalted(
-        "ゲームから ready が届きませんでした。配信が 404（試遊トークンの期限切れなど）か、ゲームの読み込み中に例外が出ています",
-      );
-    }, READY_TIMEOUT_MS);
-  }, [host]);
-
-  if ("meta" in state) lastMeta.current = state.meta;
-  const meta = lastMeta.current;
-  const result = state.kind === "ENDED" ? state.result : null;
-  const problem = halted ?? host.problem;
+  const { state, meta, result } = player;
+  const problem = player.halted ? HALT_TEXT[player.halted] : player.problem;
   const dead = state.kind === "DESTROYED";
 
   const copy = async () => {
@@ -174,7 +120,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
       meta,
       speed: SPEED,
       result,
-      inputs: host.inputs.length,
+      inputs: player.inputs.length,
       problem,
     });
     try {
@@ -189,7 +135,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
   return (
     <main style={styles.stage}>
       <div style={styles.frameBox}>
-        {!dead && <GameFrame ref={frameRef} src={src} visible onLoad={onLoad} />}
+        {!dead && <GameFrame ref={frameRef} src={src} visible onLoad={player.frameLoaded} />}
 
         {/* Host の UI は iframe より上のレイヤに置く（se#A.3）。遊んでいる間は何もかぶせない */}
         {state.kind !== "RUNNING" && (
@@ -199,7 +145,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
             )}
 
             {state.kind === "INITED" && meta && (
-              <button type="button" style={styles.start} onClick={() => host.start()}>
+              <button type="button" style={styles.start} onClick={player.start}>
                 <span style={styles.verb}>{meta.verb}</span>
                 <span style={styles.title}>{meta.title}</span>
                 <span>タップしてスタート</span>
@@ -222,11 +168,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
                       ? "ゲームから終了の合図が届きませんでした"
                       : (problem ?? "ゲームの中で例外が出ました")}
                 </p>
-                <button
-                  type="button"
-                  style={styles.button}
-                  onClick={() => host.init({ speed: SPEED })}
-                >
+                <button type="button" style={styles.button} onClick={player.again}>
                   もう一回
                 </button>
               </>

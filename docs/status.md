@@ -3,6 +3,11 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-20）
+- **ゲームページ `/g/<post_id>` の最小版が入った（#193）**。共有リンク（`publish_game` が公開後に返す `url`）を開くと、公開済みのゲームを 1 本だけ遊べる。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-8）
+  - `apps/web/src/single/player.ts` の `createSinglePlayer({env, speed?, onChange})` が iframe 1 枚の配線（`ready` → すぐ `init`、タップで `start`、「もう一回」は同じ iframe に `init`、2 回目の `load` で破棄、`load` から 5 秒 `ready` が無ければ破棄）。DOM に触らない。`use-single-player.ts` がブラウザにつなぐ。**試遊ページ（`DraftPage.tsx`）もこの部品に載せ替えた**（振る舞いは変えていない）
+  - `apps/web/src/game/GamePage.tsx` は `gameUrl(origin, postId)`（トークンなし）を `GameFrame` に入れ、`game/view.ts` の `gameView` が決めたものを描くだけ。API を 1 つも呼ばない。配信するかどうかは配信 Worker と KV が決め（se#A.5）、配信されない投稿は `ready` が届かないので、5 秒後に理由を区別しない「このゲームは開けません」になる（mo#A.3）
+  - 文書に無く、この PR で決めた点（PR 本文）: 単発プレイの結果はサーバに送らない（分布にも校正にも入らない）、結果は点数だけ（目標との比も偏差値も出さない）、結果と「開けません」の下にルートへのリンク「ほかのゲームを続けて遊ぶ」、Guest の例外の文面は出さず「エラー」だけ
+  - やっていないもの: プレビュー（サムネ・動画）、いいね、通報、作者名、ヒストグラム・「今の偏差値」・プレイ数（どれも投稿を読む API が要る。`GET /api/posts/{id}` を作れば「開けません」も 5 秒待たずに出せる）、タブを隠したときの `pause`、音（#191）、OGP（共有リンクのカード。SPA なので `index.html` のまま）。Issue はまだ切っていない
 - **本番に `0007`〜`0012` を当てた**（2026-11-20、オーナーが `db-migrate` を実行して成功）。本番の `POST /api/runs` が動く前提で進める
 - **#185 は決着**（案 1: 仕様は変えず、確認に使う投稿に `thumb_key` を手で入れる。オーナーの希望で SQL でなく Actions から）。ワークフロー `set-thumb-key`（手動実行、入力は `post_id`）が `pnpm --filter @gamefeed/api thumb:set` を呼び、`apps/api/src/manual-thumb.ts` の `setManualThumb(db, postId)` が、公開した（`limited` / `public`）投稿の `thumb_key` が NULL のときだけ目印の値 `manual` を入れる。もう入っている値は変えない。下書き・非公開・削除・制限中は入れずに失敗する。結果（状態・校正・`post_eligibility`）は実行結果の Summary に出る。**公開直後のジョブ（mc#A.9）ができたら、このワークフロー・スクリプト・`manual-thumb.ts` は消す**。`manual` は R2 のキーではないので、サムネを表示する画面（ゲームページ、W4 以降）を作るときは「`manual` は画像なし」と扱うか、先にジョブを作る
 - **#131 の残りはオーナーの実機確認だけ**: 投稿を公開 → `set-thumb-key` → `docs/manual-tests/run-tempo.md` の RT-1〜RT-3
