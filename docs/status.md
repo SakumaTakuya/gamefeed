@@ -2,6 +2,14 @@
 
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
+## 現在地（2026-11-21）
+- **公開済みの投稿を読む `GET /api/posts/{id}` が入り、ゲームページが使う（#197）**。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-8。下書きの ID がすぐ「開けません」になる、スタートの幕に `@handle`）
+  - API（`apps/api/src/post-read.ts` の `readPublicPost`）: 認証なしで、セッションも引かない。`post_status` が `limited` / `public` なら `{post_id, title, author: {handle}, published_at}`、それ以外（`draft` / `restricted` / `unpublished` / `removed`、存在しない・形式外の ID）は作者が呼んでも 404 `{error: "not_found"}`。`cache-control: no-store`。テストは `apps/api/test/integration/posts.spec.ts`（R-mo.A3-1 の直リンクの部分。一覧 API はまだ無い）
+  - web（`apps/web/src/game/api.ts`）: ゲームページは iframe の読み込みと並行して読む。`{error: "not_found"}` の 404 ならすぐ「このゲームは開けません」で iframe を外す。200 ならスタートの幕に `@handle`。それ以外（通信の失敗、5xx、形の違う応答、本文の違う 404）は「分からない」として、今までどおり iframe に任せる（API が落ちても遊べる）
+  - 文書に無く、この PR で決めた点（PR 本文）: 応答の形（上の 4 つだけ）、作者にも `draft` を返さないこと、`no-store`、API が読めないときは遊ぶのを止めないこと、作者の表示は `@handle`
+  - 応答に入れていないもの: いいね数、プレイ数、校正状態、分布（「今の偏差値」）、サムネ・プレビューの URL、メタ宣言（動詞などは iframe の `ready` から取る）。それぞれの画面を作る Issue で足す
+  - **この環境で integration テストを回せる**: `apt-get update && apt-get install -y postgresql` → `pg_ctlcluster 16 main start` → `postgres` のパスワードを `postgres` にして `gamefeed_test` を作り、`DATABASE_URL=postgresql://postgres:postgres@127.0.0.1:5432/gamefeed_test`
+
 ## 現在地（2026-11-20）
 - **侵入テスト（Gate 0）の攻撃 HTML を置いた（#195）**。`fixtures/games/pentest/` に `probe.html`（読み込みで各項目を試し、項目 ID と「遮断 / 通った」を画面に出す。43 行）・`nav.html`（iframe 自身の遷移）・`hog.html`（巨大 canvas・無限ループ・音）・`embed.html`（第三者サイトの代わり。ゲームではない）。**残りはオーナーの実機**（`docs/manual-tests/sandbox-pentest.md`。投稿のしかた・経路・行の読み方は「前提」に書いた）
   - 3 本のゲームは静的検査を通る形で書いた（禁止 API を `self['fetch']` のように文字列で引く）。`publish_game` で下書きにして試遊ページで開ける。R2 に手で置く旧手順はやめた（R2・KV・DB の 3 つを合わせることになるため）
