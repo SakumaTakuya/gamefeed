@@ -2,6 +2,7 @@
 // 進行は domain のラン Host、配線は `controller.ts`。ここは `view` を描き、iframe と操作をつなぐだけ。
 import { useEffect, useReducer, useRef, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
+import { HOST_STAGE } from "../host-stage.ts";
 import { createRun, finishRun, putTurn, type RunPlan } from "./api.ts";
 import { createRunController, type RunController, type RunView } from "./controller.ts";
 import { deviceId } from "./device-id.ts";
@@ -364,6 +365,7 @@ const HEADER_HEIGHT = "2.5rem";
 
 const styles = {
   stage: {
+    ...HOST_STAGE,
     position: "fixed",
     inset: 0,
     display: "grid",

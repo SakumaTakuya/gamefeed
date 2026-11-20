@@ -5,6 +5,7 @@ import { createHost, type Host } from "@gamefeed/sdk";
 import { useCallback, useEffect, useReducer, useRef, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
+import { HOST_STAGE } from "../host-stage.ts";
 import { diagnose } from "./diagnose.ts";
 
 type Access =
@@ -272,6 +273,7 @@ const styles = {
     cursor: "pointer",
   },
   stage: {
+    ...HOST_STAGE,
     position: "fixed",
     inset: 0,
     display: "grid",
