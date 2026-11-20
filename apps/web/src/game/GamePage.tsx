@@ -1,9 +1,12 @@
 // ゲームページ（run#A.14、product#3 の 5）。公開済みのゲームを 1 本だけ遊ぶ。ランを経由しない。
-// 配信するかどうかは配信オリジンが決める（se#A.5）。ここは投稿の状態を調べない。
+// 配信するかどうかは配信オリジンが決める（se#A.5）。`GET /api/posts/{id}` は、見られない投稿をすぐ
+// 「開けません」にすることと作者名のために読む。読めなくても遊ぶのは止めない。
+import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
+import { fetchPost, type PostLookup } from "./api.ts";
 import { gameView, STOPPED_TEXT, UNAVAILABLE_TEXT } from "./view.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
@@ -16,12 +19,24 @@ export function GamePage({ postId }: { postId: string }) {
       </main>
     );
   }
-  return <Player src={gameUrl(GAMES_ORIGIN, postId)} />;
+  return <Player postId={postId} src={gameUrl(GAMES_ORIGIN, postId)} />;
 }
 
-function Player({ src }: { src: string }) {
+function Player({ postId, src }: { postId: string; src: string }) {
   const { player, frameRef } = useSinglePlayer();
-  const view = gameView(player);
+  // iframe の読み込みと並行して投稿を読む
+  const [lookup, setLookup] = useState<PostLookup | null>(null);
+  useEffect(() => {
+    let alive = true;
+    void fetchPost(postId).then((r) => {
+      if (alive) setLookup(r);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [postId]);
+
+  const view = gameView({ state: player.state, meta: player.meta, halted: player.halted, lookup });
   const dead = view.kind === "unavailable" || view.kind === "stopped";
 
   return (
@@ -38,6 +53,7 @@ function Player({ src }: { src: string }) {
               <button type="button" style={styles.start} onClick={player.start}>
                 <span style={styles.verb}>{view.verb}</span>
                 <span style={styles.title}>{view.title}</span>
+                {view.author && <span style={styles.title}>@{view.author}</span>}
                 <span>タップしてスタート</span>
               </button>
             )}
