@@ -2,6 +2,11 @@
 
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
+## 現在地（2026-11-20）
+- **本番に `0007`〜`0012` を当てた**（2026-11-20、オーナーが `db-migrate` を実行して成功）。本番の `POST /api/runs` が動く前提で進める
+- **#185 は決着**（案 1: 仕様は変えず、確認に使う投稿に `thumb_key` を手で入れる。オーナーの希望で SQL でなく Actions から）。ワークフロー `set-thumb-key`（手動実行、入力は `post_id`）が `pnpm --filter @gamefeed/api thumb:set` を呼び、`apps/api/src/manual-thumb.ts` の `setManualThumb(db, postId)` が、公開した（`limited` / `public`）投稿の `thumb_key` が NULL のときだけ目印の値 `manual` を入れる。もう入っている値は変えない。下書き・非公開・削除・制限中は入れずに失敗する。結果（状態・校正・`post_eligibility`）は実行結果の Summary に出る。**公開直後のジョブ（mc#A.9）ができたら、このワークフロー・スクリプト・`manual-thumb.ts` は消す**。`manual` は R2 のキーではないので、サムネを表示する画面（ゲームページ、W4 以降）を作るときは「`manual` は画像なし」と扱うか、先にジョブを作る
+- **#131 の残りはオーナーの実機確認だけ**: 投稿を公開 → `set-thumb-key` → `docs/manual-tests/run-tempo.md` の RT-1〜RT-3
+
 ## 現在地（2026-11-19）
 - **#131 は済み**（ラン画面、2026-11-19）。`/` がエンドレスのスタート画面、`/r/<run_id>` がその山札で新しいランを作る（`apps/web/src/route.ts`）。これでラン本線（W3）のコードは揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-1〜RT-6）で、その前に本番の `db-migrate`（`0007`〜`0012`）と **#185**（本番にランに出せるゲームが 0 本。`thumb_key` を入れるジョブが無い。当面は SQL で手で入れる案）が要る
   - `apps/web/src/run/controller.ts` の `createRunController({plan, gamesOrigin, env, onChange})` が配線。`runHostStep` の effects を実行し、起きたことをイベントで戻す。DOM に触らず、iframe への送信・タイマー・API は `RunEnv` で受ける。iframe 1 枚につき SDK の `createHost` を 1 つ持つ。進行の判断はここに置かない（domain だけ）
@@ -76,7 +81,7 @@
 ## 次の一手（順番どおりに）
 1. **ランの作り直しの実装は済み**（#155 → #165 → #166 → #156 → #157 → #158）。domain の部品: `turn-result.ts`（`readTurnResult` / `checkPlayed` / `hostRealtimeOk` / `serverRealtimeOk` / `tallyOf` / `calibrationVerdict`）、`run-plan.ts`（`turnAt` / `turnSeed` / `outcomeOf` / `logState` / `summarizeLog`）、`session.ts`（`end` を述語で確かめて捨てる。テストで `end` を入れるときは `frames` ぶんの実時間が経った時刻を渡す）、`run.ts`（上）。文書に無い細目は #161 の案で実装してある
 2. **ラン本線（W3）のコードは済み**（#126 → #127 → #128 → #129 → #130 → 作り直し → #131）。残りは実機確認（下の 3 の (f)(g)(h)）。実機で直す点が出たら Issue を切る
-3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) 本番への `0007`〜`0012` の適用（Actions の `db-migrate`。#157 が入ったので当ててよい。当てるまで本番の `POST /api/runs` は失敗する）(g) **#185 の判断**（本番にランに出せるゲームが無い。案 1 は確認に使う投稿に SQL で `thumb_key` を入れる）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(f) と (g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
+3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) （本番への `0007`〜`0012` の適用は 2026-11-20 に済み）(g) **確認に使う投稿を公開して、Actions の `set-thumb-key` に `post_id` を入れて実行**（#185）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
 4. 保守: #96（日次の突き合わせジョブ）
 5. Issue を切る: ラン画面の残り（成績表の一覧と導線、元のランの成績表、音、入力アイコン）、試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
 6. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新
