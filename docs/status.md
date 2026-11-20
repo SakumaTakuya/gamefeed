@@ -3,6 +3,13 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-20）
+- **侵入テスト（Gate 0）の攻撃 HTML を置いた（#195）**。`fixtures/games/pentest/` に `probe.html`（読み込みで各項目を試し、項目 ID と「遮断 / 通った」を画面に出す。43 行）・`nav.html`（iframe 自身の遷移）・`hog.html`（巨大 canvas・無限ループ・音）・`embed.html`（第三者サイトの代わり。ゲームではない）。**残りはオーナーの実機**（`docs/manual-tests/sandbox-pentest.md`。投稿のしかた・経路・行の読み方は「前提」に書いた）
+  - 3 本のゲームは静的検査を通る形で書いた（禁止 API を `self['fetch']` のように文字列で引く）。`publish_game` で下書きにして試遊ページで開ける。R2 に手で置く旧手順はやめた（R2・KV・DB の 3 つを合わせることになるため）
+  - `probe.html` の判定: 外部への要求は CSP が無くても CORS や 404 で失敗するので、失敗では遮断と数えず、`securitypolicyviolation` のイベントが出たときだけ遮断にする（同じ指令の項目は 1 つずつ順に試す）。全部遮断なら Host に 1 点（`gf:target` も 1）、通った行か保留があれば 0 点を報告する。試遊ページの「目標 1 点を達成」が合格の目印。`window.open`・pointer lock・全画面・ダウンロードは操作の直後でないとブラウザが断るので、ゲームの画面への最初のタップで試す（PR #196 の Codex P2。タップしなければ 0 点のまま）
+  - テストは `apps/api/test/pentest-fixtures.spec.ts`（静的検査を通る、構文として読める、出す項目 ID が手順書の表にある、対応表で `probe.html` とした ID をフィクスチャが持つ）。**実ブラウザでは 1 度も動かしていない**（この環境にブラウザが無い。jsdom で `probe.html` を動かして、保護の無い環境では「通った」が並ぶことだけ見た。コミットしていない）。実機で誤判定が出たらフィクスチャを直す
+  - 走らせられない項目: PT-5.3-5 / 5.3-6 / 5.4-15（`assets/` と `/lib/` の配信が未実装）。gc#A.5 の「実行時の差し替え」を SDK に入れるときは、`probe.html` が文字列で引いた API も差し替え後のものになる（遮断が増える方向。フィクスチャは直さなくてよいが、行の文面は変わる）
+  - 手順書の PT-5.4-1 から `top.frames.length` を外した（別オリジンからも読める決まりで、漏えいではない）。PT-5.2-10（ダウンロード）を足した
+- **RT-8（ゲームページ）はオーナーが本番で遊べた**（2026-11-20、#193 のコメント）。R-run.A14-1 は green。手順 3〜5（「もう一回」、ルートへのリンク、下書きの ID で「開けません」）を見たかは聞いていない（R-run.A14-2 は partial のまま）
 - **ゲームページ `/g/<post_id>` の最小版が入った（#193）**。共有リンク（`publish_game` が公開後に返す `url`）を開くと、公開済みのゲームを 1 本だけ遊べる。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-8）
   - `apps/web/src/single/player.ts` の `createSinglePlayer({env, speed?, onChange})` が iframe 1 枚の配線（`ready` → すぐ `init`、タップで `start`、「もう一回」は同じ iframe に `init`、2 回目の `load` で破棄、`load` から 5 秒 `ready` が無ければ破棄）。DOM に触らない。`use-single-player.ts` がブラウザにつなぐ。**試遊ページ（`DraftPage.tsx`）もこの部品に載せ替えた**（振る舞いは変えていない）
   - `apps/web/src/game/GamePage.tsx` は `gameUrl(origin, postId)`（トークンなし）を `GameFrame` に入れ、`game/view.ts` の `gameView` が決めたものを描くだけ。API を 1 つも呼ばない。配信するかどうかは配信 Worker と KV が決め（se#A.5）、配信されない投稿は `ready` が届かないので、5 秒後に理由を区別しない「このゲームは開けません」になる（mo#A.3）
@@ -86,9 +93,9 @@
 ## 次の一手（順番どおりに）
 1. **ランの作り直しの実装は済み**（#155 → #165 → #166 → #156 → #157 → #158）。domain の部品: `turn-result.ts`（`readTurnResult` / `checkPlayed` / `hostRealtimeOk` / `serverRealtimeOk` / `tallyOf` / `calibrationVerdict`）、`run-plan.ts`（`turnAt` / `turnSeed` / `outcomeOf` / `logState` / `summarizeLog`）、`session.ts`（`end` を述語で確かめて捨てる。テストで `end` を入れるときは `frames` ぶんの実時間が経った時刻を渡す）、`run.ts`（上）。文書に無い細目は #161 の案で実装してある
 2. **ラン本線（W3）のコードは済み**（#126 → #127 → #128 → #129 → #130 → 作り直し → #131）。残りは実機確認（下の 3 の (f)(g)(h)）。実機で直す点が出たら Issue を切る
-3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) （本番への `0007`〜`0012` の適用は 2026-11-20 に済み）(g) **確認に使う投稿を公開して、Actions の `set-thumb-key` に `post_id` を入れて実行**（#185）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
+3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) （本番への `0007`〜`0012` の適用は 2026-11-20 に済み）(g) **確認に使う投稿を公開して、Actions の `set-thumb-key` に `post_id` を入れて実行**（#185）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(i) **侵入テスト（Gate 0、#195）**: `fixtures/games/pentest/` の 3 本を Muse / Claude から下書きとして投稿し、`docs/manual-tests/sandbox-pentest.md` の経路 1（試遊ページ）→ 公開して経路 2・3 → `unpublish_game`。結果を記録欄と #195 に。plan では W3 末（11/22）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
 4. 保守: #96（日次の突き合わせジョブ）
-5. Issue を切る: ラン画面の残り（成績表の一覧と導線、元のランの成績表、音、入力アイコン）、試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネスと侵入テスト（Gate 0）、`requirements.md` の棚卸し
+5. Issue を切る: ラン画面の残り（成績表の一覧と導線、元のランの成績表、音、入力アイコン）、試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネス（`probe.html` を Playwright で開いて「通った」が無いことを見る、を最初の 1 本に）、`requirements.md` の棚卸し
 6. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新
 
 `gh api "repos/SakumaTakuya/gamefeed/issues?milestone=3&state=open"` で W3 の残りを見る（W3 は `milestone: 3`）。`blocked` ラベルの Issue は本文の依存先が閉じるまで触らない。
@@ -111,7 +118,7 @@
 - 試遊ページ（`DraftPage.tsx`）とラン画面（`RunPage.tsx`）の React の部分は自動テストがない（ラン画面の配線 `controller.ts` は unit がある）。実ブラウザの確認はオーナーの実機だけ（試遊は 2026-11-14 に 1 回、ラン画面は未実施）。
 - ラン画面で実ブラウザでしか分からないこと: `visibility: hidden` の iframe が先読みで `ready` まで進むか（特に iOS Safari）、不可視から表示に切り替えた直後の `start` で 1 フレーム目が描かれるか、iframe 3 枚のメモリ。
 - Biome の `recommended` で info が 1 件出る。実害なし。
-- `sandbox-pentest.md` の攻撃 HTML はまだ実ブラウザで 1 度も走らせていない。配信 Worker と試遊ページはできたので、`fixtures/games/pentest/index.html` に落として走らせる（Gate 0。Issue 未作成）。
+- `fixtures/games/pentest/` の攻撃 HTML はまだ実ブラウザで 1 度も走らせていない（#195。オーナーの実機待ち）。`probe.html` の判定のうち実機で確かめたいもの: `securitypolicyviolation` が Safari でも指令ごとに出るか、sandbox の中の `alert` がすぐ返るか、1 px の `<object>` と背景画像が読み込みを試みるか（試みなければ「CSP 違反なし」で「通った」と出る。誤判定なら直す）。
 
 ## オーナーに聞かないと決められないこと
 - iOS Safari で Guest の無限ループが Host を止める問題の実機確認（run#未解決）。侵入テストと一緒に
