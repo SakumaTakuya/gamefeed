@@ -8,9 +8,10 @@
 - `main` がマージされて Vercel 本番（`https://gamefeed-seven.vercel.app`）にデプロイ済み。ビルドに `VITE_GAMES_ORIGIN` が入っている（試遊ページと同じ値）
 - Supabase 本番にマイグレーション `0007`〜`0012` が当たっている（Actions の `db-migrate`）。当たっていないと `POST /api/runs` が失敗し、「ランを作れませんでした（500）」が出る
 - **ランに出せるゲームが 1 本以上ある**（#185）。今は公開直後のジョブ（mc#A.9）が無く、公開しただけでは `thumb_key` が NULL のままで新作枠に入らない。確認に使う投稿ごとに次を行う
-  1. Muse / Claude から `publish_game`（`post_id` つき）で下書きを公開する
-  2. Supabase の SQL エディタで `update posts set thumb_key = 'manual' where id = '<post_id>';`
-  3. `select id, eligibility from post_eligibility where id = '<post_id>';` が `new` を返すことを確かめる
+  1. 試遊ページで遊んで、固まらずに終わることを確かめる（ジョブが見るはずのことを人が見る）
+  2. Muse / Claude から `publish_game`（`post_id` つき）で下書きを公開する
+  3. GitHub の Actions → `set-thumb-key` → Run workflow に `post_id` を入れて実行する
+  4. 実行結果のページ（Summary）に「ランへの出題: new」と出ることを確かめる。下書きのままなら「公開していない投稿です」で失敗する
 - 幕間と先読みを見るには 3 本以上あるとよい。1 本でもランは回る（山札 1 本で、手番ごとに周回が進んで速くなる）
 - 校正済みが 0 本の間は、どの手番もミスにならない（run#B.10）。ランは 50 手番の上限か、中断で終わる。残機切れ（RT-4）は校正済みのゲームができてから
 

@@ -1,0 +1,28 @@
+name: set-thumb-key
+# 公開した投稿の thumb_key に目印を入れて、ランの新作枠に入れる（#185）。手動実行のみ。
+# 公開直後のジョブ（docs/mcp.md A.9）ができるまでの代わり。ジョブができたらこのワークフローは消す。
+# 入れるのは、試遊して固まらないと確かめた投稿だけ。もう thumb_key が入っている投稿は変えない。
+# GitHub Secrets `SUPABASE_DIRECT_URL` を使う（db-migrate と同じ）。
+on:
+  workflow_dispatch:
+    inputs:
+      post_id:
+        description: 投稿 ID（ULID 26 文字。publish_game や list_my_games が返す post_id）
+        required: true
+        type: string
+jobs:
+  set:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm --filter @gamefeed/api thumb:set
+        env:
+          DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
+          # 入力は環境変数で渡す（コマンドの文字列に埋め込まない）
+          POST_ID: ${{ inputs.post_id }}
