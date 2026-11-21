@@ -376,6 +376,8 @@ export const reports = pgTable(
       .notNull()
       .references(() => actors.id),
     category: text("category").notNull(),
+    /** 任意、REPORT_COMMENT_MAX 文字まで（mo#A.4）。運営だけが読む */
+    comment: text("comment"),
     // mo#A.5: 重みは小数を含む。匿名の主体は受理時に 0（I14。トリガー reports_anonymous_weight_zero）
     weight: doublePrecision("weight").notNull(),
     resolution: reportResolution("resolution").notNull().default("open"),
