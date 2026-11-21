@@ -21,6 +21,15 @@ describe("routeOf", () => {
     expect(routeOf(`/g/${id}/`)).toEqual({ page: "game", postId: id });
   });
 
+  it("R-mo.A7-3 /mod/restore/<post_id> は運営の復帰ページ（mo#A.7）。末尾スラッシュも受ける。形式外の ID はホーム", () => {
+    const id = "01M782MV00TMYMTHTGG5C6KS3T";
+    expect(routeOf(`/mod/restore/${id}`)).toEqual({ page: "restore", postId: id });
+    expect(routeOf(`/mod/restore/${id}/`)).toEqual({ page: "restore", postId: id });
+    for (const p of ["/mod", "/mod/restore", "/mod/restore/", "/mod/restore/abc", `/mod/${id}`]) {
+      expect(routeOf(p)).toEqual({ page: "home" });
+    }
+  });
+
   it("形式外の ID や他のパスはホーム", () => {
     for (const p of [
       "/r",

@@ -3,12 +3,19 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-21）
+- **運営の最小ページ `/mod/restore/<post_id>` が入った（#212）**。`restore`（#209）をスマホから押せる。**残りはオーナーの作業**: Vercel の Production に `MODERATOR_IDS` を入れて再デプロイ → 実機確認（`docs/manual-tests/run-tempo.md` の RT-11）
+  - `apps/web/src/mod/RestorePage.tsx`: 理由の入力欄（必須）と「制限を解く」。押すと `POST /api/moderation/posts/{id}/restore`。401 なら「Google でログイン」（終わるとこのページに戻る）、403 は「このアカウントでは使えません」。解けたら復帰後の投稿状態と退けた通報の数、ゲームページへのリンク
+  - 応答の読み方と文面は `mod/restore.ts`（`readRestoreReply` / `restoreText`）。`served: false` は「配信にはまだ反映されていません。もう一度押してください」、`restricted` は「ツリー制限が残っている」、`unpublished` は「作者が再公開するまで見えません」
+  - ページは誰でも開ける（リンクはどこにも置いていない）。操作を通すかは API が決める（se#A.8）。`post_id` は共有リンク `/g/<post_id>` か `list_my_games` から取る。制限中の投稿を探す画面（キュー）は W6
+  - `signInWithGoogle` を `apps/web/src/sign-in.ts` に出した（試遊ページと共有）
+  - 入力欄は 16px（それより小さいと iOS Safari がフォーカスで拡大する）。このページは `HOST_STAGE` を使っていないので `user-select` の戻しは要らない
+  - 文書に無く、この PR で決めた点（PR 本文）: 経路 `/mod/restore/<post_id>`、ページを開く時点では権限を確かめない（押したときに API が答える）、文面
 - **運営の復帰 `restore`（`post_id`）の最小版が入った（#209）**。W6 の運営の操作のうち、これだけを前倒しした（通報で投稿が止まるようになったのに、解く手段が DB の直接編集しかなかったため）。**本番で使うには、オーナーが Vercel の Production に `MODERATOR_IDS`（自分の `users.id`。カンマ区切りで複数可）を入れて再デプロイする**。入れるまでは誰が呼んでも 403 `forbidden`
   - `POST /api/moderation/posts/{id}/restore`、本文 `{reason}`（必須。前後の空白を落として空なら 400 `invalid_request`）。Cookie のセッションで呼ぶ。未ログインは 401 `unauthorized`、`MODERATOR_IDS` に無い・`users` 行が無いログインは 403 `forbidden`（投稿の有無も本文の形も答えない）、無い ID は 404 `not_found`、`draft` / `removed` は 409 `invalid_state`、KV の変数が無い構成は 503 `not_configured`。成功は 200 `{post_id, status, dismissed, served}`
   - `apps/api/src/moderation.ts` の `restorePost`: 1 つのトランザクションで、投稿の行を `FOR UPDATE`（通報の受付と同じ行）→ その投稿の `open` の通報を `dismissed` → 通報者の `trust_score` を −2（`TRUST_DELTA_REPORT_DISMISSED`。`packages/domain/src/report.ts`）→ `indiv_restricted = false` と昇格の見直し（`limited`・`calibrated`・`upheld` なしなら `public`。mo#B.9）→ `moderation_actions` に `kind = restore`・`moderator_id` が運営の 1 行。確定後に `syncServe` で KV を合わせる
   - KV に書けなかったら `served: false`（DB の復帰は確定している）。同じ呼び出しをもう一度すると書き直す（監査行は 1 行増える）
   - 制限されていない投稿にも呼べる（`open` の通報を退けるだけ。mo#B.5）。ツリー制限は解かない（`status` が `restricted` のまま返る）。`unpublished` は制限だけ下りて `unpublished` のまま
-  - **呼ぶ画面はまだ無い**（運営画面は W6）。いまは、アプリにログインしたブラウザのコンソールから `fetch("/api/moderation/posts/<post_id>/restore", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({reason: "誤制限"})}).then(r => r.json()).then(console.log)`。スマホから押せる最小のページは次の Issue
+  - 呼ぶ画面は `/mod/restore/<post_id>`（#212。上）。コンソールから呼ぶなら `fetch("/api/moderation/posts/<post_id>/restore", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({reason: "誤制限"})}).then(r => r.json()).then(console.log)`
   - 文書に無く、この PR で決めた点（PR 本文）: 経路と応答の形・HTTP の状態、権限の検査を本文と投稿の検査より先にする、`users` 行の無い運営は `forbidden`、「投稿ごとに 1 回」は同じ投稿で前に退けられた通報者（別の端末からの通報を含む）を減らさないこと、0 になった通報者の `post_restricted` に監査行を残さない、`reason` の長さに上限を置かない、KV が書けなくても成功にして `served` で知らせる
 - **ゲームページから通報できる（#207）**。通報の 3 分割（受付 #203、自動制限 #205、ボタン #207）が揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-10。確認は「その他」か「動作しない」で）
   - `apps/web/src/game/report.ts`: カテゴリの表示名（`REPORT_OPTIONS`。mo#A.4 の表の順）、送る前の検査 `reportDraft`（サーバと同じ `parseReportInput`）、`sendReport`、応答の読み方（200 → `reported`、400 `invalid` → `own`、ほかは `failed`）
@@ -130,7 +137,7 @@
 ## 次の一手（順番どおりに）
 1. **ランの作り直しの実装は済み**（#155 → #165 → #166 → #156 → #157 → #158）。domain の部品: `turn-result.ts`（`readTurnResult` / `checkPlayed` / `hostRealtimeOk` / `serverRealtimeOk` / `tallyOf` / `calibrationVerdict`）、`run-plan.ts`（`turnAt` / `turnSeed` / `outcomeOf` / `logState` / `summarizeLog`）、`session.ts`（`end` を述語で確かめて捨てる。テストで `end` を入れるときは `frames` ぶんの実時間が経った時刻を渡す）、`run.ts`（上）。文書に無い細目は #161 の案で実装してある
 2. **ラン本線（W3）のコードは済み**（#126 → #127 → #128 → #129 → #130 → 作り直し → #131）。残りは実機確認（下の 3 の (f)(g)(h)）。実機で直す点が出たら Issue を切る
-3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) （本番への `0007`〜`0012` の適用は 2026-11-20 に済み）(g) **確認に使う投稿を公開して、Actions の `set-thumb-key` に `post_id` を入れて実行**（#185）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(i) **侵入テスト（Gate 0、#195）**: `fixtures/games/pentest/` の 3 本を Muse / Claude から下書きとして投稿し、`docs/manual-tests/sandbox-pentest.md` の経路 1（試遊ページ）→ 公開して経路 2・3 → `unpublish_game`。結果を記録欄と #195 に。plan では W3 末（11/22）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
+3. **オーナー作業**: (a) PR「plan.md の改訂」（#122）のレビューとマージ。決めてほしい点は PR 本文 (b) PR #135（#123）と PR #138（#136）のマージ (c) （#97 は済み） (d) #103 / #106 / #161（ラン本線の未記載 24 点。#141 / #145 / #147 / #149 を置き換えた）の承認（承認されたら AI が `spec:` の PR を出す）(f) （本番への `0007`〜`0012` の適用は 2026-11-20 に済み）(g) **確認に使う投稿を公開して、Actions の `set-thumb-key` に `post_id` を入れて実行**（#185）(h) **ラン画面の実機確認**（`docs/manual-tests/run-tempo.md`。(g) の後。結果を #131 にコメント。完了条件 2 つが通れば #131 を閉じる）(j) **Vercel の Production に `MODERATOR_IDS`（自分の `users.id`。DB のコンソールで `select id, handle from users`）を入れて再デプロイし、RT-11 を確認**（#209、#212。結果を #212 にコメント） (i) **侵入テスト（Gate 0、#195）**: `fixtures/games/pentest/` の 3 本を Muse / Claude から下書きとして投稿し、`docs/manual-tests/sandbox-pentest.md` の経路 1（試遊ページ）→ 公開して経路 2・3 → `unpublish_game`。結果を記録欄と #195 に。plan では W3 末（11/22）(e) #5 の MC-5（接続から 24 時間以上あけて Muse / Claude からツールを呼び、401 にならないこと。結果を #5 にコメントして閉じる）
 4. 保守: #96（日次の突き合わせジョブ）
 5. Issue を切る: ラン画面の残り（成績表の一覧と導線、元のランの成績表、音、入力アイコン）、試遊ページの残り（速度スライダー、「公開」ボタン）、サンプルゲーム（plan#5。ランを試すのに校正済み 11 本 + 未校正 1 本が要る。#123 の結論で変わる）、実ブラウザの e2e ハーネス（`probe.html` を Playwright で開いて「通った」が無いことを見る、を最初の 1 本に）、`requirements.md` の棚卸し
 6. `verification/Moderation.cfg` と `Moderation_1u3p.cfg` の完走（別環境。急がない）。完走したら `README.md` の表と R-mo.A10-1 を更新

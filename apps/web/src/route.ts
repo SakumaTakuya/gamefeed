@@ -5,6 +5,8 @@ export type Route =
   | { page: "draft"; postId: string }
   /** ゲームページ。公開済みのゲームを 1 本だけ遊ぶ（run#A.14） */
   | { page: "game"; postId: string }
+  /** 運営の最小ページ。投稿の制限を解く（mo#A.7 の restore） */
+  | { page: "restore"; postId: string }
   /** エンドレスのスタート画面。fromRun があれば、そのランの山札で新しいランを作る（run#A.14） */
   | { page: "run"; fromRun: string | null };
 
@@ -12,6 +14,8 @@ export type Route =
 const DRAFT = /^\/draft\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 /** ゲームの共有リンクは `<app-origin>/g/<post_id>`（run#A.14、mc#A.9）。 */
 const GAME = /^\/g\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
+/** 運営の復帰ページは `<app-origin>/mod/restore/<post_id>`（mo#A.7）。 */
+const RESTORE = /^\/mod\/restore\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 /** ランの共有リンクは `<app-origin>/r/<run_id>`（run#A.14）。 */
 const SHARED_RUN = /^\/r\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 
@@ -20,6 +24,8 @@ export function routeOf(pathname: string): Route {
   if (draft?.[1]) return { page: "draft", postId: draft[1] };
   const game = GAME.exec(pathname);
   if (game?.[1]) return { page: "game", postId: game[1] };
+  const restore = RESTORE.exec(pathname);
+  if (restore?.[1]) return { page: "restore", postId: restore[1] };
   if (pathname === "/") return { page: "run", fromRun: null };
   const shared = SHARED_RUN.exec(pathname);
   if (shared?.[1]) return { page: "run", fromRun: shared[1] };
