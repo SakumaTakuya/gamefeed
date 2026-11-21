@@ -3,6 +3,11 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-21）
+- **ゲームページから通報できる（#207）**。通報の 3 分割（受付 #203、自動制限 #205、ボタン #207）が揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-10。確認は「その他」か「動作しない」で。解く操作がまだ無いため）
+  - `apps/web/src/game/report.ts`: カテゴリの表示名（`REPORT_OPTIONS`。mo#A.4 の表の順）、送る前の検査 `reportDraft`（サーバと同じ `parseReportInput`）、`sendReport`、応答の読み方（200 → `reported`、400 `invalid` → `own`、ほかは `failed`）
+  - `GamePage.tsx`: 結果の幕の下に「通報」。押すと結果の中身の代わりにフォーム（カテゴリの chips、コメント欄、残り文字数、やめる / 送信）。送れたら結果に戻って「通報しました」、作者自身は「自分のゲームは通報できません」、失敗は開いたまま再送できる。投稿が読めていないときは出さない
+  - `HOST_STAGE` は枠全体の選択を止めている（#190）ので、入力欄だけ `user-select: text` に戻している（戻さないと iOS Safari で打てない）。**ほかの画面に入力欄を足すときも同じ**
+  - 文書に無く、この PR で決めた点（PR 本文）: 表示名の言い回し、通報は結果の幕からだけ、通報済みかを開き直した後は覚えない（もう一度送れるが API は何もしない）
 - **通報の自動制限が入った（#205）**。通報の 3 分割の 2 つ目。残りはゲームページの通報ボタン。**本番の `0013` は 2026-11-21 にオーナーが `db-migrate` で当てた**
   - `reportPost`（`apps/api/src/reports.ts`）は 1 つのトランザクションで、投稿の行を `FOR UPDATE` → 通報を挿入 → `open` の通報をカテゴリごとに集計 → `autoRestrict`（`packages/domain/src/report.ts`。`AUTO_RESTRICT_SUM = 10`、`AUTO_RESTRICT_SEVERE = 5`）→ 超えていれば `indiv_restricted = true` と、`moderation_actions` に `moderator_id = NULL`・`kind = restrict`・`reason` に内訳。通報は `open` のまま、信頼スコアは変えない。制限済みの投稿には監査行を重ねない
   - 確定後に `syncServe` で KV を `no` に。書けなくても通報は 200（DB の制限は確定していて、`GET /api/posts/{id}` はもう 404）。制限済みの投稿への次の通報で書き直す。KV の変数（`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `KV_NAMESPACE_ID`）が無い構成では、通報そのものを 503 `not_configured` で受け付けない（DB だけ制限されて配信が続くのを防ぐ。Codex P1）
