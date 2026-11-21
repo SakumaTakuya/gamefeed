@@ -52,6 +52,15 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
     expect(r.ok && r.config.storageMissing).toEqual(Object.keys(storageEnv));
   });
 
+  it("se#A.8 MODERATOR_IDS はカンマ区切りの users.id。前後の空白と空の要素は落とす。無ければ空（運営の操作は誰も呼べない）", () => {
+    const none = configFromEnv(base);
+    expect(none.ok && none.config.moderatorIds).toEqual([]);
+    const blank = configFromEnv({ ...base, MODERATOR_IDS: " , " });
+    expect(blank.ok && blank.config.moderatorIds).toEqual([]);
+    const two = configFromEnv({ ...base, MODERATOR_IDS: " abc123 ,def456," });
+    expect(two.ok && two.config.moderatorIds).toEqual(["abc123", "def456"]);
+  });
+
   it("mc#A.8 R2_* が 4 つ、KV の変数が 3 つ揃えば r2 / kv が入る。片方だけ・一部だけなら入らない", () => {
     const full = configFromEnv({ ...base, ...storageEnv });
     expect(full.ok && full.config.r2).toEqual({
@@ -74,7 +83,7 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
     expect(r.ok && r.config.storageMissing).toEqual(["R2_BUCKET", "KV_NAMESPACE_ID"]);
   });
 
-  it("health は生き、認証・MCP・.well-known・play-token・runs は 503 と不足一覧を返す", async () => {
+  it("health は生き、認証・MCP・.well-known・play-token・runs・運営の操作は 503 と不足一覧を返す", async () => {
     const app = createAppFromEnv({});
     expect((await app.request("/api/health")).status).toBe(200);
     for (const path of [
@@ -84,8 +93,10 @@ describe("設定不足のときの app（Vercel のプレビュー等、#5）", 
       "/api/posts/01M782MV00TMYMTHTGG5C6KS3T/play-token",
       "/api/runs",
       "/api/runs/01M782MV00TMYMTHTGG5C6KS3T/next",
+      "/api/moderation/posts/01M782MV00TMYMTHTGG5C6KS3T/restore",
     ]) {
-      const post = path === "/api/mcp" || path.startsWith("/api/runs");
+      const post =
+        path === "/api/mcp" || path.startsWith("/api/runs") || path.startsWith("/api/moderation");
       const res = await app.request(path, { method: post ? "POST" : "GET" });
       expect(res.status, path).toBe(503);
       expect(await res.json()).toEqual({

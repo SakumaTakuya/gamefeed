@@ -16,6 +16,7 @@ import { finishRun } from "./finish.ts";
 import { createServeKv } from "./kv.ts";
 import { likePost } from "./likes.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
+import { parseModerationReason, restorePost } from "./moderation.ts";
 import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
 import { readPublicPost } from "./post-read.ts";
@@ -37,6 +38,7 @@ import { deviceKindOf, parseTurn, type ReplayStorage, settleTurn } from "./turns
 //   /api/posts/:id/like        いいね（PUT。匿名可、X-Device-Id。冪等）
 //   /api/posts/:id/reports     通報の受付（POST。匿名可、X-Device-Id。mo#A.4）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
+//   /api/moderation/posts/:id/restore  運営の復帰（POST。MODERATOR_IDS のユーザーだけ。mo#A.7、se#A.8）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/runs/:id/turns/:t 手番 t の結果を記録に足す（そのランの主体だけ。run#A.3、sc#A.2）
 //   /api/runs/:id/finish   ランを閉じて成績表を凍結する（そのランの主体だけ。run#A.3、sc#A.9）
@@ -52,6 +54,8 @@ export interface AppDeps {
   gamesSigningSecret?: string;
   /** 入力ログの置き場（R2）。無ければ結果は受理するが入力ログは保存しない（dm#A.6） */
   replays?: ReplayStorage;
+  /** 運営の `users.id`（se#A.8 の `MODERATOR_IDS`）。無い・空なら運営の操作は誰も呼べない */
+  moderatorIds?: readonly string[];
   /** [0, 1) の乱数。山札の抽選（run#A.10）とランの seed に使う。既定は Math.random。テストは seed から決まるものを渡す */
   random?: () => number;
 }
@@ -61,6 +65,12 @@ const RUN_ERROR_STATUS = {
   run_not_found: 404,
   no_games: 409,
 } as const satisfies Record<RunError, number>;
+
+const RESTORE_ERROR_STATUS = {
+  forbidden: 403,
+  not_found: 404,
+  invalid_state: 409,
+} as const;
 
 const TURN_ERROR_STATUS = {
   run_not_found: 404,
@@ -85,6 +95,7 @@ export function createApp(input: AppInput): Hono {
       "/.well-known/*",
       "/api/connect/*",
       "/api/posts/*",
+      "/api/moderation/*",
       "/api/runs",
       "/api/runs/*",
       MCP_PATH,
@@ -96,6 +107,7 @@ export function createApp(input: AppInput): Hono {
 
   const { auth, baseURL, publish, gamesSigningSecret } = input;
   const random = input.random ?? Math.random;
+  const moderatorIds = new Set(input.moderatorIds ?? []);
   const authHandler = (req: Request) => auth.handler(req);
 
   app.all(`${AUTH_BASE_PATH}/*`, (c) => authHandler(c.req.raw));
@@ -167,6 +179,27 @@ export function createApp(input: AppInput): Hono {
       c.req.param("id"),
     );
     return token ? c.json(token) : c.json({ error: "not_found" }, 404);
+  });
+
+  // 運営の復帰（mo#A.7 の restore）。se#A.8: MODERATOR_IDS に含まれるユーザーだけが呼べる。
+  // 権限の無い人には、投稿があるかどうかも本文の形も答えない（先に forbidden）
+  app.post("/api/moderation/posts/:id/restore", async (c) => {
+    c.header("cache-control", "no-store");
+    const session = await auth.api.getSession({ headers: c.req.raw.headers });
+    if (!session) return c.json({ error: "unauthorized" }, 401);
+    if (!moderatorIds.has(session.user.id)) return c.json({ error: "forbidden" }, 403);
+    // 復帰は配信を戻す（se#A.5）。KV に書けない構成では DB だけ戻って配信が止まったままになるので、受け付けない
+    const kv = publish.kv;
+    if (!kv) return c.json({ error: "not_configured", missing: [...KV_VARS] }, 503);
+    const reason = parseModerationReason(await c.req.json().catch(() => null));
+    if (!reason) return c.json({ error: "invalid_request" }, 400);
+    const result = await restorePost(
+      { db: publish.db, now: publish.now, kv },
+      { postId: c.req.param("id"), moderatorId: session.user.id, reason },
+    );
+    return result.ok
+      ? c.json(result.value)
+      : c.json({ error: result.error }, RESTORE_ERROR_STATUS[result.error]);
   });
 
   // ランの作成（run#A.3）。匿名で呼べる。主体は X-Device-Id から upsert する（dm#A.3、#141）
@@ -292,6 +325,7 @@ export function depsFromConfig(config: ApiConfig): AppDeps {
     publish,
     ...(storage ? { replays: storage } : {}),
     ...(config.gamesSigningSecret ? { gamesSigningSecret: config.gamesSigningSecret } : {}),
+    moderatorIds: config.moderatorIds,
   };
 }
 

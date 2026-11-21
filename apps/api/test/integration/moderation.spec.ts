@@ -16,7 +16,8 @@ import { type PostStatus, type PublishDeps, publishGame } from "../../src/publis
 import { gameHtml } from "../helpers/game-html.ts";
 
 const url = process.env.DATABASE_URL;
-if (!url) console.warn("DATABASE_URL が未設定なので moderation の integration テストを skip します");
+if (!url)
+  console.warn("DATABASE_URL が未設定なので moderation の integration テストを skip します");
 const dbSuite = url ? describe : describe.skip;
 
 const BASE = "https://app.example.test";
@@ -222,7 +223,11 @@ dbSuite("POST /api/moderation/posts/{id}/restore（mo#A.7 の restore）", () =>
     await autoRestricted(id);
     const ghost = await login("ghost", null);
     const withGhost = createApp({ auth, baseURL: BASE, publish: deps, moderatorIds: [ghost.id] });
-    await expectError(await restore(id, { cookie: ghost.cookie, app: withGhost }), 403, "forbidden");
+    await expectError(
+      await restore(id, { cookie: ghost.cookie, app: withGhost }),
+      403,
+      "forbidden",
+    );
     expect(await statusOf(id)).toBe("restricted");
   });
 
@@ -273,7 +278,12 @@ dbSuite("POST /api/moderation/posts/{id}/restore（mo#A.7 の restore）", () =>
     const elsewhere = await post();
     const [a, b] = await autoRestricted(id);
     await report(elsewhere, "spam", 0, a.cookie);
-    const [first] = await db.select().from(s.reports).where(eq(s.reports.postId, id)).limit(1);
+    const [first] = await db
+      .select()
+      .from(s.reports)
+      .where(eq(s.reports.postId, id))
+      .orderBy(s.reports.id)
+      .limit(1);
     await db
       .update(s.reports)
       .set({ resolution: "upheld" })
@@ -295,7 +305,12 @@ dbSuite("POST /api/moderation/posts/{id}/restore（mo#A.7 の restore）", () =>
     await autoRestricted(id, 0);
     await autoRestricted(stays, 2);
     await db.update(s.posts).set({ calibration: "calibrated" });
-    const [kept] = await db.select().from(s.reports).where(eq(s.reports.postId, stays)).limit(1);
+    const [kept] = await db
+      .select()
+      .from(s.reports)
+      .where(eq(s.reports.postId, stays))
+      .orderBy(s.reports.id)
+      .limit(1);
     await db
       .update(s.reports)
       .set({ resolution: "upheld" })
@@ -413,7 +428,11 @@ dbSuite("POST /api/moderation/posts/{id}/restore（mo#A.7 の restore）", () =>
     await autoRestricted(id);
     const { kv: _kv, ...withoutKv } = deps;
     const noKv = createApp({ auth, baseURL: BASE, publish: withoutKv, moderatorIds: [owner.id] });
-    await expectError(await restore(id, { cookie: owner.cookie, app: noKv }), 503, "not_configured");
+    await expectError(
+      await restore(id, { cookie: owner.cookie, app: noKv }),
+      503,
+      "not_configured",
+    );
     expect(await statusOf(id)).toBe("restricted");
   });
 });
