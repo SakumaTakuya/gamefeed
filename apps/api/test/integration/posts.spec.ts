@@ -114,6 +114,7 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       title: "ねこよけ",
       author: { handle: "taku-sakuma" },
       published_at: NOW.toISOString(),
+      liked: false,
     });
   });
 
@@ -127,6 +128,7 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       title: "まるタップ",
       author: { handle: "newbie" },
       published_at: NOW.toISOString(),
+      liked: false,
     });
   });
 
@@ -194,5 +196,106 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       expect([404, 405]).toContain(res.status);
     }
     expect((await app.request(`/api/posts/${id}/play-token`)).status).toBe(401);
+  });
+
+  // --- いいね（product#3 の 5、dm の I14。#199） ---
+
+  const DEVICE_A = "AAAAAAAAAAAAAAAAAAAAAA";
+  const DEVICE_B = "BBBBBBBBBBBBBBBBBBBBBB";
+  const like = (id: string, device?: string, cookie?: string) =>
+    app.request(`/api/posts/${id}/like`, {
+      method: "PUT",
+      headers: { ...(device ? { "x-device-id": device } : {}), ...(cookie ? { cookie } : {}) },
+    });
+  const getAs = async (id: string, device?: string) =>
+    (await (
+      await app.request(`/api/posts/${id}`, { headers: device ? { "x-device-id": device } : {} })
+    ).json()) as { liked: boolean };
+  const likeRows = (id: string) => db.select().from(s.likes).where(eq(s.likes.postId, id));
+
+  it("R-run.A14-4 匿名でいいねできる。同じ端末の 2 回目も同じ応答で、行は 1 つ（I14）", async () => {
+    const id = await post(true);
+    for (let i = 0; i < 2; i++) {
+      const res = await like(id, DEVICE_A);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(await res.json()).toEqual({ liked: true });
+    }
+    const rows = await likeRows(id);
+    expect(rows).toHaveLength(1);
+    const [actor] = await db.select().from(s.actors).where(eq(s.actors.deviceId, DEVICE_A));
+    expect(rows[0]?.actorId).toBe(actor?.id);
+    expect(actor?.userId).toBeNull();
+    expect(rows[0]?.createdAt).toEqual(NOW);
+  });
+
+  it("R-run.A14-4 別の端末は別の 1 件。limited の投稿にも、自分の投稿にもいいねできる", async () => {
+    const id = await post(true, newbie.id);
+    expect(await statusOf(id)).toBe("limited");
+    expect((await like(id, DEVICE_A)).status).toBe(200);
+    expect((await like(id, DEVICE_B, newbie.cookie)).status).toBe(200);
+    expect(await likeRows(id)).toHaveLength(2);
+  });
+
+  it("R-run.A14-4 ログイン中のいいねは、主体に user_id を結ぶ（dm#A.3）", async () => {
+    const id = await post(true);
+    expect((await like(id, DEVICE_A, me.cookie)).status).toBe(200);
+    const [actor] = await db.select().from(s.actors).where(eq(s.actors.deviceId, DEVICE_A));
+    expect(actor?.userId).toBe(me.id);
+  });
+
+  it("R-run.A14-4 GET は X-Device-Id の端末がいいね済みかを liked で返す。主体は作らない", async () => {
+    const id = await post(true);
+    const other = await post(true);
+    await like(id, DEVICE_A);
+    expect((await getAs(id, DEVICE_A)).liked).toBe(true);
+    expect((await getAs(other, DEVICE_A)).liked).toBe(false);
+    expect((await getAs(id, DEVICE_B)).liked).toBe(false);
+    expect((await getAs(id)).liked).toBe(false);
+    expect((await getAs(id, "bad id")).liked).toBe(false);
+    // 読むだけでは主体を作らない
+    expect(await db.select().from(s.actors)).toHaveLength(1);
+  });
+
+  it("R-run.A14-4 見られない投稿・存在しない ID・形式外の ID へのいいねは not_found で、行も主体も作らない", async () => {
+    const draft = await post(false);
+    const restricted = await post(true);
+    await db.update(s.posts).set({ indivRestricted: true }).where(eq(s.posts.id, restricted));
+    const unpublished = await post(true);
+    await unpublishGame(deps, me.id, { post_id: unpublished });
+    const removed = await post(true);
+    await db.update(s.posts).set({ baseStatus: "removed" }).where(eq(s.posts.id, removed));
+    for (const id of [
+      draft,
+      restricted,
+      unpublished,
+      removed,
+      "01M782MV00TMYMTHTGG5C6KS3T",
+      "nope",
+    ]) {
+      await expectNotFound(await like(id, DEVICE_A, me.cookie));
+    }
+    expect(await db.select().from(s.likes)).toHaveLength(0);
+    expect(await db.select().from(s.actors)).toHaveLength(0);
+  });
+
+  it("R-run.A14-4 X-Device-Id が無い・形式外なら invalid_device（ログインしていても）", async () => {
+    const id = await post(true);
+    for (const device of [undefined, "short", "has space in the device id!"]) {
+      const res = await like(id, device, me.cookie);
+      expect(res.status).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid_device" });
+    }
+    expect(await likeRows(id)).toHaveLength(0);
+  });
+
+  it("R-run.A14-4 いいねの後に見られなくなった投稿は、GET も PUT も not_found", async () => {
+    const id = await post(true);
+    await like(id, DEVICE_A);
+    await unpublishGame(deps, me.id, { post_id: id });
+    await expectNotFound(await like(id, DEVICE_A));
+    await expectNotFound(
+      await app.request(`/api/posts/${id}`, { headers: { "x-device-id": DEVICE_A } }),
+    );
   });
 });
