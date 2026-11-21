@@ -55,6 +55,7 @@ describe("gameView", () => {
       main: "12 点",
       sub: null,
       like: null,
+      canReport: false,
     });
     expect(ended({ via: "guest", score: 0, frames: 0, scoreable: true })).toMatchObject({
       main: "0 点",
@@ -64,12 +65,14 @@ describe("gameView", () => {
       main: "—",
       sub: "時間切れ",
       like: null,
+      canReport: false,
     });
     expect(ended({ via: "error", scoreable: true })).toEqual({
       kind: "result",
       main: "—",
       sub: "エラー",
       like: null,
+      canReport: false,
     });
   });
 
@@ -137,13 +140,28 @@ describe("gameView", () => {
     ).toEqual({ liked: false });
   });
 
+  it("R-run.A14-5 結果の幕の通報: 投稿が読めているときだけ出す", () => {
+    const ended: SessionState = {
+      kind: "ENDED",
+      ...session,
+      result: { via: "error", scoreable: true },
+    };
+    const can = (lookup: PostLookup | null) => {
+      const v = of(ended, null, lookup);
+      return v.kind === "result" ? v.canReport : undefined;
+    };
+    expect(can(found)).toBe(true);
+    expect(can(null)).toBe(false);
+    expect(can({ kind: "unknown" })).toBe(false);
+  });
+
   it("遊べていたゲームを Host が止めたときは「止めました」（遷移、プロトコル違反）", () => {
     expect(of({ kind: "DESTROYED" }, "navigated")).toEqual({ kind: "stopped" });
     expect(of({ kind: "DESTROYED" })).toEqual({ kind: "stopped" });
   });
 
   it("R-run.A14-2 ゲームページは診断コピー・デバッグ表示・速度の変更を持たない（run#A.12、product#9）", () => {
-    for (const file of ["game/GamePage.tsx", "game/view.ts", "game/api.ts"]) {
+    for (const file of ["game/GamePage.tsx", "game/view.ts", "game/api.ts", "game/report.ts"]) {
       const src = readFileSync(fileURLToPath(new URL(`../src/${file}`, import.meta.url)), "utf8");
       expect(src, file).not.toMatch(/diagnose|診断|clipboard|problem|inputs/);
       expect(src, file).not.toMatch(/play-token|token/i);
