@@ -3,7 +3,14 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-21）
-- **ゲームページから通報できる（#207）**。通報の 3 分割（受付 #203、自動制限 #205、ボタン #207）が揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-10。確認は「その他」か「動作しない」で。解く操作がまだ無いため）
+- **運営の復帰 `restore`（`post_id`）の最小版が入った（#209）**。W6 の運営の操作のうち、これだけを前倒しした（通報で投稿が止まるようになったのに、解く手段が DB の直接編集しかなかったため）。**本番で使うには、オーナーが Vercel の Production に `MODERATOR_IDS`（自分の `users.id`。カンマ区切りで複数可）を入れて再デプロイする**。入れるまでは誰が呼んでも 403 `forbidden`
+  - `POST /api/moderation/posts/{id}/restore`、本文 `{reason}`（必須。前後の空白を落として空なら 400 `invalid_request`）。Cookie のセッションで呼ぶ。未ログインは 401 `unauthorized`、`MODERATOR_IDS` に無い・`users` 行が無いログインは 403 `forbidden`（投稿の有無も本文の形も答えない）、無い ID は 404 `not_found`、`draft` / `removed` は 409 `invalid_state`、KV の変数が無い構成は 503 `not_configured`。成功は 200 `{post_id, status, dismissed, served}`
+  - `apps/api/src/moderation.ts` の `restorePost`: 1 つのトランザクションで、投稿の行を `FOR UPDATE`（通報の受付と同じ行）→ その投稿の `open` の通報を `dismissed` → 通報者の `trust_score` を −2（`TRUST_DELTA_REPORT_DISMISSED`。`packages/domain/src/report.ts`）→ `indiv_restricted = false` と昇格の見直し（`limited`・`calibrated`・`upheld` なしなら `public`。mo#B.9）→ `moderation_actions` に `kind = restore`・`moderator_id` が運営の 1 行。確定後に `syncServe` で KV を合わせる
+  - KV に書けなかったら `served: false`（DB の復帰は確定している）。同じ呼び出しをもう一度すると書き直す（監査行は 1 行増える）
+  - 制限されていない投稿にも呼べる（`open` の通報を退けるだけ。mo#B.5）。ツリー制限は解かない（`status` が `restricted` のまま返る）。`unpublished` は制限だけ下りて `unpublished` のまま
+  - **呼ぶ画面はまだ無い**（運営画面は W6）。いまは、アプリにログインしたブラウザのコンソールから `fetch("/api/moderation/posts/<post_id>/restore", {method: "POST", headers: {"content-type": "application/json"}, body: JSON.stringify({reason: "誤制限"})}).then(r => r.json()).then(console.log)`。スマホから押せる最小のページは次の Issue
+  - 文書に無く、この PR で決めた点（PR 本文）: 経路と応答の形・HTTP の状態、権限の検査を本文と投稿の検査より先にする、`users` 行の無い運営は `forbidden`、「投稿ごとに 1 回」は同じ投稿で前に退けられた通報者（別の端末からの通報を含む）を減らさないこと、0 になった通報者の `post_restricted` に監査行を残さない、`reason` の長さに上限を置かない、KV が書けなくても成功にして `served` で知らせる
+- **ゲームページから通報できる（#207）**。通報の 3 分割（受付 #203、自動制限 #205、ボタン #207）が揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-10。確認は「その他」か「動作しない」で）
   - `apps/web/src/game/report.ts`: カテゴリの表示名（`REPORT_OPTIONS`。mo#A.4 の表の順）、送る前の検査 `reportDraft`（サーバと同じ `parseReportInput`）、`sendReport`、応答の読み方（200 → `reported`、400 `invalid` → `own`、ほかは `failed`）
   - `GamePage.tsx`: 結果の幕の下に「通報」。押すと結果の中身の代わりにフォーム（カテゴリの chips、コメント欄、残り文字数、やめる / 送信）。送れたら結果に戻って「通報しました」、作者自身は「自分のゲームは通報できません」、失敗は開いたまま再送できる。投稿が読めていないときは出さない
   - `HOST_STAGE` は枠全体の選択を止めている（#190）ので、入力欄だけ `user-select: text` に戻している（戻さないと iOS Safari で打てない）。**ほかの画面に入力欄を足すときも同じ**
@@ -11,7 +18,7 @@
 - **通報の自動制限が入った（#205）**。通報の 3 分割の 2 つ目。残りはゲームページの通報ボタン。**本番の `0013` は 2026-11-21 にオーナーが `db-migrate` で当てた**
   - `reportPost`（`apps/api/src/reports.ts`）は 1 つのトランザクションで、投稿の行を `FOR UPDATE` → 通報を挿入 → `open` の通報をカテゴリごとに集計 → `autoRestrict`（`packages/domain/src/report.ts`。`AUTO_RESTRICT_SUM = 10`、`AUTO_RESTRICT_SEVERE = 5`）→ 超えていれば `indiv_restricted = true` と、`moderation_actions` に `moderator_id = NULL`・`kind = restrict`・`reason` に内訳。通報は `open` のまま、信頼スコアは変えない。制限済みの投稿には監査行を重ねない
   - 確定後に `syncServe` で KV を `no` に。書けなくても通報は 200（DB の制限は確定していて、`GET /api/posts/{id}` はもう 404）。制限済みの投稿への次の通報で書き直す。KV の変数（`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `KV_NAMESPACE_ID`）が無い構成では、通報そのものを 503 `not_configured` で受け付けない（DB だけ制限されて配信が続くのを防ぐ。Codex P1）
-  - **自動制限を解く手段がまだ無い**（運営の `restore` は W6）。誤って制限されたら、DB で `posts.indiv_restricted = false` にし、`reports.resolution` を `dismissed` にして（`open` のままだと次の通報でまた制限される）、KV を書き直す必要がある
+  - 自動制限を解くのは運営の `restore`（#209。上）
   - 文書に無く、この PR で決めた点（PR 本文）: `reason` の文面、小数の誤差の幅（1e-9）、通報者には制限が起きたことを返さない、KV が書けなくても通報は成功にする
 - **通報の受付 `POST /api/posts/{id}/reports` が入った（#203）。本番で動かすには、オーナーが Actions の `db-migrate` で `0013`（`reports.comment`）を当てる必要がある**（当てるまではこの API だけが 500。画面からはまだ呼ばない）。通報は 3 分割で、次が自動制限（R-mo.A4-3）、その次がゲームページの通報ボタン
   - `apps/api/src/reports.ts` の `reportPost`: 対象は `limited` / `public` / `restricted`（それ以外と存在しない ID は 404 `not_found` で、行も主体も作らない）。主体は `X-Device-Id` から upsert（無い・形式外は 400 `invalid_device`）。作者自身（`actors.user_id = posts.user_id`）は 400 `invalid`。2 回目は何もせず 200（最初の行が残る）。応答は 200 `{reported: true}` だけ

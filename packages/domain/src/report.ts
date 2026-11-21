@@ -34,6 +34,9 @@ export const REPORT_COEF: Readonly<Record<ReportCategory, number>> = {
 /** コメントの長さの上限（文字数。符号位置で数える） */
 export const REPORT_COMMENT_MAX = 200;
 
+/** 通報が運営に退けられた（`dismissed`）ときの、通報者の信頼スコアの変化（mo#A.5、A.9） */
+export const TRUST_DELTA_REPORT_DISMISSED = -2;
+
 /**
  * 通報の重み = 信頼係数 × カテゴリ係数。受付時に計算して `reports.weight` に凍結する（mo#A.4、B.7）。
  * @param trustScore 通報者の `users.trust_score`（0〜100）。匿名（`actors.user_id` が NULL）は null で、重み 0（I14）

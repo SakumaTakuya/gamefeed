@@ -22,6 +22,8 @@ export interface ApiConfig {
   gamesSigningSecret?: string;
   /** `publish_game` に足りない変数名（空なら揃っている） */
   storageMissing: string[];
+  /** 運営の `users.id`（se#A.8 の `MODERATOR_IDS`。カンマ区切り）。空なら運営の操作は誰も呼べない */
+  moderatorIds: string[];
 }
 
 const R2_VARS = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET"] as const;
@@ -78,6 +80,10 @@ export function configFromEnv(env: Record<string, string | undefined>): ConfigRe
         : {}),
       ...(env.GAMES_SIGNING_SECRET ? { gamesSigningSecret: env.GAMES_SIGNING_SECRET } : {}),
       storageMissing: [...r2Missing, ...kvMissing],
+      moderatorIds: (env.MODERATOR_IDS ?? "")
+        .split(",")
+        .map((id) => id.trim())
+        .filter((id) => id !== ""),
     },
   };
 }
