@@ -1,6 +1,7 @@
 // ゲームページ（run#A.14、product#3 の 5）。公開済みのゲームを 1 本だけ遊ぶ。ランを経由しない。
 // 配信するかどうかは配信オリジンが決める（se#A.5）。`GET /api/posts/{id}` は、見られない投稿をすぐ
 // 「開けません」にすることと作者名・いいねのために読む。読めなくても遊ぶのは止めない。
+import type { ReportCategory } from "@gamefeed/domain";
 import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
@@ -8,6 +9,7 @@ import { HOST_STAGE } from "../host-stage.ts";
 import { deviceId } from "../run/device-id.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
 import { fetchPost, type PostLookup, sendLike } from "./api.ts";
+import { REPORT_OPTIONS, type ReportResult, reportDraft, sendReport } from "./report.ts";
 import { gameView, STOPPED_TEXT, UNAVAILABLE_TEXT } from "./view.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
@@ -60,6 +62,21 @@ function Player({ postId, src }: { postId: string; src: string }) {
     });
   };
 
+  // 通報（mo#A.4）。結果の幕から開き、カテゴリと任意のコメントを送る
+  const [reportOpen, setReportOpen] = useState(false);
+  const [category, setCategory] = useState<ReportCategory | null>(null);
+  const [comment, setComment] = useState("");
+  const [reportState, setReportState] = useState<"idle" | "sending" | ReportResult>("idle");
+  const draft = reportDraft(category, comment);
+  const submitReport = () => {
+    if (!draft.ok || reportState === "sending") return;
+    setReportState("sending");
+    void sendReport(postId, device(), draft.input).then((r) => {
+      setReportState(r);
+      if (r !== "failed") setReportOpen(false);
+    });
+  };
+
   const view = gameView({
     state: player.state,
     meta: player.meta,
@@ -88,7 +105,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
               </button>
             )}
 
-            {view.kind === "result" && (
+            {view.kind === "result" && !reportOpen && (
               <>
                 <p style={styles.verb}>{view.main}</p>
                 {view.sub && <p>{view.sub}</p>}
@@ -109,6 +126,50 @@ function Player({ postId, src }: { postId: string; src: string }) {
               </>
             )}
 
+            {view.kind === "result" && reportOpen && (
+              <div style={styles.report}>
+                <p style={styles.reportTitle}>このゲームを通報</p>
+                <div style={styles.chips}>
+                  {REPORT_OPTIONS.map((o) => (
+                    <button
+                      key={o.category}
+                      type="button"
+                      style={category === o.category ? styles.chipOn : styles.chip}
+                      aria-pressed={category === o.category}
+                      onClick={() => setCategory(o.category)}
+                    >
+                      {o.label}
+                    </button>
+                  ))}
+                </div>
+                <textarea
+                  style={styles.comment}
+                  rows={3}
+                  value={comment}
+                  placeholder="くわしく（任意。運営だけが読みます）"
+                  aria-label="通報のコメント（任意）"
+                  onChange={(e) => setComment(e.target.value)}
+                />
+                <p style={draft.left < 0 ? styles.over : styles.small}>あと {draft.left} 文字</p>
+                {reportState === "failed" && (
+                  <p style={styles.over}>送れませんでした。もう一度お試しください</p>
+                )}
+                <div style={styles.row}>
+                  <button type="button" style={styles.like} onClick={() => setReportOpen(false)}>
+                    やめる
+                  </button>
+                  <button
+                    type="button"
+                    style={styles.button}
+                    disabled={!draft.ok || reportState === "sending"}
+                    onClick={submitReport}
+                  >
+                    {reportState === "sending" ? "送信中…" : "送信"}
+                  </button>
+                </div>
+              </div>
+            )}
+
             {view.kind === "unavailable" && <p>{UNAVAILABLE_TEXT}</p>}
 
             {view.kind === "stopped" && (
@@ -120,10 +181,26 @@ function Player({ postId, src }: { postId: string; src: string }) {
               </>
             )}
 
-            {(view.kind === "result" || dead) && (
+            {(view.kind === "result" || dead) && !reportOpen && (
               <a href="/" style={styles.link}>
                 ほかのゲームを続けて遊ぶ
               </a>
+            )}
+
+            {view.kind === "result" && view.canReport && !reportOpen && (
+              <>
+                {reportState === "reported" && <p style={styles.small}>通報しました</p>}
+                {reportState === "own" && <p style={styles.small}>自分のゲームは通報できません</p>}
+                {reportState !== "reported" && reportState !== "own" && (
+                  <button
+                    type="button"
+                    style={styles.reportLink}
+                    onClick={() => setReportOpen(true)}
+                  >
+                    通報
+                  </button>
+                )}
+              </>
             )}
           </div>
         )}
@@ -206,5 +283,64 @@ const styles = {
     background: "transparent",
     color: "#ff6b8b",
   },
+  small: { fontSize: "0.8rem", opacity: 0.7, margin: 0 },
+  over: { fontSize: "0.8rem", color: "#ff6b8b", margin: 0 },
+  reportLink: {
+    all: "unset",
+    fontSize: "0.8rem",
+    opacity: 0.7,
+    padding: "0.7rem",
+    textDecoration: "underline",
+    cursor: "pointer",
+  },
+  // 9:16 の枠に収まらない端末では、この中だけを縦に送る
+  report: {
+    display: "flex",
+    flexDirection: "column",
+    alignItems: "center",
+    gap: "0.7rem",
+    width: "100%",
+    maxHeight: "100%",
+    overflowY: "auto",
+  },
+  reportTitle: { fontWeight: 700, margin: 0 },
+  chips: { display: "flex", flexWrap: "wrap", justifyContent: "center", gap: "0.4rem" },
+  chip: {
+    font: "inherit",
+    fontSize: "0.85rem",
+    padding: "0.5rem 0.8rem",
+    borderRadius: "999px",
+    border: "1px solid #888",
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  chipOn: {
+    font: "inherit",
+    fontSize: "0.85rem",
+    padding: "0.5rem 0.8rem",
+    borderRadius: "999px",
+    border: "1px solid #fff",
+    background: "#fff",
+    color: "#111",
+    cursor: "pointer",
+  },
+  comment: {
+    font: "inherit",
+    // 16px 未満だと iOS Safari が入力時に拡大する
+    fontSize: "16px",
+    width: "100%",
+    boxSizing: "border-box",
+    padding: "0.6rem",
+    borderRadius: "0.6rem",
+    border: "1px solid #888",
+    background: "#111",
+    color: "#fff",
+    resize: "none",
+    // 枠全体は選択を止めている（HOST_STAGE）。入力欄だけ戻さないと iOS Safari で文字が打てない
+    userSelect: "text",
+    WebkitUserSelect: "text",
+  },
+  row: { display: "flex", gap: "0.7rem" },
   link: { color: "#fff", padding: "0.7rem", textDecoration: "underline" },
 } satisfies Record<string, React.CSSProperties>;
