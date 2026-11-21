@@ -4,6 +4,7 @@
  * Postgres と Better Auth は本物（ログインは testUtils）、R2 / KV は fake。
  */
 import { testUtils } from "better-auth/plugins";
+import { CALIBRATION_MIN_PLAYS, deviation } from "@gamefeed/domain";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.ts";
@@ -115,6 +116,7 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       author: { handle: "taku-sakuma" },
       published_at: NOW.toISOString(),
       liked: false,
+      stats: null,
     });
   });
 
@@ -129,6 +131,7 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       author: { handle: "newbie" },
       published_at: NOW.toISOString(),
       liked: false,
+      stats: null,
     });
   });
 
@@ -297,5 +300,122 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
     await expectNotFound(
       await app.request(`/api/posts/${id}`, { headers: { "x-device-id": DEVICE_A } }),
     );
+  });
+
+  // --- プレイ数・いいね数と「今の偏差値」（product#5.3、product#9 の 5。#211） ---
+
+  /** 昇順、20 件（校正に要る最小の件数） */
+  const DIST = Array.from({ length: CALIBRATION_MIN_PLAYS }, (_, i) => (i + 1) * 10);
+  async function setStats(
+    id: string,
+    calibration: "uncalibrated" | "calibrated" | "review" | "invalid",
+    scores: number[],
+  ): Promise<void> {
+    await db.insert(s.postStats).values({ postId: id, n: scores.length, scores });
+    await db.update(s.posts).set({ calibration }).where(eq(s.posts.id, id));
+  }
+  const statsOf = async (id: string) =>
+    ((await (await get(id)).json()) as { stats: unknown }).stats;
+  const dev = (id: string, query: string) => app.request(`/api/posts/${id}/deviation${query}`);
+
+  it("R-run.A14-6 校正済みの投稿は stats にプレイ数（分布の件数）といいね数を返す", async () => {
+    const id = await post(true);
+    await setStats(id, "calibrated", DIST);
+    expect(await statsOf(id)).toEqual({ plays: 20, likes: 0 });
+    await like(id, DEVICE_A);
+    await like(id, DEVICE_B);
+    await like(id, DEVICE_B);
+    expect(await statsOf(id)).toEqual({ plays: 20, likes: 2 });
+    // ほかの投稿の数は混ざらない
+    const other = await post(true);
+    await setStats(other, "calibrated", [...DIST, 500]);
+    expect(await statsOf(other)).toEqual({ plays: 21, likes: 0 });
+  });
+
+  it("R-run.A14-6 校正済みでない投稿（未校正・要確認・不成立、集計の行が無い）は stats が null", async () => {
+    const fresh = await post(true);
+    expect(await statsOf(fresh)).toBeNull();
+    for (const calibration of ["uncalibrated", "review", "invalid"] as const) {
+      const id = await post(true);
+      await setStats(id, calibration, DIST);
+      await like(id, DEVICE_A);
+      expect(await statsOf(id)).toBeNull();
+    }
+  });
+
+  it("R-run.A14-6 今の偏差値は、今の分布に対する domain の deviation と同じ値。分布が動けば変わる", async () => {
+    const id = await post(true, newbie.id);
+    await setStats(id, "calibrated", DIST);
+    for (const score of [0, 10, 105, 200, 9999]) {
+      const res = await dev(id, `?score=${score}`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get("cache-control")).toBe("no-store");
+      expect(await res.json()).toEqual({ deviation: deviation(score, DIST) });
+    }
+    const before = deviation(105, DIST);
+    const moved = [...DIST, 300, 300, 300, 300, 300];
+    await db
+      .update(s.postStats)
+      .set({ n: moved.length, scores: moved })
+      .where(eq(s.postStats.postId, id));
+    const after = ((await (await dev(id, "?score=105")).json()) as { deviation: number }).deviation;
+    expect(after).toBe(deviation(105, moved));
+    expect(after).toBeLessThan(before);
+  });
+
+  it("R-run.A14-6 校正済みでない投稿と、分布が 20 件に満たない投稿は deviation が null（sc#A.5）", async () => {
+    const fresh = await post(true);
+    expect(await (await dev(fresh, "?score=10")).json()).toEqual({ deviation: null });
+    for (const calibration of ["uncalibrated", "review", "invalid"] as const) {
+      const id = await post(true);
+      await setStats(id, calibration, DIST);
+      expect(await (await dev(id, "?score=10")).json()).toEqual({ deviation: null });
+    }
+    const thin = await post(true);
+    await setStats(thin, "calibrated", DIST.slice(1));
+    expect(await (await dev(thin, "?score=10")).json()).toEqual({ deviation: null });
+  });
+
+  it("R-run.A14-6 score が 0 以上 2^31 − 1 以下の整数の 10 進表記でなければ invalid_request", async () => {
+    const id = await post(true);
+    await setStats(id, "calibrated", DIST);
+    for (const q of [
+      "",
+      "?score=",
+      "?score=abc",
+      "?score=-1",
+      "?score=1.5",
+      "?score=1e3",
+      "?score=%2010",
+      "?score=0x10",
+      "?score=2147483648",
+      "?other=10",
+    ]) {
+      const res = await dev(id, q);
+      expect(res.status, q).toBe(400);
+      expect(await res.json()).toEqual({ error: "invalid_request" });
+    }
+    expect((await dev(id, "?score=2147483647")).status).toBe(200);
+  });
+
+  it("R-run.A14-6 見られない投稿・存在しない ID の deviation は not_found。読むだけで何も書かない", async () => {
+    const draft = await post(false);
+    const restricted = await post(true);
+    await setStats(restricted, "calibrated", DIST);
+    await db.update(s.posts).set({ indivRestricted: true }).where(eq(s.posts.id, restricted));
+    const unpublished = await post(true);
+    await unpublishGame(deps, me.id, { post_id: unpublished });
+    for (const id of [draft, restricted, unpublished, "01M782MV00TMYMTHTGG5C6KS3T", "nope"]) {
+      await expectNotFound(await dev(id, "?score=10"));
+    }
+    const open = await post(true);
+    await setStats(open, "calibrated", DIST);
+    const res = await app.request(`/api/posts/${open}/deviation?score=50`, {
+      headers: { "x-device-id": DEVICE_A, cookie: "better-auth.session_token=garbage" },
+    });
+    expect(res.status).toBe(200);
+    expect(await db.select().from(s.actors)).toHaveLength(0);
+    const [stat] = await db.select().from(s.postStats).where(eq(s.postStats.postId, open));
+    expect(stat?.scores).toEqual(DIST);
   });
 });
