@@ -4,7 +4,7 @@
 
 ## 現在地（2026-11-22）
 - **ゲームページの結果の幕に点数の分布のヒストグラムが出る（#215）。校正済みのゲームだけ**。#211 の続きで、**残りはオーナーの実機確認**（RT-12 に足した。本番に校正済みのゲームができてから）
-  - domain（`packages/domain/src/histogram.ts`）: `histogram(sorted)` が分布を `{from, to, count}` の区間に切る。最小の点数から切れ目なく、整数の等幅で 12 本まで（点数の幅が 12 以下なら点数 1 つが 1 本）。上位 5% が遠いとき（最大 − 最小が、95% 点 − 最小の 3 倍を超える）は手前を等幅に切り、最後の 1 本だけ最大まで伸ばす。`histogramIndex(bins, score)` は点数の入る棒（分布の外は端）。数字はどれも暫定
+  - domain（`packages/domain/src/histogram.ts`）: `histogram(sorted)` が分布を `{from, to, count}` の区間に切る。最小の点数から最大の点数まで切れ目なく、整数の等幅で 12 本まで（点数の幅が 12 以下なら点数 1 つが 1 本。最後の 1 本は最大の点数で切るので短いことがある。Codex P2）。上位 5% が遠いとき（最大 − 最小が、95% 点 − 最小の 3 倍を超える）は手前を等幅に切り、最後の 1 本だけ最大まで伸ばす。`histogramIndex(bins, score)` は点数の入る棒（分布の外は端）。数字はどれも暫定
   - API: `GET /api/posts/{id}` の `stats` に `histogram`（`calibrated` のときだけ。分布そのものは今も返さない）
   - web: 結果の幕の「今の偏差値」の下に棒グラフ。自分の点数の入る棒だけ黄色。時間切れ・エラーは図だけ。スタートの幕には出さない。`stats.histogram` が無い・形が違う応答では図だけ出さない
   - **domain にファイルを足すと SDK のバンドルの変数名がずれる**: `packages/sdk` の `bundle.spec.ts` が落ちたら `pnpm --filter @gamefeed/sdk gen:bundle`（中身は同じで、短縮名だけ変わる）

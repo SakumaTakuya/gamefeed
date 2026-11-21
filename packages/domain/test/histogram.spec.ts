@@ -22,20 +22,21 @@ describe("histogram", () => {
     expect(histogram(twelve).every((b) => b.from === b.to && b.count === 1)).toBe(true);
   });
 
-  it("R-run.A14-7 幅が広ければ、整数の等幅で 12 本以下に切る。区間はつながっていて、全件がどこかに入る", () => {
+  it("R-run.A14-7 幅が広ければ、整数の等幅で 12 本以下に切る。区間はつながっていて、全件がどこかに入る。最後の 1 本は最大の点数で終わる", () => {
     // 10, 20, …, 200。幅 191 → 1 本あたり 16 点
     const dist = Array.from({ length: 20 }, (_, i) => (i + 1) * 10);
     const bins = histogram(dist);
     expect(bins).toHaveLength(12);
     expect(bins[0]).toEqual({ from: 10, to: 25, count: 2 });
-    expect(bins[11]).toEqual({ from: 186, to: 201, count: 2 });
+    // 等幅なら 186〜201 だが、だれも取っていない 201 を図の端にしない
+    expect(bins[11]).toEqual({ from: 186, to: 200, count: 2 });
     for (let i = 1; i < bins.length; i++) {
       expect(bins[i]?.from).toBe((bins[i - 1]?.to as number) + 1);
     }
     expect(total(bins)).toBe(20);
   });
 
-  it("R-run.A14-7 さまざまな分布で、本数は 12 以下、件数の合計は分布の件数、両端は最小と最大を含む", () => {
+  it("R-run.A14-7 さまざまな分布で、本数は 12 以下、件数の合計は分布の件数、両端は最小と最大に一致する", () => {
     let a = 12345;
     const rand = () => {
       a = (Math.imul(a, 1103515245) + 12345) >>> 0;
@@ -52,7 +53,7 @@ describe("histogram", () => {
       expect(bins.length).toBeLessThanOrEqual(HISTOGRAM_BINS);
       expect(total(bins)).toBe(n);
       expect(bins[0]?.from).toBe(dist[0]);
-      expect(bins[bins.length - 1]?.to).toBeGreaterThanOrEqual(dist[n - 1] as number);
+      expect(bins[bins.length - 1]?.to).toBe(dist[n - 1]);
       for (const b of bins) expect(Number.isSafeInteger(b.from) && b.from <= b.to).toBe(true);
     }
   });
@@ -70,11 +71,14 @@ describe("histogram", () => {
     expect(total(bins)).toBe(20);
   });
 
-  it("R-run.A14-7 尾が近ければ（最大が 95% 点の 3 倍以内）まとめず、全部の区間が同じ幅", () => {
+  it("R-run.A14-7 尾が近ければ（最大が 95% 点の 3 倍以内）まとめない: 最後の 1 本も、ほかより長くならない", () => {
     const dist = [...Array.from({ length: 19 }, (_, i) => i * 10), 400];
     const bins = histogram(dist);
-    const widths = new Set(bins.map((b) => b.to - b.from));
-    expect(widths.size).toBe(1);
+    const widths = bins.map((b) => b.to - b.from);
+    const last = widths.pop() as number;
+    expect(new Set(widths).size).toBe(1);
+    expect(last).toBeLessThanOrEqual(widths[0] as number);
+    expect(bins[bins.length - 1]?.to).toBe(400);
   });
 });
 

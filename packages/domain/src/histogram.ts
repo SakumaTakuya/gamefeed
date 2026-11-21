@@ -17,10 +17,12 @@ export interface HistogramBin {
 /**
  * 分布（点数の**昇順**の配列。sc#A.4）を区間に切る。
  *
- * - 区間は最小の点数から始まり、切れ目なくつながる。本数は `maxBins` 以下。空の分布は区間なし
- * - 幅は整数で、全区間で同じ（点数の幅が `maxBins` 以下なら 1。点数 1 つが 1 本）
+ * - 区間は最小の点数から始まり、切れ目なくつながり、最大の点数で終わる（図の両端が、実際に出た
+ *   最小と最大になる）。本数は `maxBins` 以下。空の分布は区間なし
+ * - 幅は整数で、最後の 1 本を除いて同じ（点数の幅が `maxBins` 以下なら 1。点数 1 つが 1 本）。
+ *   最後の 1 本は最大の点数で切るので、割り切れないときは短い
  * - 外れ値で全体が 1 本に潰れないよう、上位 5% が遠いときは、手前の 95% を等幅に切り、
- *   最後の 1 本だけ最大の点数まで伸ばす（その 1 本だけ幅が違う）
+ *   最後の 1 本を最大の点数まで伸ばす（その 1 本は長い）
  */
 export function histogram(
   sorted: readonly number[],
@@ -42,8 +44,7 @@ export function histogram(
     to: min + (i + 1) * width - 1,
     count: 0,
   }));
-  const last = bins[k - 1] as HistogramBin;
-  if (last.to < max) last.to = max;
+  (bins[k - 1] as HistogramBin).to = max;
   for (const score of sorted) {
     (bins[Math.min(k - 1, Math.floor((score - min) / width))] as HistogramBin).count++;
   }
