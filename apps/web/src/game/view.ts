@@ -10,7 +10,8 @@ export type GameView =
   | { kind: "start"; verb: string; title: string; author: string | null }
   /** 遊んでいる間は iframe の上に何もかぶせない（se#A.3） */
   | { kind: "playing" }
-  | { kind: "result"; main: string; sub: string | null }
+  /** `like` は、投稿が読めていて、いいねを送れるときだけ（null なら出さない） */
+  | { kind: "result"; main: string; sub: string | null; like: { liked: boolean } | null }
   /** 配信されない投稿。理由は区別しない（mo#A.3、mc#A.9） */
   | { kind: "unavailable" }
   /** 遊べていたゲームを Host が止めた（iframe の遷移、プロトコル違反） */
@@ -26,6 +27,8 @@ export function gameView(p: {
   halted: Halt | null;
   /** `GET /api/posts/{id}` の結果。まだ返っていなければ null */
   lookup: PostLookup | null;
+  /** このページでいいねを押した（送信中と成功。失敗したら戻す） */
+  likedHere: boolean;
 }): GameView {
   const { state, lookup } = p;
   // API が「無い」と言ったら、iframe の様子によらず開けない（ready を待たない）
@@ -46,8 +49,9 @@ export function gameView(p: {
       return { kind: "playing" };
     case "ENDED": {
       const r = state.result;
-      if (r.via === "guest") return { kind: "result", main: `${r.score} 点`, sub: null };
-      return { kind: "result", main: "—", sub: r.via === "timeout" ? "時間切れ" : "エラー" };
+      const like = lookup?.kind === "found" ? { liked: lookup.post.liked || p.likedHere } : null;
+      if (r.via === "guest") return { kind: "result", main: `${r.score} 点`, sub: null, like };
+      return { kind: "result", main: "—", sub: r.via === "timeout" ? "時間切れ" : "エラー", like };
     }
     case "DESTROYED":
       return p.halted === "no_ready" ? { kind: "unavailable" } : { kind: "stopped" };

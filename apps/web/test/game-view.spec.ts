@@ -19,10 +19,16 @@ const of = (
   state: SessionState,
   halted: "navigated" | "no_ready" | null = null,
   lookup: PostLookup | null = null,
-) => gameView({ state, meta: "meta" in state ? state.meta : null, halted, lookup });
-const found: PostLookup = {
+  likedHere = false,
+) => gameView({ state, meta: "meta" in state ? state.meta : null, halted, lookup, likedHere });
+const found: Extract<PostLookup, { kind: "found" }> = {
   kind: "found",
-  post: { postId: "01M782MV00TMYMTHTGG5C6KS3T", title: "まるタップ", handle: "taku-sakuma" },
+  post: {
+    postId: "01M782MV00TMYMTHTGG5C6KS3T",
+    title: "まるタップ",
+    handle: "taku-sakuma",
+    liked: false,
+  },
 };
 
 describe("gameView", () => {
@@ -48,6 +54,7 @@ describe("gameView", () => {
       kind: "result",
       main: "12 点",
       sub: null,
+      like: null,
     });
     expect(ended({ via: "guest", score: 0, frames: 0, scoreable: true })).toMatchObject({
       main: "0 点",
@@ -56,11 +63,13 @@ describe("gameView", () => {
       kind: "result",
       main: "—",
       sub: "時間切れ",
+      like: null,
     });
     expect(ended({ via: "error", scoreable: true })).toEqual({
       kind: "result",
       main: "—",
       sub: "エラー",
+      like: null,
     });
   });
 
@@ -94,6 +103,38 @@ describe("gameView", () => {
     expect(of({ kind: "DESTROYED" }, "no_ready", { kind: "unknown" })).toEqual({
       kind: "unavailable",
     });
+  });
+
+  it("R-run.A14-4 結果の幕のいいね: 投稿が読めていれば出す。サーバでいいね済みか、このページで押したら「済み」", () => {
+    const ended: SessionState = {
+      kind: "ENDED",
+      ...session,
+      result: { via: "guest", score: 3, frames: 180, scoreable: true },
+    };
+    const likeOf = (lookup: PostLookup | null, likedHere = false) => {
+      const v = of(ended, null, lookup, likedHere);
+      return v.kind === "result" ? v.like : undefined;
+    };
+    expect(likeOf(found)).toEqual({ liked: false });
+    expect(likeOf(found, true)).toEqual({ liked: true });
+    expect(likeOf({ kind: "found", post: { ...found.post, liked: true } })).toEqual({
+      liked: true,
+    });
+    // 投稿が読めていない（まだ・API が落ちている）ときは、送れないので出さない
+    expect(likeOf(null, true)).toBeNull();
+    expect(likeOf({ kind: "unknown" })).toBeNull();
+    // 時間切れ・エラーで終わっても、遊んだゲームにはいいねできる
+    expect(
+      (
+        of(
+          { kind: "ENDED", ...session, result: { via: "timeout", scoreable: true } },
+          null,
+          found,
+        ) as {
+          like: unknown;
+        }
+      ).like,
+    ).toEqual({ liked: false });
   });
 
   it("遊べていたゲームを Host が止めたときは「止めました」（遷移、プロトコル違反）", () => {

@@ -13,6 +13,7 @@ import { type ApiConfig, configFromEnv } from "./config.ts";
 import { createDb } from "./db/client.ts";
 import { finishRun } from "./finish.ts";
 import { createServeKv } from "./kv.ts";
+import { likePost } from "./likes.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
@@ -31,6 +32,7 @@ import { deviceKindOf, parseTurn, type ReplayStorage, settleTurn } from "./turns
 //   /.well-known/*         RFC 8414 / 9728 のパス挿入形（issuer・リソースにパスがあるので root にも出る）
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
 //   /api/posts/:id             公開済みの投稿を読む（匿名可。limited / public だけ。mo#A.3）
+//   /api/posts/:id/like        いいね（PUT。匿名可、X-Device-Id。冪等）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/runs/:id/turns/:t 手番 t の結果を記録に足す（そのランの主体だけ。run#A.3、sc#A.2）
@@ -103,8 +105,26 @@ export function createApp(input: AppInput): Hono {
   // limited / public 以外は、存在しない ID も含めて理由を区別せず not_found
   app.get("/api/posts/:id", async (c) => {
     c.header("cache-control", "no-store");
-    const post = await readPublicPost(publish.db, c.req.param("id"));
+    // X-Device-Id があれば、その端末がいいね済みかを返す。無い・形式外でも読める
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    const post = await readPublicPost(publish.db, c.req.param("id"), deviceId);
     return post ? c.json(post) : c.json({ error: "not_found" }, 404);
+  });
+
+  // いいね（product#3 の 5、I14）。匿名で呼べる。主体は X-Device-Id から upsert する。冪等
+  app.put("/api/posts/:id/like", async (c) => {
+    c.header("cache-control", "no-store");
+    const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
+    if (!deviceId) return c.json({ error: "invalid_device" }, 400);
+    // ログイン中なら主体に user_id を結ぶ。Cookie が無ければセッションを引かない
+    const session = c.req.header("cookie")
+      ? await auth.api.getSession({ headers: c.req.raw.headers })
+      : null;
+    const ok = await likePost(
+      { db: publish.db, now: publish.now },
+      { postId: c.req.param("id"), deviceId, userId: session?.user.id ?? null },
+    );
+    return ok ? c.json({ liked: true }) : c.json({ error: "not_found" }, 404);
   });
 
   // 下書きの試遊トークン（se#A.5）。作者本人の draft 以外は理由を区別せず not_found
