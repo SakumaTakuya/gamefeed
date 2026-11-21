@@ -1,15 +1,30 @@
 // ゲームページ（run#A.14、product#3 の 5）。公開済みのゲームを 1 本だけ遊ぶ。ランを経由しない。
 // 配信するかどうかは配信オリジンが決める（se#A.5）。`GET /api/posts/{id}` は、見られない投稿をすぐ
-// 「開けません」にすることと作者名のために読む。読めなくても遊ぶのは止めない。
+// 「開けません」にすることと作者名・いいねのために読む。読めなくても遊ぶのは止めない。
 import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
+import { deviceId } from "../run/device-id.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
-import { fetchPost, type PostLookup } from "./api.ts";
+import { fetchPost, type PostLookup, sendLike } from "./api.ts";
 import { gameView, STOPPED_TEXT, UNAVAILABLE_TEXT } from "./view.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
+
+/** 端末の主体（dm#A.1）。ストレージが使えないと呼ぶたびに変わるので、1 回だけ作って持つ */
+let cachedDevice: string | null = null;
+function device(): string {
+  cachedDevice ??= deviceId(
+    {
+      // localStorage に触るだけで例外になる端末がある。deviceId の中で受ける
+      getItem: (k) => window.localStorage.getItem(k),
+      setItem: (k, v) => window.localStorage.setItem(k, v),
+    },
+    (bytes) => crypto.getRandomValues(bytes),
+  );
+  return cachedDevice;
+}
 
 export function GamePage({ postId }: { postId: string }) {
   if (!GAMES_ORIGIN) {
@@ -28,7 +43,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
   const [lookup, setLookup] = useState<PostLookup | null>(null);
   useEffect(() => {
     let alive = true;
-    void fetchPost(postId).then((r) => {
+    void fetchPost(postId, device()).then((r) => {
       if (alive) setLookup(r);
     });
     return () => {
@@ -36,7 +51,22 @@ function Player({ postId, src }: { postId: string; src: string }) {
     };
   }, [postId]);
 
-  const view = gameView({ state: player.state, meta: player.meta, halted: player.halted, lookup });
+  // いいねは押したらすぐ「済み」にし、届かなかったら戻す（もう一度押せる）
+  const [likedHere, setLikedHere] = useState(false);
+  const like = () => {
+    setLikedHere(true);
+    void sendLike(postId, device()).then((ok) => {
+      if (!ok) setLikedHere(false);
+    });
+  };
+
+  const view = gameView({
+    state: player.state,
+    meta: player.meta,
+    halted: player.halted,
+    lookup,
+    likedHere,
+  });
   const dead = view.kind === "unavailable" || view.kind === "stopped";
 
   return (
@@ -65,6 +95,17 @@ function Player({ postId, src }: { postId: string; src: string }) {
                 <button type="button" style={styles.button} onClick={player.again}>
                   もう一回
                 </button>
+                {view.like && (
+                  <button
+                    type="button"
+                    style={view.like.liked ? styles.liked : styles.like}
+                    disabled={view.like.liked}
+                    aria-pressed={view.like.liked}
+                    onClick={like}
+                  >
+                    {view.like.liked ? "♥ いいね済み" : "♡ いいね"}
+                  </button>
+                )}
               </>
             )}
 
@@ -147,6 +188,23 @@ const styles = {
     background: "#fff",
     color: "#111",
     cursor: "pointer",
+  },
+  like: {
+    font: "inherit",
+    padding: "0.7rem 1.4rem",
+    borderRadius: "0.6rem",
+    border: "1px solid #888",
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  liked: {
+    font: "inherit",
+    padding: "0.7rem 1.4rem",
+    borderRadius: "0.6rem",
+    border: "1px solid #ff6b8b",
+    background: "transparent",
+    color: "#ff6b8b",
   },
   link: { color: "#fff", padding: "0.7rem", textDecoration: "underline" },
 } satisfies Record<string, React.CSSProperties>;
