@@ -59,6 +59,8 @@ export function parseReportInput(body: unknown): ReportInput | null {
     return { category: category as ReportCategory, comment: null };
   }
   if (typeof comment !== "string") return null;
+  // U+0000 は Postgres の text に入らない（挿入が失敗する）。受け付けない
+  if (comment.includes("\u0000")) return null;
   const trimmed = comment.trim();
   if ([...trimmed].length > REPORT_COMMENT_MAX) return null;
   return { category: category as ReportCategory, comment: trimmed === "" ? null : trimmed };

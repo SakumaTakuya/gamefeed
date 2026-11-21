@@ -293,6 +293,12 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
     await expectError(await report(id, "not json"), 400, "invalid_request");
     await expectError(await report(id, { category: "nope" }), 400, "invalid_request");
     await expectError(await report(id, {}), 400, "invalid_request");
+    // U+0000 を含むコメントは DB に入らないので、500 にせず弾く
+    await expectError(
+      await report(id, '{"category":"spam","comment":"a\\u0000b"}'),
+      400,
+      "invalid_request",
+    );
     expect(await rowsOf(id)).toHaveLength(0);
   });
 

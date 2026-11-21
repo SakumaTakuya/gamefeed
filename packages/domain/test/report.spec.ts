@@ -101,6 +101,9 @@ describe("parseReportInput（{category, comment?}）", () => {
       { category: "toString" },
       { category: "spam", comment: 1 },
       { category: "spam", comment: ["x"] },
+      // U+0000 は Postgres の text に入らない
+      { category: "spam", comment: "a\u0000b" },
+      { category: "spam", comment: "\u0000" },
     ]) {
       expect(parseReportInput(body), JSON.stringify(body)).toBeNull();
     }
