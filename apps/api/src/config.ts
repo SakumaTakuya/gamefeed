@@ -25,7 +25,11 @@ export interface ApiConfig {
 }
 
 const R2_VARS = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY", "R2_ENDPOINT", "R2_BUCKET"] as const;
-const KV_VARS = ["CLOUDFLARE_API_TOKEN", "CLOUDFLARE_ACCOUNT_ID", "KV_NAMESPACE_ID"] as const;
+export const KV_VARS = [
+  "CLOUDFLARE_API_TOKEN",
+  "CLOUDFLARE_ACCOUNT_ID",
+  "KV_NAMESPACE_ID",
+] as const;
 
 export type ConfigResult = { ok: true; config: ApiConfig } | { ok: false; missing: string[] };
 

@@ -25,7 +25,7 @@ const POST_ID = /^[0-9A-HJKMNP-TV-Z]{26}$/;
 export type ReportOutcome = "reported" | "not_found" | "invalid";
 
 export async function reportPost(
-  deps: { db: Db; now: () => Date; kv?: ServeKv | undefined },
+  deps: { db: Db; now: () => Date; kv: ServeKv },
   input: { postId: string; deviceId: string; userId: string | null; report: ReportInput },
 ): Promise<ReportOutcome> {
   if (!POST_ID.test(input.postId)) return "not_found";
@@ -106,10 +106,8 @@ export async function reportPost(
 
   // 配信を止める（se#A.5）。制限済みの投稿でも書き直すので、前回 KV だけ失敗していても次の通報で直る。
   // 書けなくても通報は成功として返す（DB の制限は確定していて、API からはもう見えない。日次の突き合わせも直す）
-  if (restricted && deps.kv) {
-    if (!(await syncServe(deps.db, deps.kv, input.postId))) {
-      console.error(`自動制限した投稿 ${input.postId} の配信の停止が KV に反映されていない`);
-    }
+  if (restricted && !(await syncServe(deps.db, deps.kv, input.postId))) {
+    console.error(`自動制限した投稿 ${input.postId} の配信の停止が KV に反映されていない`);
   }
   return "reported";
 }

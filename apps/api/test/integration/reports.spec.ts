@@ -508,6 +508,22 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
     expect(await actions()).toHaveLength(1);
   });
 
+  it("R-se.A5-3 KV が設定されていない構成では通報を受け付けない（制限が配信に届かないまま DB だけ制限されるのを防ぐ）", async () => {
+    const id = await post();
+    const auth = createAuth({ baseURL: BASE, secret: "test-secret-".repeat(4), db });
+    const { kv: _kv, ...noKv } = deps;
+    const bare = createApp({ auth, baseURL: BASE, publish: noKv });
+    const res = await bare.request(`/api/posts/${id}/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-device-id": DEVICE_A },
+      body: JSON.stringify({ category: "sexual" }),
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: "not_configured" });
+    expect(await rowsOf(id)).toHaveLength(0);
+    expect(await statusOf(id)).toBe("public");
+  });
+
   it("R-mo.A4-3 同時に届いた通報でも、監査行は 1 つ", async () => {
     const id = await post();
     const reporters = await newbies(4);

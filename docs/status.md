@@ -5,7 +5,7 @@
 ## 現在地（2026-11-21）
 - **通報の自動制限が入った（#205）**。通報の 3 分割の 2 つ目。残りはゲームページの通報ボタン。**本番の `0013` は 2026-11-21 にオーナーが `db-migrate` で当てた**
   - `reportPost`（`apps/api/src/reports.ts`）は 1 つのトランザクションで、投稿の行を `FOR UPDATE` → 通報を挿入 → `open` の通報をカテゴリごとに集計 → `autoRestrict`（`packages/domain/src/report.ts`。`AUTO_RESTRICT_SUM = 10`、`AUTO_RESTRICT_SEVERE = 5`）→ 超えていれば `indiv_restricted = true` と、`moderation_actions` に `moderator_id = NULL`・`kind = restrict`・`reason` に内訳。通報は `open` のまま、信頼スコアは変えない。制限済みの投稿には監査行を重ねない
-  - 確定後に `syncServe` で KV を `no` に。書けなくても通報は 200（DB の制限は確定していて、`GET /api/posts/{id}` はもう 404）。制限済みの投稿への次の通報で書き直す
+  - 確定後に `syncServe` で KV を `no` に。書けなくても通報は 200（DB の制限は確定していて、`GET /api/posts/{id}` はもう 404）。制限済みの投稿への次の通報で書き直す。KV の変数（`CLOUDFLARE_API_TOKEN` / `CLOUDFLARE_ACCOUNT_ID` / `KV_NAMESPACE_ID`）が無い構成では、通報そのものを 503 `not_configured` で受け付けない（DB だけ制限されて配信が続くのを防ぐ。Codex P1）
   - **自動制限を解く手段がまだ無い**（運営の `restore` は W6）。誤って制限されたら、DB で `posts.indiv_restricted = false` にし、`reports.resolution` を `dismissed` にして（`open` のままだと次の通報でまた制限される）、KV を書き直す必要がある
   - 文書に無く、この PR で決めた点（PR 本文）: `reason` の文面、小数の誤差の幅（1e-9）、通報者には制限が起きたことを返さない、KV が書けなくても通報は成功にする
 - **通報の受付 `POST /api/posts/{id}/reports` が入った（#203）。本番で動かすには、オーナーが Actions の `db-migrate` で `0013`（`reports.comment`）を当てる必要がある**（当てるまではこの API だけが 500。画面からはまだ呼ばない）。通報は 3 分割で、次が自動制限（R-mo.A4-3）、その次がゲームページの通報ボタン
