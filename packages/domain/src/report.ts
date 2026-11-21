@@ -65,3 +65,54 @@ export function parseReportInput(body: unknown): ReportInput | null {
   if ([...trimmed].length > REPORT_COMMENT_MAX) return null;
   return { category: category as ReportCategory, comment: trimmed === "" ? null : trimmed };
 }
+
+/** 全カテゴリの `open` の通報の重みの合計がこれ以上で自動制限（mo#A.4、A.9。暫定） */
+export const AUTO_RESTRICT_SUM = 10;
+/** `sexual` / `flashing` だけの合計がこれ以上で自動制限（暫定） */
+export const AUTO_RESTRICT_SEVERE = 5;
+
+const SEVERE: readonly string[] = ["sexual", "flashing"] satisfies ReportCategory[];
+/** 小数の足し算の誤差（0.2 を 50 回足すと 10 にわずかに届かない）で閾値を外さないための幅 */
+const EPS = 1e-9;
+
+/** 1 つの投稿の、`resolution = open` の通報のカテゴリごとの集計 */
+export interface ReportTally {
+  category: string;
+  /** 重みの合計 */
+  weight: number;
+  /** 件数（重み 0 の匿名も含む） */
+  count: number;
+}
+
+export interface AutoRestrictDecision {
+  restrict: boolean;
+  total: number;
+  severe: number;
+  /** `moderation_actions.reason` に書く内訳。運営の内部メモで、作者には返さない（mo#A.4） */
+  reason: string;
+}
+
+const num = (x: number): string => String(Math.round(x * 100) / 100);
+
+/**
+ * 自動制限の判定（mo#A.4）。匿名の通報は重み 0 なので、何件あっても制限しない（M10）。
+ * 判定は「人が見るまで隠す」ためのもので、通報の解決でも信頼スコアの変化でもない。
+ */
+export function autoRestrict(tallies: readonly ReportTally[]): AutoRestrictDecision {
+  let total = 0;
+  let severe = 0;
+  for (const t of tallies) {
+    total += t.weight;
+    if (SEVERE.includes(t.category)) severe += t.weight;
+  }
+  const breakdown = [...tallies]
+    .sort((a, b) => b.weight - a.weight || a.category.localeCompare(b.category))
+    .map((t) => `${t.category} ${num(t.weight)}（${t.count} 件）`)
+    .join("、");
+  return {
+    restrict: total >= AUTO_RESTRICT_SUM - EPS || severe >= AUTO_RESTRICT_SEVERE - EPS,
+    total,
+    severe,
+    reason: `自動制限: 合計 ${num(total)}（閾値 ${AUTO_RESTRICT_SUM}）、sexual+flashing ${num(severe)}（閾値 ${AUTO_RESTRICT_SEVERE}）。内訳: ${breakdown}`,
+  };
+}

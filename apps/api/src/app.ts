@@ -10,7 +10,7 @@ import {
   MCP_PATH,
   SIGN_IN_PAGE,
 } from "./auth.ts";
-import { type ApiConfig, configFromEnv } from "./config.ts";
+import { type ApiConfig, configFromEnv, KV_VARS } from "./config.ts";
 import { createDb } from "./db/client.ts";
 import { finishRun } from "./finish.ts";
 import { createServeKv } from "./kv.ts";
@@ -133,6 +133,9 @@ export function createApp(input: AppInput): Hono {
   // 通報の受付（mo#A.4）。匿名で呼べる。主体は X-Device-Id から upsert する。2 回目は何もせず成功
   app.post("/api/posts/:id/reports", async (c) => {
     c.header("cache-control", "no-store");
+    // 通報は自動制限を起こす（mo#A.4）。KV に書けない構成では制限が配信に届かないので、受け付けない
+    const kv = publish.kv;
+    if (!kv) return c.json({ error: "not_configured", missing: [...KV_VARS] }, 503);
     const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
     if (!deviceId) return c.json({ error: "invalid_device" }, 400);
     const report = parseReportInput(await c.req.json().catch(() => null));
@@ -142,7 +145,7 @@ export function createApp(input: AppInput): Hono {
       ? await auth.api.getSession({ headers: c.req.raw.headers })
       : null;
     const outcome = await reportPost(
-      { db: publish.db, now: publish.now },
+      { db: publish.db, now: publish.now, kv },
       { postId: c.req.param("id"), deviceId, userId: session?.user.id ?? null, report },
     );
     if (outcome === "not_found") return c.json({ error: "not_found" }, 404);

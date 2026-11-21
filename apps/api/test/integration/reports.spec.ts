@@ -1,6 +1,6 @@
 /**
  * 通報の受付 `POST /api/posts/{id}/reports` の integration テスト（moderation.md A.4。R-mo.A4-1、A4-2）。
- * 自動制限（R-mo.A4-3）はまだ無い。Postgres と Better Auth は本物（ログインは testUtils）、R2 / KV は fake。
+ * 自動制限（R-mo.A4-3）も含む。Postgres と Better Auth は本物（ログインは testUtils）、R2 / KV は fake。
  */
 import { REPORT_COEF, REPORT_COMMENT_MAX } from "@gamefeed/domain";
 import { testUtils } from "better-auth/plugins";
@@ -38,6 +38,10 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
   /** ログインはしているが users 行が無い（遊ぶだけの人） */
   let player: { id: string; cookie: string };
   let salt = 0;
+  /** KV `serve:<post_id>` への書き込みの記録 */
+  let kvPuts: { postId: string; status: string }[];
+  let kvFails: boolean;
+  let login: (name: string, trustScore: number | null) => Promise<{ id: string; cookie: string }>;
 
   beforeAll(async () => {
     const h = createDb(url as string, { max: 1 });
@@ -70,25 +74,32 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
     deps = {
       db,
       storage: { put: async () => {} },
-      kv: { put: async () => {} },
+      kv: {
+        put: async (postId, value) => {
+          if (kvFails) throw new Error("KV down");
+          kvPuts.push({ postId, status: value.status });
+        },
+      },
       appOrigin: BASE,
       now: () => NOW,
     };
     app = createApp({ auth, baseURL: BASE, publish: deps });
 
     const test = ((await auth.$context) as unknown as { test: TestHelpers }).test;
-    async function login(name: string, trustScore: number | null) {
+    login = async (name: string, trustScore: number | null) => {
       const user = test.createUser({ email: `${name}@example.test`, name });
       await test.saveUser(user);
       const { cookies } = await test.login({ userId: user.id });
       if (trustScore !== null)
         await db.insert(s.users).values({ id: user.id, handle: name, trustScore });
       return { id: user.id, cookie: cookies.map((c) => `${c.name}=${c.value}`).join("; ") };
-    }
+    };
     author = await login("author", 30);
     newbie = await login("newbie", 10);
     trusted = await login("trusted", 50);
     player = await login("player", null);
+    kvPuts = [];
+    kvFails = false;
   });
 
   async function post(publish = true, userId = author.id): Promise<string> {
@@ -264,10 +275,12 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
     expect(rows[0]?.weight).toBeCloseTo(3);
   });
 
-  it("受付だけでは投稿状態・作者と通報者の trust_score・moderation_actions は変わらない（自動制限は別。R-mo.A4-3）", async () => {
+  it("閾値に届かない通報では、投稿状態・trust_score・moderation_actions・KV は変わらない", async () => {
     const id = await post();
-    await report(id, { category: "sexual" }, { device: DEVICE_A, cookie: trusted.cookie });
-    await report(id, { category: "sexual" }, { device: DEVICE_B, cookie: newbie.cookie });
+    kvPuts = [];
+    // 5.0 + 1.0 = 6（合計 10 未満、sexual / flashing は 0）
+    await report(id, { category: "spam" }, { device: DEVICE_A, cookie: trusted.cookie });
+    await report(id, { category: "spam" }, { device: DEVICE_B, cookie: newbie.cookie });
     expect(await statusOf(id)).toBe("public");
     const trust = await db.select({ id: s.users.id, t: s.users.trustScore }).from(s.users);
     expect(Object.fromEntries(trust.map((u) => [u.id, u.t]))).toEqual({
@@ -276,6 +289,7 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
       [trusted.id]: 50,
     });
     expect(await db.select().from(s.moderationActions)).toHaveLength(0);
+    expect(kvPuts).toEqual([]);
   });
 
   it("X-Device-Id が無い・形式外は invalid_device。本文が JSON でない・カテゴリが違うときは invalid_request", async () => {
@@ -312,5 +326,214 @@ dbSuite("POST /api/posts/{id}/reports（mo#A.4）", () => {
     expect(await res.text()).toBe('{"reported":true}');
     const text = await (await app.request(`/api/posts/${id}`)).text();
     expect(text).not.toMatch(/report|sexual|ひみつ|weight/);
+  });
+
+  // --- 自動制限（mo#A.4。R-mo.A4-3） ---
+
+  const device = (i: number) => `device-${String(i).padStart(4, "0")}-xxxxxxxxxxxx`;
+  /** 新規（trust_score 10）の通報者を n 人作る */
+  async function newbies(n: number): Promise<{ id: string; cookie: string }[]> {
+    const out: { id: string; cookie: string }[] = [];
+    for (let i = 0; i < n; i++) out.push(await login(`reporter-${i}`, 10));
+    return out;
+  }
+  const actions = () => db.select().from(s.moderationActions).orderBy(s.moderationActions.id);
+  const trustOf = async () =>
+    Object.fromEntries(
+      (await db.select({ id: s.users.id, t: s.users.trustScore }).from(s.users)).map((u) => [
+        u.id,
+        u.t,
+      ]),
+    );
+
+  it("R-mo.A4-3 新規 10 人の spam で制限。9 人目では制限されない。監査行は moderator_id = NULL の restrict、KV は no", async () => {
+    const id = await post();
+    const reporters = await newbies(10);
+    const trustBefore = await trustOf();
+    kvPuts = [];
+    for (let i = 0; i < 9; i++) {
+      await report(
+        id,
+        { category: "spam" },
+        { device: device(i), cookie: reporters[i]?.cookie as string },
+      );
+    }
+    expect(await statusOf(id)).toBe("public");
+    expect(await actions()).toHaveLength(0);
+    expect(kvPuts).toEqual([]);
+
+    const res = await report(
+      id,
+      { category: "spam" },
+      { device: device(9), cookie: reporters[9]?.cookie as string },
+    );
+    // 通報者には制限が起きたことを返さない
+    expect(await res.text()).toBe('{"reported":true}');
+    expect(await statusOf(id)).toBe("restricted");
+    const [p] = await db.select().from(s.posts).where(eq(s.posts.id, id));
+    expect(p).toMatchObject({ indivRestricted: true, baseStatus: "public" });
+    expect(await actions()).toEqual([
+      {
+        id: expect.any(Number),
+        moderatorId: null,
+        kind: "restrict",
+        postId: id,
+        userId: null,
+        reason: "自動制限: 合計 10（閾値 10）、sexual+flashing 0（閾値 5）。内訳: spam 10（10 件）",
+        createdAt: NOW,
+      },
+    ]);
+    expect(kvPuts).toEqual([{ postId: id, status: "no" }]);
+
+    // 通報は open のまま。作者と通報者の trust_score は変わらない
+    expect((await rowsOf(id)).map((r) => r.resolution)).toEqual(Array(10).fill("open"));
+    expect(await trustOf()).toEqual(trustBefore);
+  });
+
+  it("R-mo.A4-3 新規 2 人の sexual で制限（3 + 3 ≥ 5）。1 人では制限されない。sexual と flashing は合わせて数える", async () => {
+    const id = await post();
+    const mixed = await post();
+    const [a, b] = await newbies(2);
+    await report(id, { category: "sexual" }, { device: device(0), cookie: a?.cookie as string });
+    expect(await statusOf(id)).toBe("public");
+    await report(id, { category: "sexual" }, { device: device(1), cookie: b?.cookie as string });
+    expect(await statusOf(id)).toBe("restricted");
+
+    await report(mixed, { category: "sexual" }, { device: device(0), cookie: a?.cookie as string });
+    await report(
+      mixed,
+      { category: "flashing" },
+      { device: device(1), cookie: b?.cookie as string },
+    );
+    expect(await statusOf(mixed)).toBe("restricted");
+    expect((await actions()).map((x) => [x.postId, x.moderatorId, x.kind])).toEqual([
+      [id, null, "restrict"],
+      [mixed, null, "restrict"],
+    ]);
+  });
+
+  it("R-mo.A4-3 信頼スコア 17 の sexual は 1 件で制限（5.1 ≥ 5）。16 では制限されない", async () => {
+    const id = await post();
+    const sixteen = await login("sixteen", 16);
+    const seventeen = await login("seventeen", 17);
+    await report(id, { category: "sexual" }, { device: device(0), cookie: sixteen.cookie });
+    expect(await statusOf(id)).toBe("public");
+    const other = await post();
+    await report(other, { category: "sexual" }, { device: device(1), cookie: seventeen.cookie });
+    expect(await statusOf(other)).toBe("restricted");
+  });
+
+  it("M10 匿名は 100 人が sexual で通報しても制限しない。監査行も KV の書き込みも無い", async () => {
+    const id = await post();
+    kvPuts = [];
+    for (let i = 0; i < 100; i++) {
+      expect((await report(id, { category: "sexual" }, { device: device(i) })).status).toBe(200);
+    }
+    expect(await rowsOf(id)).toHaveLength(100);
+    expect(await statusOf(id)).toBe("public");
+    expect(await actions()).toHaveLength(0);
+    expect(kvPuts).toEqual([]);
+  }, 30_000);
+
+  it("R-mo.A4-3 数えるのは open の通報だけ。dismissed / upheld は合計に入らない", async () => {
+    const id = await post();
+    const [a, b, c] = await newbies(3);
+    await report(id, { category: "sexual" }, { device: device(0), cookie: a?.cookie as string });
+    // 運営が退けた（restore 相当）・認めた通報は open でない
+    await db.update(s.reports).set({ resolution: "dismissed" }).where(eq(s.reports.postId, id));
+    await report(id, { category: "sexual" }, { device: device(1), cookie: b?.cookie as string });
+    expect(await statusOf(id)).toBe("public");
+    await db.update(s.reports).set({ resolution: "upheld" }).where(eq(s.reports.postId, id));
+    await report(id, { category: "sexual" }, { device: device(2), cookie: c?.cookie as string });
+    expect(await statusOf(id)).toBe("public");
+    expect(await actions()).toHaveLength(0);
+  });
+
+  it("R-mo.A4-3 制限済みの投稿への通報は受け付けるが、監査行を重ねない", async () => {
+    const id = await post();
+    const [a, b, c] = await newbies(3);
+    await report(id, { category: "sexual" }, { device: device(0), cookie: a?.cookie as string });
+    await report(id, { category: "sexual" }, { device: device(1), cookie: b?.cookie as string });
+    expect(await actions()).toHaveLength(1);
+    expect(
+      (await report(id, { category: "sexual" }, { device: device(2), cookie: c?.cookie as string }))
+        .status,
+    ).toBe(200);
+    // 同じ人の 2 回目（重複）でも増えない
+    await report(id, { category: "sexual" }, { device: device(2), cookie: c?.cookie as string });
+    expect(await rowsOf(id)).toHaveLength(3);
+    expect(await actions()).toHaveLength(1);
+    expect(await statusOf(id)).toBe("restricted");
+  });
+
+  it("R-mo.A4-3 limited の投稿も制限され、基本状態は limited のまま（制限は基本状態の遷移ではない。mo#A.3）", async () => {
+    const id = await post(true, newbie.id);
+    expect(await statusOf(id)).toBe("limited");
+    await report(id, { category: "sexual" }, { device: device(0), cookie: trusted.cookie });
+    expect(await statusOf(id)).toBe("restricted");
+    const [p] = await db.select().from(s.posts).where(eq(s.posts.id, id));
+    expect(p?.baseStatus).toBe("limited");
+  });
+
+  it("R-mo.A4-3 自動制限された投稿は、ゲームページの API からも見えなくなる", async () => {
+    const id = await post();
+    expect((await app.request(`/api/posts/${id}`)).status).toBe(200);
+    await report(id, { category: "sexual" }, { device: device(0), cookie: trusted.cookie });
+    expect((await app.request(`/api/posts/${id}`)).status).toBe(404);
+    const like = await app.request(`/api/posts/${id}/like`, {
+      method: "PUT",
+      headers: { "x-device-id": DEVICE_C },
+    });
+    expect(like.status).toBe(404);
+  });
+
+  it("R-se.A5-3 KV の書き込みが失敗しても、通報は成功し DB の制限は確定している。次の通報で KV を書き直す", async () => {
+    const id = await post();
+    const [a] = await newbies(1);
+    kvPuts = [];
+    kvFails = true;
+    const res = await report(
+      id,
+      { category: "sexual" },
+      { device: device(0), cookie: trusted.cookie },
+    );
+    expect(res.status).toBe(200);
+    expect(await statusOf(id)).toBe("restricted");
+    expect(await actions()).toHaveLength(1);
+    expect(kvPuts).toEqual([]);
+
+    kvFails = false;
+    await report(id, { category: "spam" }, { device: device(1), cookie: a?.cookie as string });
+    expect(kvPuts).toEqual([{ postId: id, status: "no" }]);
+    expect(await actions()).toHaveLength(1);
+  });
+
+  it("R-se.A5-3 KV が設定されていない構成では通報を受け付けない（制限が配信に届かないまま DB だけ制限されるのを防ぐ）", async () => {
+    const id = await post();
+    const auth = createAuth({ baseURL: BASE, secret: "test-secret-".repeat(4), db });
+    const { kv: _kv, ...noKv } = deps;
+    const bare = createApp({ auth, baseURL: BASE, publish: noKv });
+    const res = await bare.request(`/api/posts/${id}/reports`, {
+      method: "POST",
+      headers: { "content-type": "application/json", "x-device-id": DEVICE_A },
+      body: JSON.stringify({ category: "sexual" }),
+    });
+    expect(res.status).toBe(503);
+    expect(await res.json()).toMatchObject({ error: "not_configured" });
+    expect(await rowsOf(id)).toHaveLength(0);
+    expect(await statusOf(id)).toBe("public");
+  });
+
+  it("R-mo.A4-3 同時に届いた通報でも、監査行は 1 つ", async () => {
+    const id = await post();
+    const reporters = await newbies(4);
+    await Promise.all(
+      reporters.map((r, i) =>
+        report(id, { category: "sexual" }, { device: device(i), cookie: r.cookie }),
+      ),
+    );
+    expect(await rowsOf(id)).toHaveLength(4);
+    expect(await statusOf(id)).toBe("restricted");
+    expect(await actions()).toHaveLength(1);
   });
 });
