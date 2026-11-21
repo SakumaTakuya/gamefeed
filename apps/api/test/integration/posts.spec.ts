@@ -336,7 +336,9 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
   it("R-run.A14-7 校正済みの投稿は stats.histogram に点数の分布の区間を返す（domain の histogram と同じ値。分布そのものは返さない）", async () => {
     const id = await post(true);
     await setStats(id, "calibrated", DIST);
-    const stats = (await statsOf(id)) as { histogram: { from: number; to: number; count: number }[] };
+    const stats = (await statsOf(id)) as {
+      histogram: { from: number; to: number; count: number }[];
+    };
     expect(stats).toEqual({ plays: 20, likes: 0, histogram: histogram(DIST) });
     expect(stats.histogram).toHaveLength(12);
     expect(stats.histogram.reduce((sum, b) => sum + b.count, 0)).toBe(20);

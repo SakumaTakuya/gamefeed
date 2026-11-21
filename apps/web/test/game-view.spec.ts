@@ -240,12 +240,14 @@ describe("gameView", () => {
   });
 
   it("R-run.A14-7 結果の幕のヒストグラム: 棒の高さは最大の件数に対する比。点数のある結果は、その点数の入る棒に印", () => {
-    const histOf = (result: Extract<SessionState, { kind: "ENDED" }>["result"], lookup = calibrated) => {
+    const histOf = (
+      result: Extract<SessionState, { kind: "ENDED" }>["result"],
+      lookup: PostLookup = calibrated,
+    ) => {
       const v = of({ kind: "ENDED", ...session, result }, null, lookup);
       return v.kind === "result" ? v.histogram : undefined;
     };
-    const guest = (score: number) =>
-      histOf({ via: "guest", score, frames: 180, scoreable: true });
+    const guest = (score: number) => histOf({ via: "guest", score, frames: 180, scoreable: true });
     expect(guest(12)).toEqual({
       from: 0,
       to: 400,

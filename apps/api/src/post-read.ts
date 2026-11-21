@@ -6,7 +6,13 @@
  * 理由を区別せず `not_found` を返す。作者が呼んでも同じ（作者が見るのは試遊ページと「作る」ページ）。
  */
 
-import { CALIBRATION_MIN_PLAYS, deviation, SCORE_MAX } from "@gamefeed/domain";
+import {
+  CALIBRATION_MIN_PLAYS,
+  deviation,
+  type HistogramBin,
+  histogram,
+  SCORE_MAX,
+} from "@gamefeed/domain";
 import { and, eq, sql } from "drizzle-orm";
 import type { Db } from "./db/client.ts";
 import { postStats, posts, users } from "./db/schema.ts";
@@ -24,9 +30,10 @@ export interface PublicPost {
   liked: boolean;
   /**
    * プレイ数（分布の件数。sc#A.4。`list_my_games` の `plays` と同じ値）といいね数。
+   * `histogram` は点数の分布を区間に切ったもの（domain の `histogram`。分布そのものは返さない）。
    * 校正済みの投稿だけ（product#9 の 5）。それ以外は null
    */
-  stats: { plays: number; likes: number } | null;
+  stats: { plays: number; likes: number; histogram: HistogramBin[] } | null;
 }
 
 /** 投稿状態が `limited` / `public` か（dm#A.4 のビュー post_status。制限は indiv_restricted と tree_locks から） */
@@ -65,6 +72,7 @@ export async function readPublicPost(
         : sql<boolean>`false`,
       calibration: posts.calibration,
       plays: postStats.n,
+      scores: postStats.scores,
       // 選択列の副問い合わせでは表名を自分で書く（drizzle は `${posts.id}` を表名なしの "id" にする）
       likes: sql<number>`(select count(*)::int from likes l where l.post_id = "posts"."id")`,
     })
@@ -80,7 +88,15 @@ export async function readPublicPost(
     author: { handle: row.handle },
     published_at: row.publishedAt.toISOString(),
     liked: row.liked,
-    stats: row.calibration === "calibrated" ? { plays: row.plays ?? 0, likes: row.likes } : null,
+    stats:
+      row.calibration === "calibrated"
+        ? {
+            plays: row.plays ?? 0,
+            likes: row.likes,
+            // post_stats.scores は昇順（dm#A.3）。並びが崩れていても図がずれないよう、ここで並べ直す
+            histogram: histogram([...(row.scores ?? [])].sort((a, b) => a - b)),
+          }
+        : null,
   };
 }
 
