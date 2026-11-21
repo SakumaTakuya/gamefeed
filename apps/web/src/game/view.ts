@@ -1,13 +1,24 @@
 // ゲームページ（run#A.14）に出すものの組み立て。公開後のページなので、
 // 作者向けの情報（Guest の例外の文面、入力ログ、速度）は出さない（run#A.12、product#9）。
-import type { GameMeta, SessionState } from "@gamefeed/domain";
+import { type GameMeta, histogramIndex, type SessionState } from "@gamefeed/domain";
 import type { Halt } from "../single/player.ts";
 import type { PostLookup, PostStats } from "./api.ts";
+
+/** 幕に出す数（校正済みの投稿だけ。product#9 の 5） */
+export type Counts = Pick<PostStats, "plays" | "likes">;
+
+/** 点数の分布の図（product#9 の 5）。`from`〜`to` は図の両端の点数 */
+export interface HistogramView {
+  from: number;
+  to: number;
+  /** `ratio` は最大の件数に対する比（0〜1）。`mine` は今の結果の点数の入る棒 */
+  bars: { ratio: number; mine: boolean }[];
+}
 
 export type GameView =
   | { kind: "loading" }
   /** 「タップしてスタート」を待っている */
-  | { kind: "start"; verb: string; title: string; author: string | null; stats: PostStats | null }
+  | { kind: "start"; verb: string; title: string; author: string | null; stats: Counts | null }
   /** 遊んでいる間は iframe の上に何もかぶせない（se#A.3） */
   | { kind: "playing" }
   /** `like` は、投稿が読めていて、いいねを送れるときだけ（null なら出さない） */
@@ -21,7 +32,9 @@ export type GameView =
       /** 「今の偏差値」（product#5.3）。小数 1 桁。点数のある結果で、値が届いているときだけ */
       deviation: string | null;
       /** プレイ数といいね数。校正済みの投稿だけ（product#9 の 5） */
-      stats: PostStats | null;
+      stats: Counts | null;
+      /** 点数の分布。校正済みの投稿だけ。点数のある結果なら、その点数の入る棒に印が付く */
+      histogram: HistogramView | null;
     }
   /** 配信されない投稿。理由は区別しない（mo#A.3、mc#A.9） */
   | { kind: "unavailable" }
@@ -51,6 +64,19 @@ export function gameView(p: {
     : null;
   // API が「無い」と言ったら、iframe の様子によらず開けない（ready を待たない）
   if (lookup?.kind === "not_found") return { kind: "unavailable" };
+  const histogramOf = (score: number | null): HistogramView | null => {
+    const bins = found?.stats?.histogram ?? [];
+    const first = bins[0];
+    const last = bins[bins.length - 1];
+    if (!first || !last) return null;
+    const most = Math.max(1, ...bins.map((b) => b.count));
+    const mine = score === null ? null : histogramIndex(bins, score);
+    return {
+      from: first.from,
+      to: last.to,
+      bars: bins.map((b, i) => ({ ratio: b.count / most, mine: i === mine })),
+    };
+  };
   switch (state.kind) {
     case "LOADING":
     case "READY":
@@ -80,10 +106,20 @@ export function gameView(p: {
           canReport,
           deviation,
           stats,
+          histogram: histogramOf(r.score),
         };
       }
       const sub = r.via === "timeout" ? "時間切れ" : "エラー";
-      return { kind: "result", main: "—", sub, like, canReport, deviation: null, stats };
+      return {
+        kind: "result",
+        main: "—",
+        sub,
+        like,
+        canReport,
+        deviation: null,
+        stats,
+        histogram: histogramOf(null),
+      };
     }
     case "DESTROYED":
       return p.halted === "no_ready" ? { kind: "unavailable" } : { kind: "stopped" };

@@ -40,10 +40,16 @@ const found: Extract<PostLookup, { kind: "found" }> = {
     stats: null,
   },
 };
-/** 校正済みの投稿（プレイ数といいね数が付く） */
+const BINS = [
+  { from: 0, to: 9, count: 30 },
+  { from: 10, to: 19, count: 60 },
+  { from: 20, to: 29, count: 0 },
+  { from: 30, to: 400, count: 30 },
+];
+/** 校正済みの投稿（プレイ数・いいね数・分布の区間が付く） */
 const calibrated: PostLookup = {
   kind: "found",
-  post: { ...found.post, stats: { plays: 120, likes: 7 } },
+  post: { ...found.post, stats: { plays: 120, likes: 7, histogram: BINS } },
 };
 
 describe("gameView", () => {
@@ -74,6 +80,7 @@ describe("gameView", () => {
       canReport: false,
       deviation: null,
       stats: null,
+      histogram: null,
     });
     expect(ended({ via: "guest", score: 0, frames: 0, scoreable: true })).toMatchObject({
       main: "0 点",
@@ -86,6 +93,7 @@ describe("gameView", () => {
       canReport: false,
       deviation: null,
       stats: null,
+      histogram: null,
     });
     expect(ended({ via: "error", scoreable: true })).toEqual({
       kind: "result",
@@ -95,6 +103,7 @@ describe("gameView", () => {
       canReport: false,
       deviation: null,
       stats: null,
+      histogram: null,
     });
   });
 
@@ -202,7 +211,7 @@ describe("gameView", () => {
     expect(of(ended, null, calibrated, true)).toMatchObject({ stats: { plays: 120, likes: 8 } });
     const already: PostLookup = {
       kind: "found",
-      post: { ...found.post, liked: true, stats: { plays: 120, likes: 7 } },
+      post: { ...found.post, liked: true, stats: { plays: 120, likes: 7, histogram: [] } },
     };
     expect(of(ended, null, already, true)).toMatchObject({ stats: { plays: 120, likes: 7 } });
   });
@@ -228,6 +237,50 @@ describe("gameView", () => {
         devOf({ kind: "ENDED", ...session, result: { via, scoreable: true } }, 62.3),
       ).toBeNull();
     }
+  });
+
+  it("R-run.A14-7 結果の幕のヒストグラム: 棒の高さは最大の件数に対する比。点数のある結果は、その点数の入る棒に印", () => {
+    const histOf = (
+      result: Extract<SessionState, { kind: "ENDED" }>["result"],
+      lookup: PostLookup = calibrated,
+    ) => {
+      const v = of({ kind: "ENDED", ...session, result }, null, lookup);
+      return v.kind === "result" ? v.histogram : undefined;
+    };
+    const guest = (score: number) => histOf({ via: "guest", score, frames: 180, scoreable: true });
+    expect(guest(12)).toEqual({
+      from: 0,
+      to: 400,
+      bars: [
+        { ratio: 0.5, mine: false },
+        { ratio: 1, mine: true },
+        { ratio: 0, mine: false },
+        { ratio: 0.5, mine: false },
+      ],
+    });
+    // 分布の外の点数は端の棒
+    expect(guest(100000)?.bars.map((b) => b.mine)).toEqual([false, false, false, true]);
+    // 時間切れ・エラーは図だけ（印なし）
+    for (const via of ["timeout", "error"] as const) {
+      expect(histOf({ via, scoreable: true })?.bars.some((b) => b.mine)).toBe(false);
+    }
+    // 校正済みでない・読めていない・区間が無い（古い応答）ときは出さない
+    const result = { via: "guest", score: 12, frames: 180, scoreable: true } as const;
+    expect(histOf(result, found)).toBeNull();
+    expect(histOf(result, { kind: "unknown" })).toBeNull();
+    expect(
+      histOf(result, {
+        kind: "found",
+        post: { ...found.post, stats: { plays: 120, likes: 7, histogram: [] } },
+      }),
+    ).toBeNull();
+  });
+
+  it("R-run.A14-7 スタートの幕にはヒストグラムを出さない（遊ぶ前に点数の相場を見せない）", () => {
+    const v = of({ kind: "INITED", ...session, timeLimit: 180, speed: 1 }, null, calibrated);
+    expect(v).not.toHaveProperty("histogram");
+    expect(v).toMatchObject({ stats: { plays: 120, likes: 7 } });
+    expect((v as { stats: object }).stats).not.toHaveProperty("histogram");
   });
 
   it("遊べていたゲームを Host が止めたときは「止めました」（遷移、プロトコル違反）", () => {

@@ -4,7 +4,7 @@
  * Postgres と Better Auth は本物（ログインは testUtils）、R2 / KV は fake。
  */
 
-import { CALIBRATION_MIN_PLAYS, deviation } from "@gamefeed/domain";
+import { CALIBRATION_MIN_PLAYS, deviation, histogram } from "@gamefeed/domain";
 import { testUtils } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
@@ -322,15 +322,31 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
   it("R-run.A14-6 校正済みの投稿は stats にプレイ数（分布の件数）といいね数を返す", async () => {
     const id = await post(true);
     await setStats(id, "calibrated", DIST);
-    expect(await statsOf(id)).toEqual({ plays: 20, likes: 0 });
+    expect(await statsOf(id)).toMatchObject({ plays: 20, likes: 0 });
     await like(id, DEVICE_A);
     await like(id, DEVICE_B);
     await like(id, DEVICE_B);
-    expect(await statsOf(id)).toEqual({ plays: 20, likes: 2 });
+    expect(await statsOf(id)).toMatchObject({ plays: 20, likes: 2 });
     // ほかの投稿の数は混ざらない
     const other = await post(true);
     await setStats(other, "calibrated", [...DIST, 500]);
-    expect(await statsOf(other)).toEqual({ plays: 21, likes: 0 });
+    expect(await statsOf(other)).toMatchObject({ plays: 21, likes: 0 });
+  });
+
+  it("R-run.A14-7 校正済みの投稿は stats.histogram に点数の分布の区間を返す（domain の histogram と同じ値。分布そのものは返さない）", async () => {
+    const id = await post(true);
+    await setStats(id, "calibrated", DIST);
+    const stats = (await statsOf(id)) as {
+      histogram: { from: number; to: number; count: number }[];
+    };
+    expect(stats).toEqual({ plays: 20, likes: 0, histogram: histogram(DIST) });
+    expect(stats.histogram).toHaveLength(12);
+    expect(stats.histogram.reduce((sum, b) => sum + b.count, 0)).toBe(20);
+    expect(Object.keys(stats)).not.toContain("scores");
+    // 並びが崩れた配列でも同じ（dm#A.3 は昇順。崩れていても図がずれない）
+    const shuffled = await post(true);
+    await setStats(shuffled, "calibrated", [...DIST].reverse());
+    expect(((await statsOf(shuffled)) as typeof stats).histogram).toEqual(histogram(DIST));
   });
 
   it("R-run.A14-6 校正済みでない投稿（未校正・要確認・不成立、集計の行が無い）は stats が null", async () => {

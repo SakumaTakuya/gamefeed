@@ -9,9 +9,15 @@ import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
 import { deviceId } from "../run/device-id.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
-import { fetchDeviation, fetchPost, type PostLookup, type PostStats, sendLike } from "./api.ts";
+import { fetchDeviation, fetchPost, type PostLookup, sendLike } from "./api.ts";
 import { REPORT_OPTIONS, type ReportResult, reportDraft, sendReport } from "./report.ts";
-import { gameView, STOPPED_TEXT, UNAVAILABLE_TEXT } from "./view.ts";
+import {
+  type Counts,
+  gameView,
+  type HistogramView,
+  STOPPED_TEXT,
+  UNAVAILABLE_TEXT,
+} from "./view.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 
@@ -135,6 +141,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
                     今の偏差値 <strong style={styles.deviationValue}>{view.deviation}</strong>
                   </p>
                 )}
+                {view.histogram && <Histogram histogram={view.histogram} />}
                 {view.stats && <Stats stats={view.stats} />}
                 <button type="button" style={styles.button} onClick={player.again}>
                   もう一回
@@ -237,12 +244,45 @@ function Player({ postId, src }: { postId: string; src: string }) {
 }
 
 /** プレイ数といいね数（校正済みの投稿だけ。product#9 の 5） */
-function Stats({ stats }: { stats: PostStats }) {
+function Stats({ stats }: { stats: Counts }) {
   return (
     <span style={styles.stats}>
       <span>▶ {stats.plays.toLocaleString("ja-JP")} プレイ</span>
       <span>♥ {stats.likes.toLocaleString("ja-JP")}</span>
     </span>
+  );
+}
+
+/** 点数の分布（校正済みの投稿だけ。product#9 の 5）。色の付いた棒が今の結果 */
+function Histogram({ histogram }: { histogram: HistogramView }) {
+  const mine = histogram.bars.some((b) => b.mine);
+  return (
+    <div
+      style={styles.histogram}
+      role="img"
+      aria-label={`みんなの点数の分布（${histogram.from} 点から ${histogram.to} 点）`}
+    >
+      <div style={styles.bars}>
+        {histogram.bars.map((bar, i) => (
+          <span
+            // 棒は並びが変わらない（区間の順）
+            // biome-ignore lint/suspicious/noArrayIndexKey: 区間の位置がそのまま識別子
+            key={i}
+            style={{
+              ...styles.bar,
+              // 0 件の区間も細い線で残す（区間があることは見せる）
+              height: `${Math.max(2, bar.ratio * 100)}%`,
+              background: bar.mine ? "#ffd166" : "rgba(255, 255, 255, 0.55)",
+            }}
+          />
+        ))}
+      </div>
+      <div style={styles.axis}>
+        <span>{histogram.from.toLocaleString("ja-JP")}</span>
+        <span>{mine ? "みんなの点数（色付きがあなた）" : "みんなの点数"}</span>
+        <span>{histogram.to.toLocaleString("ja-JP")}</span>
+      </div>
+    </div>
   );
 }
 
@@ -295,6 +335,24 @@ const styles = {
   verb: { fontSize: "2.5rem", fontWeight: 700, margin: 0 },
   title: { fontSize: "1rem", opacity: 0.8 },
   stats: { display: "flex", gap: "1rem", fontSize: "0.9rem", opacity: 0.8 },
+  histogram: { width: "min(100%, 16rem)" },
+  bars: {
+    display: "flex",
+    alignItems: "flex-end",
+    gap: "2px",
+    height: "3.5rem",
+    borderBottom: "1px solid rgba(255, 255, 255, 0.4)",
+  },
+  bar: { flex: 1, borderRadius: "2px 2px 0 0" },
+  axis: {
+    display: "flex",
+    justifyContent: "space-between",
+    gap: "0.5rem",
+    fontSize: "0.7rem",
+    opacity: 0.7,
+    marginTop: "0.2rem",
+    fontVariantNumeric: "tabular-nums",
+  },
   deviation: { fontSize: "1rem", margin: 0 },
   deviationValue: { fontSize: "1.6rem", fontVariantNumeric: "tabular-nums" },
   button: {

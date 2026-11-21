@@ -12,6 +12,7 @@ export * from "./deck.ts";
 export * from "./deviation.ts";
 export * from "./forbidden-identifiers.ts";
 export * from "./handle.ts";
+export * from "./histogram.ts";
 export * from "./publish-step.ts";
 export * from "./report.ts";
 export * from "./result.ts";

@@ -2,6 +2,7 @@
 // いいね（`PUT /api/posts/{id}/like`）は端末の主体で送る（`X-Device-Id`。product#3 の 5）。
 // プレイ数・いいね数は同じ応答の `stats`、「今の偏差値」は `GET /api/posts/{id}/deviation`（product#5.3。校正済みだけ）。
 // 応答はサーバのものでも形を確かめてから使う（古いデプロイや途中のプロキシの応答で画面を壊さない）。
+import type { HistogramBin } from "@gamefeed/domain";
 import { DEVICE_ID_HEADER } from "../run/device-id.ts";
 
 export interface PostInfo {
@@ -18,7 +19,12 @@ export interface PostInfo {
 export interface PostStats {
   plays: number;
   likes: number;
+  /** 点数の分布の区間（domain の `histogram`）。無い・読めないときは空（図を出さない） */
+  histogram: HistogramBin[];
 }
+
+/** これより多い区間は描かない（サーバは 12 本まで。形の違う応答で画面を埋めない） */
+const HISTOGRAM_READ_MAX = 64;
 
 export type PostLookup =
   | { kind: "found"; post: PostInfo }
@@ -35,7 +41,22 @@ const isCount = (x: unknown): x is number => typeof x === "number" && Number.isI
 /** 形が違えば「出さない」。数が読めないだけで投稿を「分からない」にはしない */
 function readStats(x: unknown): PostStats | null {
   if (!isObject(x) || !isCount(x.plays) || !isCount(x.likes)) return null;
-  return { plays: x.plays, likes: x.likes };
+  return { plays: x.plays, likes: x.likes, histogram: readHistogram(x.histogram) };
+}
+
+/** 区間は整数で、前から順につながらなくても重ならずに並ぶこと。1 つでも形が違えば全部捨てる */
+function readHistogram(x: unknown): HistogramBin[] {
+  if (!Array.isArray(x) || x.length > HISTOGRAM_READ_MAX) return [];
+  const bins: HistogramBin[] = [];
+  for (const b of x) {
+    if (!isObject(b)) return [];
+    const { from, to, count } = b;
+    if (!isCount(from) || !isCount(to) || !isCount(count) || from > to) return [];
+    const prev = bins[bins.length - 1];
+    if (prev && from <= prev.to) return [];
+    bins.push({ from, to, count });
+  }
+  return bins;
 }
 
 export function readPostLookup(status: number, body: unknown): PostLookup {
