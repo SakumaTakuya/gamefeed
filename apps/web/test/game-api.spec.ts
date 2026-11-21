@@ -39,8 +39,11 @@ describe("readPostLookup", () => {
       const r = readPostLookup(200, b);
       return r.kind === "found" ? r.post.stats : "not found";
     };
-    expect(stats({ ...body, stats: { plays: 120, likes: 7 } })).toEqual({ plays: 120, likes: 7 });
-    expect(stats({ ...body, stats: { plays: 0, likes: 0 } })).toEqual({ plays: 0, likes: 0 });
+    expect(stats({ ...body, stats: { plays: 120, likes: 7 } })).toMatchObject({
+      plays: 120,
+      likes: 7,
+    });
+    expect(stats({ ...body, stats: { plays: 0, likes: 0 } })).toMatchObject({ plays: 0, likes: 0 });
     expect(stats({ ...body, stats: null })).toBeNull();
     expect(stats(body)).toBeNull();
     expect(stats({ ...body, stats: { plays: "120", likes: 7 } })).toBeNull();
@@ -48,6 +51,34 @@ describe("readPostLookup", () => {
     expect(stats({ ...body, stats: { plays: -1, likes: 7 } })).toBeNull();
     expect(stats({ ...body, stats: { plays: 1.5, likes: 7 } })).toBeNull();
     expect(stats({ ...body, stats: [120, 7] })).toBeNull();
+  });
+
+  it("R-run.A14-7 stats.histogram を読む。無い・形の違うときは図だけ出さない（数は読めたまま）", () => {
+    const bins = [
+      { from: 0, to: 9, count: 3 },
+      { from: 10, to: 19, count: 0 },
+      { from: 20, to: 400, count: 17 },
+    ];
+    const hist = (histogram: unknown) => {
+      const r = readPostLookup(200, { ...body, stats: { plays: 20, likes: 1, histogram } });
+      if (r.kind !== "found" || !r.post.stats) return "no stats";
+      expect(r.post.stats).toMatchObject({ plays: 20, likes: 1 });
+      return r.post.stats.histogram;
+    };
+    expect(hist(bins)).toEqual(bins);
+    expect(hist([])).toEqual([]);
+    // 古い応答（#211 の形）
+    expect(hist(undefined)).toEqual([]);
+    expect(hist("nope")).toEqual([]);
+    expect(hist([{ from: 0, to: 9 }])).toEqual([]);
+    expect(hist([{ from: 0, to: 9, count: -1 }])).toEqual([]);
+    expect(hist([{ from: 10, to: 9, count: 1 }])).toEqual([]);
+    expect(hist([{ from: 0.5, to: 9, count: 1 }])).toEqual([]);
+    expect(hist([...bins, null])).toEqual([]);
+    // 区間が後ろに戻る・重なる
+    expect(hist([bins[1], bins[0]])).toEqual([]);
+    // 多すぎる区間は描かない
+    expect(hist(Array.from({ length: 65 }, (_, i) => ({ from: i, to: i, count: 1 })))).toEqual([]);
   });
 
   it("R-run.A14-2 404 の not_found だけが「無い」", () => {
