@@ -16,6 +16,7 @@ import { createServeKv } from "./kv.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
+import { readPublicPost } from "./post-read.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
 import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
@@ -29,6 +30,7 @@ import { deviceKindOf, parseTurn, type ReplayStorage, settleTurn } from "./turns
 //   /api/auth/*            Better Auth（Google ログイン、OAuth 2.1 の /oauth2/*、issuer 配下の .well-known）
 //   /.well-known/*         RFC 8414 / 9728 のパス挿入形（issuer・リソースにパスがあるので root にも出る）
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
+//   /api/posts/:id             公開済みの投稿を読む（匿名可。limited / public だけ。mo#A.3）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
 //   /api/runs              ランの作成（匿名可。主体は X-Device-Id。run#A.3）
 //   /api/runs/:id/turns/:t 手番 t の結果を記録に足す（そのランの主体だけ。run#A.3、sc#A.2）
@@ -96,6 +98,14 @@ export function createApp(input: AppInput): Hono {
 
   app.get(SIGN_IN_PAGE, (c) => c.html(signInPage()));
   app.get(CONSENT_PAGE, (c) => c.html(consentPage()));
+
+  // 公開済みの投稿を読む（ゲームページ。mo#A.3、mc#A.9）。匿名で呼べ、セッションを引かない。
+  // limited / public 以外は、存在しない ID も含めて理由を区別せず not_found
+  app.get("/api/posts/:id", async (c) => {
+    c.header("cache-control", "no-store");
+    const post = await readPublicPost(publish.db, c.req.param("id"));
+    return post ? c.json(post) : c.json({ error: "not_found" }, 404);
+  });
 
   // 下書きの試遊トークン（se#A.5）。作者本人の draft 以外は理由を区別せず not_found
   app.get("/api/posts/:id/play-token", async (c) => {

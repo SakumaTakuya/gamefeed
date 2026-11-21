@@ -2,11 +2,12 @@
 // 作者向けの情報（Guest の例外の文面、入力ログ、速度）は出さない（run#A.12、product#9）。
 import type { GameMeta, SessionState } from "@gamefeed/domain";
 import type { Halt } from "../single/player.ts";
+import type { PostLookup } from "./api.ts";
 
 export type GameView =
   | { kind: "loading" }
   /** 「タップしてスタート」を待っている */
-  | { kind: "start"; verb: string; title: string }
+  | { kind: "start"; verb: string; title: string; author: string | null }
   /** 遊んでいる間は iframe の上に何もかぶせない（se#A.3） */
   | { kind: "playing" }
   | { kind: "result"; main: string; sub: string | null }
@@ -23,14 +24,23 @@ export function gameView(p: {
   state: SessionState;
   meta: GameMeta | null;
   halted: Halt | null;
+  /** `GET /api/posts/{id}` の結果。まだ返っていなければ null */
+  lookup: PostLookup | null;
 }): GameView {
-  const { state } = p;
+  const { state, lookup } = p;
+  // API が「無い」と言ったら、iframe の様子によらず開けない（ready を待たない）
+  if (lookup?.kind === "not_found") return { kind: "unavailable" };
   switch (state.kind) {
     case "LOADING":
     case "READY":
       return { kind: "loading" };
     case "INITED":
-      return { kind: "start", verb: state.meta.verb, title: state.meta.title };
+      return {
+        kind: "start",
+        verb: state.meta.verb,
+        title: state.meta.title,
+        author: lookup?.kind === "found" ? lookup.post.handle : null,
+      };
     case "RUNNING":
     case "PAUSED":
       return { kind: "playing" };
