@@ -187,7 +187,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | 表 | 列 | 制約 |
 | --- | --- | --- |
 | `likes` | `post_id`, `actor_id`, `created_at` | pk `(post_id, actor_id)` |
-| `reports` | `id`, `post_id`, `actor_id`, `category`, `weight`, `resolution`, `created_at` | unique `(post_id, actor_id)`。主体が匿名（`actors.user_id` が NULL）なら `weight = 0`（受理時の検査、I14） |
+| `reports` | `id`, `post_id`, `actor_id`, `category`, `comment`, `weight`, `resolution`, `created_at` | unique `(post_id, actor_id)`。主体が匿名（`actors.user_id` が NULL）なら `weight = 0`（受理時の検査、I14）。`comment` は text null で、`REPORT_COMMENT_MAX` 文字まで（`moderation.md` A.4、A.9）。運営だけが読み、作者にも他の利用者にも返さない |
 
 ### moderation_actions / tree_locks
 
@@ -268,7 +268,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `posts` | `controls`, `showcase_key`, `deterministic` を削除（`deterministic` は `meta` へ）。`calibration`, `calibration_flags`, `thumb_key`, `preview_key`, `published_at`, `updated_at` を追加。`base_status` を `draft / limited / public / unpublished / removed` に（`pending`, `expired` を廃止）。I4 の CHECK を `published_at` に |
 | `sessions` | `user_id` を `actor_id` に。`post_id` を `ON DELETE CASCADE` に。`game_hash`, `device_kind`, `run_id`, `turn`, `speed`, `time_limit`, `miss_below`, `is_new`, `author`, `via`, `deviation` を追加。`checkpoint`, `opened_at`（→ `issued_at`）を削除。`state` に `skipped` |
 | `runs` | `seed`, `game_ids`, `results`, `cleared`, `total` を削除。`user_id` を `actor_id` に。`mode`, `date`, `deck`, `new_indexes`（#123 で `new_index` から変更）, `from_run`, `lives`, `reached`, `avg_deviation`, `symbols`, `ended`, `recorded` を追加。ビュー `run_results` は廃止 |
-| `reports` | `reporter_id` を `actor_id`（fk actors）に。匿名は受理時に `weight = 0` |
+| `reports` | `reporter_id` を `actor_id`（fk actors）に。匿名は受理時に `weight = 0`。`comment`（text null）を足す（#201） |
 | `actors`, `theme_posts`, `likes`, `post_stats` | 新設 |
 | `moderation_kind` | `calibration_confirm`, `calibration_invalidate`, `unban_user` を追加 |
 | `asset_type` | `bgm` を削除 |
