@@ -19,7 +19,7 @@ import { createMcpFetchHandler } from "./mcp.ts";
 import { parseModerationReason, restorePost } from "./moderation.ts";
 import { consentPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
-import { readPublicPost } from "./post-read.ts";
+import { parseScoreQuery, readDeviation, readPublicPost } from "./post-read.ts";
 import type { PublishDeps } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
 import { reportPost } from "./reports.ts";
@@ -35,6 +35,7 @@ import { deviceKindOf, parseTurn, type ReplayStorage, settleTurn } from "./turns
 //   /.well-known/*         RFC 8414 / 9728 のパス挿入形（issuer・リソースにパスがあるので root にも出る）
 //   /api/connect/*         ログイン・同意画面（PoC。W5 で SPA へ）
 //   /api/posts/:id             公開済みの投稿を読む（匿名可。limited / public だけ。mo#A.3）
+//   /api/posts/:id/deviation   今の偏差値（GET ?score=N。匿名可。校正済みでなければ null。product#5.3）
 //   /api/posts/:id/like        いいね（PUT。匿名可、X-Device-Id。冪等）
 //   /api/posts/:id/reports     通報の受付（POST。匿名可、X-Device-Id。mo#A.4）
 //   /api/posts/:id/play-token  下書きの試遊トークン（ログイン済みの作者だけ。se#A.5）
@@ -124,6 +125,15 @@ export function createApp(input: AppInput): Hono {
     const deviceId = parseDeviceId(c.req.header(DEVICE_ID_HEADER));
     const post = await readPublicPost(publish.db, c.req.param("id"), deviceId);
     return post ? c.json(post) : c.json({ error: "not_found" }, 404);
+  });
+
+  // ゲームページの「今の偏差値」（product#5.3、sc#A.5）。匿名で呼べ、セッションも主体も引かない。何も残さない
+  app.get("/api/posts/:id/deviation", async (c) => {
+    c.header("cache-control", "no-store");
+    const score = parseScoreQuery(c.req.query("score"));
+    if (score === null) return c.json({ error: "invalid_request" }, 400);
+    const found = await readDeviation(publish.db, c.req.param("id"), score);
+    return found ? c.json(found) : c.json({ error: "not_found" }, 404);
   });
 
   // いいね（product#3 の 5、I14）。匿名で呼べる。主体は X-Device-Id から upsert する。冪等

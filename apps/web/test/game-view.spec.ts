@@ -20,7 +20,16 @@ const of = (
   halted: "navigated" | "no_ready" | null = null,
   lookup: PostLookup | null = null,
   likedHere = false,
-) => gameView({ state, meta: "meta" in state ? state.meta : null, halted, lookup, likedHere });
+  deviation: number | null = null,
+) =>
+  gameView({
+    state,
+    meta: "meta" in state ? state.meta : null,
+    halted,
+    lookup,
+    likedHere,
+    deviation,
+  });
 const found: Extract<PostLookup, { kind: "found" }> = {
   kind: "found",
   post: {
@@ -28,7 +37,13 @@ const found: Extract<PostLookup, { kind: "found" }> = {
     title: "まるタップ",
     handle: "taku-sakuma",
     liked: false,
+    stats: null,
   },
+};
+/** 校正済みの投稿（プレイ数といいね数が付く） */
+const calibrated: PostLookup = {
+  kind: "found",
+  post: { ...found.post, stats: { plays: 120, likes: 7 } },
 };
 
 describe("gameView", () => {
@@ -40,6 +55,7 @@ describe("gameView", () => {
       verb: "タップ！",
       title: "まるタップ",
       author: null,
+      stats: null,
     });
     const active = { ...session, timeLimit: 180, speed: 1, startedAt: 0, log: null } as never;
     expect(of({ kind: "RUNNING", deadlineAt: 1, ...(active as object) } as SessionState)).toEqual({
@@ -56,6 +72,8 @@ describe("gameView", () => {
       sub: null,
       like: null,
       canReport: false,
+      deviation: null,
+      stats: null,
     });
     expect(ended({ via: "guest", score: 0, frames: 0, scoreable: true })).toMatchObject({
       main: "0 点",
@@ -66,6 +84,8 @@ describe("gameView", () => {
       sub: "時間切れ",
       like: null,
       canReport: false,
+      deviation: null,
+      stats: null,
     });
     expect(ended({ via: "error", scoreable: true })).toEqual({
       kind: "result",
@@ -73,6 +93,8 @@ describe("gameView", () => {
       sub: "エラー",
       like: null,
       canReport: false,
+      deviation: null,
+      stats: null,
     });
   });
 
@@ -88,6 +110,7 @@ describe("gameView", () => {
       verb: "タップ！",
       title: "まるタップ",
       author: "taku-sakuma",
+      stats: null,
     });
     expect(of(inited, null, { kind: "unknown" })).toMatchObject({ kind: "start", author: null });
     expect(of({ kind: "LOADING" }, null, found)).toEqual({ kind: "loading" });
@@ -153,6 +176,58 @@ describe("gameView", () => {
     expect(can(found)).toBe(true);
     expect(can(null)).toBe(false);
     expect(can({ kind: "unknown" })).toBe(false);
+  });
+
+  it("R-run.A14-6 校正済みの投稿は、スタートの幕と結果の幕にプレイ数といいね数を出す。校正済みでない・読めていないときは出さない", () => {
+    const inited: SessionState = { kind: "INITED", ...session, timeLimit: 180, speed: 1 };
+    const ended: SessionState = {
+      kind: "ENDED",
+      ...session,
+      result: { via: "timeout", scoreable: true },
+    };
+    for (const state of [inited, ended]) {
+      expect(of(state, null, calibrated)).toMatchObject({ stats: { plays: 120, likes: 7 } });
+      expect(of(state, null, found)).toMatchObject({ stats: null });
+      expect(of(state, null, { kind: "unknown" })).toMatchObject({ stats: null });
+      expect(of(state, null, null)).toMatchObject({ stats: null });
+    }
+  });
+
+  it("R-run.A14-6 このページでいいねを押したら、いいね数も 1 増やす。読んだ時点でいいね済みなら数えてあるので増やさない", () => {
+    const ended: SessionState = {
+      kind: "ENDED",
+      ...session,
+      result: { via: "guest", score: 3, frames: 180, scoreable: true },
+    };
+    expect(of(ended, null, calibrated, true)).toMatchObject({ stats: { plays: 120, likes: 8 } });
+    const already: PostLookup = {
+      kind: "found",
+      post: { ...found.post, liked: true, stats: { plays: 120, likes: 7 } },
+    };
+    expect(of(ended, null, already, true)).toMatchObject({ stats: { plays: 120, likes: 7 } });
+  });
+
+  it("R-run.A14-6 結果の幕の「今の偏差値」: 点数のある結果で、値が届いているときだけ。小数 1 桁", () => {
+    const guest: SessionState = {
+      kind: "ENDED",
+      ...session,
+      result: { via: "guest", score: 3, frames: 180, scoreable: true },
+    };
+    const devOf = (state: SessionState, value: number | null) => {
+      const v = of(state, null, calibrated, false, value);
+      return v.kind === "result" ? v.deviation : undefined;
+    };
+    expect(devOf(guest, 62.3)).toBe("62.3");
+    expect(devOf(guest, 50)).toBe("50.0");
+    expect(devOf(guest, 80)).toBe("80.0");
+    // まだ届いていない・校正済みでない（サーバが null を返す）
+    expect(devOf(guest, null)).toBeNull();
+    // 時間切れ・エラーには点数が無い。前の結果の値が残っていても出さない
+    for (const via of ["timeout", "error"] as const) {
+      expect(
+        devOf({ kind: "ENDED", ...session, result: { via, scoreable: true } }, 62.3),
+      ).toBeNull();
+    }
   });
 
   it("遊べていたゲームを Host が止めたときは「止めました」（遷移、プロトコル違反）", () => {
