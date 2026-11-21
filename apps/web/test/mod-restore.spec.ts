@@ -79,7 +79,9 @@ describe("restoreText（結果の文面）", () => {
   it("R-mo.A7-3 served: false は、配信がまだ戻っていないことと、もう一度押すことを伝える", () => {
     const text = restored("public", 2, false);
     expect(text).toContain("制限を解きました");
-    expect(text).toContain("配信にはまだ反映されていません。もう一度「制限を解く」を押してください");
+    expect(text).toContain(
+      "配信にはまだ反映されていません。もう一度「制限を解く」を押してください",
+    );
     expect(restored("public", 2, true)).not.toContain("反映されていません");
   });
 

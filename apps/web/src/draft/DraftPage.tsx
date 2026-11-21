@@ -5,6 +5,7 @@ import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
+import { signInWithGoogle } from "../sign-in.ts";
 import type { Halt } from "../single/player.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
 import { diagnose } from "./diagnose.ts";
@@ -39,17 +40,6 @@ async function loadAccess(postId: string): Promise<Access> {
   }
   const { token } = (await res.json()) as { token: string };
   return { kind: "ok", src: gameUrl(GAMES_ORIGIN, postId, token) };
-}
-
-async function signInWithGoogle(): Promise<void> {
-  const res = await fetch("/api/auth/sign-in/social", {
-    method: "POST",
-    headers: { "content-type": "application/json", accept: "application/json" },
-    body: JSON.stringify({ provider: "google", callbackURL: location.pathname }),
-  });
-  const data = (await res.json().catch(() => ({}))) as { url?: string };
-  if (!res.ok || !data.url) throw new Error(`ログインを始められませんでした（${res.status}）`);
-  location.href = data.url;
 }
 
 export function DraftPage({ postId }: { postId: string }) {
