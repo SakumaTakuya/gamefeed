@@ -187,7 +187,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | 表 | 列 | 制約 |
 | --- | --- | --- |
 | `likes` | `post_id`, `actor_id`, `created_at` | pk `(post_id, actor_id)` |
-| `reports` | `id`, `post_id`, `actor_id`, `category`, `weight`, `resolution`, `created_at` | unique `(post_id, actor_id)`。主体が匿名（`actors.user_id` が NULL）なら `weight = 0`（受理時の検査、I14） |
+| `reports` | `id`, `post_id`, `actor_id`, `category`, `comment`, `weight`, `resolution`, `created_at` | unique `(post_id, actor_id)`。主体が匿名（`actors.user_id` が NULL）なら `weight = 0`（受理時の検査、I14）。`comment` は text null で、`REPORT_COMMENT_MAX` 文字まで（`moderation.md` A.4、A.9）。運営だけが読み、作者にも他の利用者にも返さない |
 
 ### moderation_actions / tree_locks
 
