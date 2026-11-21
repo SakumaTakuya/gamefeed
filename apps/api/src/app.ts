@@ -142,7 +142,7 @@ export function createApp(input: AppInput): Hono {
       ? await auth.api.getSession({ headers: c.req.raw.headers })
       : null;
     const outcome = await reportPost(
-      { db: publish.db, now: publish.now },
+      { db: publish.db, now: publish.now, kv: publish.kv },
       { postId: c.req.param("id"), deviceId, userId: session?.user.id ?? null, report },
     );
     if (outcome === "not_found") return c.json({ error: "not_found" }, 404);
