@@ -1,5 +1,6 @@
 // ゲームページが読む `GET /api/posts/{id}`（公開済みの投稿。mo#A.3、mc#A.9）。匿名で呼ぶ。
 // いいね（`PUT /api/posts/{id}/like`）は端末の主体で送る（`X-Device-Id`。product#3 の 5）。
+// プレイ数・いいね数は同じ応答の `stats`、「今の偏差値」は `GET /api/posts/{id}/deviation`（product#5.3。校正済みだけ）。
 // 応答はサーバのものでも形を確かめてから使う（古いデプロイや途中のプロキシの応答で画面を壊さない）。
 import { DEVICE_ID_HEADER } from "../run/device-id.ts";
 
@@ -10,6 +11,13 @@ export interface PostInfo {
   handle: string;
   /** この端末がいいね済みか */
   liked: boolean;
+  /** プレイ数といいね数。校正済みの投稿だけ（product#9 の 5）。それ以外・読めないときは null */
+  stats: PostStats | null;
+}
+
+export interface PostStats {
+  plays: number;
+  likes: number;
 }
 
 export type PostLookup =
@@ -22,6 +30,14 @@ export type PostLookup =
 const isObject = (x: unknown): x is Record<string, unknown> =>
   typeof x === "object" && x !== null && !Array.isArray(x);
 
+const isCount = (x: unknown): x is number => typeof x === "number" && Number.isInteger(x) && x >= 0;
+
+/** 形が違えば「出さない」。数が読めないだけで投稿を「分からない」にはしない */
+function readStats(x: unknown): PostStats | null {
+  if (!isObject(x) || !isCount(x.plays) || !isCount(x.likes)) return null;
+  return { plays: x.plays, likes: x.likes };
+}
+
 export function readPostLookup(status: number, body: unknown): PostLookup {
   if (!isObject(body)) return { kind: "unknown" };
   if (status === 404 && body.error === "not_found") return { kind: "not_found" };
@@ -31,7 +47,13 @@ export function readPostLookup(status: number, body: unknown): PostLookup {
   if (!isObject(author) || typeof author.handle !== "string") return { kind: "unknown" };
   return {
     kind: "found",
-    post: { postId: post_id, title, handle: author.handle, liked: body.liked === true },
+    post: {
+      postId: post_id,
+      title,
+      handle: author.handle,
+      liked: body.liked === true,
+      stats: readStats(body.stats),
+    },
   };
 }
 
@@ -62,5 +84,24 @@ export async function sendLike(postId: string, device: string): Promise<boolean>
     return readLiked(res.status, await res.json().catch(() => null));
   } catch {
     return false;
+  }
+}
+
+/** `GET /api/posts/{id}/deviation` の応答。200 の `{deviation: 数}` だけが値。それ以外は「出さない」 */
+export function readDeviation(status: number, body: unknown): number | null {
+  if (status !== 200 || !isObject(body)) return null;
+  const { deviation } = body;
+  return typeof deviation === "number" && Number.isFinite(deviation) ? deviation : null;
+}
+
+/** score の「今の偏差値」を読む。校正済みでない・届かないときは null（結果の幕は点数だけになる） */
+export async function fetchDeviation(postId: string, score: number): Promise<number | null> {
+  try {
+    const res = await fetch(`/api/posts/${encodeURIComponent(postId)}/deviation?score=${score}`, {
+      headers: { accept: "application/json" },
+    });
+    return readDeviation(res.status, await res.json().catch(() => null));
+  } catch {
+    return null;
   }
 }

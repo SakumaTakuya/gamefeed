@@ -224,7 +224,9 @@ describe("gameView", () => {
     expect(devOf(guest, null)).toBeNull();
     // 時間切れ・エラーには点数が無い。前の結果の値が残っていても出さない
     for (const via of ["timeout", "error"] as const) {
-      expect(devOf({ kind: "ENDED", ...session, result: { via, scoreable: true } }, 62.3)).toBeNull();
+      expect(
+        devOf({ kind: "ENDED", ...session, result: { via, scoreable: true } }, 62.3),
+      ).toBeNull();
     }
   });
 

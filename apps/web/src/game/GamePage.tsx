@@ -1,6 +1,7 @@
 // ゲームページ（run#A.14、product#3 の 5）。公開済みのゲームを 1 本だけ遊ぶ。ランを経由しない。
 // 配信するかどうかは配信オリジンが決める（se#A.5）。`GET /api/posts/{id}` は、見られない投稿をすぐ
-// 「開けません」にすることと作者名・いいねのために読む。読めなくても遊ぶのは止めない。
+// 「開けません」にすることと作者名・いいね・プレイ数のために読む。読めなくても遊ぶのは止めない。
+// 校正済みのゲームは、結果の点数の「今の偏差値」も読む（product#5.3）。
 import type { ReportCategory } from "@gamefeed/domain";
 import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
@@ -8,7 +9,7 @@ import { gameUrl } from "../game-url.ts";
 import { HOST_STAGE } from "../host-stage.ts";
 import { deviceId } from "../run/device-id.ts";
 import { useSinglePlayer } from "../single/use-single-player.ts";
-import { fetchPost, type PostLookup, sendLike } from "./api.ts";
+import { fetchDeviation, fetchPost, type PostLookup, type PostStats, sendLike } from "./api.ts";
 import { REPORT_OPTIONS, type ReportResult, reportDraft, sendReport } from "./report.ts";
 import { gameView, STOPPED_TEXT, UNAVAILABLE_TEXT } from "./view.ts";
 
@@ -77,12 +78,31 @@ function Player({ postId, src }: { postId: string; src: string }) {
     });
   };
 
+  // 「今の偏差値」（product#5.3）。点数のある結果が出るたびに、今の分布に当てた値を読む。
+  // 校正済みでない投稿（stats が無い）はサーバが null を返すだけなので、聞かない
+  const result = player.state.kind === "ENDED" ? player.state.result : null;
+  const score = result?.via === "guest" ? result.score : null;
+  const calibrated = lookup?.kind === "found" && lookup.post.stats !== null;
+  const [deviation, setDeviation] = useState<number | null>(null);
+  useEffect(() => {
+    setDeviation(null);
+    if (score === null || !calibrated) return;
+    let alive = true;
+    void fetchDeviation(postId, score).then((d) => {
+      if (alive) setDeviation(d);
+    });
+    return () => {
+      alive = false;
+    };
+  }, [postId, score, calibrated]);
+
   const view = gameView({
     state: player.state,
     meta: player.meta,
     halted: player.halted,
     lookup,
     likedHere,
+    deviation,
   });
   const dead = view.kind === "unavailable" || view.kind === "stopped";
 
@@ -101,6 +121,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
                 <span style={styles.verb}>{view.verb}</span>
                 <span style={styles.title}>{view.title}</span>
                 {view.author && <span style={styles.title}>@{view.author}</span>}
+                {view.stats && <Stats stats={view.stats} />}
                 <span>タップしてスタート</span>
               </button>
             )}
@@ -109,6 +130,12 @@ function Player({ postId, src }: { postId: string; src: string }) {
               <>
                 <p style={styles.verb}>{view.main}</p>
                 {view.sub && <p>{view.sub}</p>}
+                {view.deviation && (
+                  <p style={styles.deviation}>
+                    今の偏差値 <strong style={styles.deviationValue}>{view.deviation}</strong>
+                  </p>
+                )}
+                {view.stats && <Stats stats={view.stats} />}
                 <button type="button" style={styles.button} onClick={player.again}>
                   もう一回
                 </button>
@@ -209,6 +236,16 @@ function Player({ postId, src }: { postId: string; src: string }) {
   );
 }
 
+/** プレイ数といいね数（校正済みの投稿だけ。product#9 の 5） */
+function Stats({ stats }: { stats: PostStats }) {
+  return (
+    <span style={styles.stats}>
+      <span>▶ {stats.plays.toLocaleString("ja-JP")} プレイ</span>
+      <span>♥ {stats.likes.toLocaleString("ja-JP")}</span>
+    </span>
+  );
+}
+
 const styles = {
   stage: {
     ...HOST_STAGE,
@@ -257,6 +294,9 @@ const styles = {
   },
   verb: { fontSize: "2.5rem", fontWeight: 700, margin: 0 },
   title: { fontSize: "1rem", opacity: 0.8 },
+  stats: { display: "flex", gap: "1rem", fontSize: "0.9rem", opacity: 0.8 },
+  deviation: { fontSize: "1rem", margin: 0 },
+  deviationValue: { fontSize: "1.6rem", fontVariantNumeric: "tabular-nums" },
   button: {
     font: "inherit",
     padding: "0.7rem 1.4rem",

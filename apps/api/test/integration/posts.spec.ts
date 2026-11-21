@@ -3,8 +3,9 @@
  * R-mo.A3-1 の直リンクの部分（moderation.md A.3、mcp.md A.9）。一覧 API はまだ無い。
  * Postgres と Better Auth は本物（ログインは testUtils）、R2 / KV は fake。
  */
-import { testUtils } from "better-auth/plugins";
+
 import { CALIBRATION_MIN_PLAYS, deviation } from "@gamefeed/domain";
+import { testUtils } from "better-auth/plugins";
 import { eq, sql } from "drizzle-orm";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createApp } from "../../src/app.ts";

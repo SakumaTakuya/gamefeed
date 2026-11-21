@@ -3,6 +3,13 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-21）
+- **ゲームページにプレイ数・いいね数と「今の偏差値」が出る（#211）。校正済みのゲームだけ**。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-12。本番に校正済みのゲームができてから。今は 1 本も無いはずなので、画面は今までと変わらない）
+  - 先に調べた結果: 校正は実装済みだった（分布は `post_stats.scores`、状態は `posts.calibration`、計算は domain の `deviation`）。無かったのは公開の読み口と表示だけで、表も列も足していない
+  - API（`apps/api/src/post-read.ts`）: `GET /api/posts/{id}` の応答に `stats: {plays, likes} | null`（`calibrated` のときだけ。`plays` は `post_stats.n` で `list_my_games` と同じ値）。`GET /api/posts/{id}/deviation?score=N`（`readDeviation`）は 200 `{deviation}`。値が出るのはランの手番と同じ条件（`calibrated` かつ分布 20 件以上）で、それ以外は null。匿名、`no-store`、主体もセッションも引かず、何も保存しない。見られない投稿は 404 `not_found`、`score` が 0〜2^31 − 1 の整数の 10 進表記でなければ 400 `invalid_request`
+  - web: スタートの幕と結果の幕に「▶ N プレイ ♥ M」、結果の幕の点数の下に「今の偏差値 xx.x」。偏差値は点数のある結果が出るたびに読む（校正済みでない投稿では聞かない）。このページでいいねを押すと M も 1 増やす。読めなければ出さないだけ
+  - 文書に無く、この PR で決めた点（PR 本文）: 数を出すのは `calibrated` だけ（`review` / `invalid` も出さない）、偏差値はサーバで計算して分布そのものは返さない、経路と応答の形、表示の文言と場所
+  - やっていないもの: ヒストグラム・偏差値の分布の図（product#9 の 5 の残り）、二峰のゲームの「クリア率」表示（印を立てる実装が無い）、流量の制限。Issue はまだ切っていない
+- **ゲームページから通報できる（#207）**。通報の 3 分割（受付 #203、自動制限 #205、ボタン #207）が揃った。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-10。確認は「その他」か「動作しない」で。解く操作がまだ無いため）
 - **運営の最小ページ `/mod/restore/<post_id>` が入った（#212）**。`restore`（#209）をスマホから押せる。**残りはオーナーの作業**: Vercel の Production に `MODERATOR_IDS` を入れて再デプロイ → 実機確認（`docs/manual-tests/run-tempo.md` の RT-11）
   - `apps/web/src/mod/RestorePage.tsx`: 理由の入力欄（必須）と「制限を解く」。押すと `POST /api/moderation/posts/{id}/restore`。401 なら「Google でログイン」（終わるとこのページに戻る）、403 は「このアカウントでは使えません」。解けたら復帰後の投稿状態と退けた通報の数、ゲームページへのリンク
   - 応答の読み方と文面は `mod/restore.ts`（`readRestoreReply` / `restoreText`）。`served: false` は「配信にはまだ反映されていません。もう一度押してください」、`restricted` は「ツリー制限が残っている」、`unpublished` は「作者が再公開するまで見えません」
