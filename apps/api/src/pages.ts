@@ -80,3 +80,42 @@ export function consentPage(): string {
     document.getElementById("deny").onclick = () => consent(false);`,
   );
 }
+
+/** PoC の入口（`POC_MODE=1` の環境だけ。docs/poc.md）。ログインと、サンプルゲームのまとめて公開 */
+export function pocPage(userName: string | null): string {
+  const body = userName
+    ? `<p>ログイン中: <code id="who"></code></p>
+       <p><button id="samples">サンプルゲームをまとめて公開する</button></p>
+       <p>公開した瞬間に、目標点から作った仮の分布で校正済みになります。終わったら <a href="/">トップ</a> でエンドレスを遊べます。何度押しても同じゲームは増えません。</p>
+       <pre id="out"></pre>`
+    : `<p>まずログインしてください。</p><p><button id="google">Google でログイン</button></p>`;
+  return page(
+    "GameFeed PoC",
+    `<h1>GameFeed PoC</h1>
+     <p>ここは体験を確かめるための環境です。本番とはデータが別で、校正の規則を省いています。</p>${body}`,
+    `const who = document.getElementById("who");
+    if (who) who.textContent = ${JSON.stringify(userName ?? "")};
+    const google = document.getElementById("google");
+    if (google) google.onclick = async () => {
+      try {
+        const data = await post("/sign-in/social", { provider: "google", callbackURL: "/api/poc" });
+        if (data.url) location.href = data.url; else status.textContent = "応答に url がありません";
+      } catch (e) { status.textContent = String(e.message || e); }
+    };
+    const samples = document.getElementById("samples");
+    if (samples) samples.onclick = async () => {
+      const out = document.getElementById("out");
+      samples.disabled = true;
+      out.textContent = "公開しています…（10〜30 秒）";
+      try {
+        const res = await fetch("/api/poc/samples", { method: "POST", credentials: "include" });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || ("HTTP " + res.status));
+        out.textContent = data.results
+          .map((r) => (r.ok ? "OK  " : "NG  ") + r.name + (r.ok ? "  " + r.status + "  /g/" + r.post_id : "  " + r.error))
+          .join("\n");
+      } catch (e) { status.textContent = String(e.message || e); }
+      samples.disabled = false;
+    };`,
+  );
+}

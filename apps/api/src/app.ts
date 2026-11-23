@@ -17,10 +17,12 @@ import { createServeKv } from "./kv.ts";
 import { likePost } from "./likes.ts";
 import { createMcpFetchHandler } from "./mcp.ts";
 import { parseModerationReason, restorePost } from "./moderation.ts";
-import { consentPage, signInPage } from "./pages.ts";
+import { consentPage, pocPage, signInPage } from "./pages.ts";
 import { issuePlayToken } from "./play-token.ts";
+import { pocMode } from "./poc.ts";
+import { POC_SAMPLES } from "./poc-samples.gen.ts";
 import { parseScoreQuery, readDeviation, readPublicPost } from "./post-read.ts";
-import type { PublishDeps } from "./publish.ts";
+import { type PublishDeps, publishGame } from "./publish.ts";
 import { createR2Storage } from "./r2.ts";
 import { reportPost } from "./reports.ts";
 import { createRun, parseCreateRunInput, type RunError } from "./runs.ts";
@@ -190,6 +192,37 @@ export function createApp(input: AppInput): Hono {
     );
     return token ? c.json(token) : c.json({ error: "not_found" }, 404);
   });
+
+  // PoC: サンプルゲーム（fixtures/games/samples/）を、ログイン中のユーザーの投稿としてまとめて公開する（docs/poc.md）。
+  // `POC_MODE=1` の環境にしか無い。同じ内容は 2 度作られない（publish_game の規則どおり）ので、何度押してもよい
+  if (pocMode()) {
+    app.get("/api/poc", async (c) => {
+      c.header("cache-control", "no-store");
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      return c.html(pocPage(session ? session.user.name : null));
+    });
+    app.post("/api/poc/samples", async (c) => {
+      c.header("cache-control", "no-store");
+      const session = await auth.api.getSession({ headers: c.req.raw.headers });
+      if (!session) return c.json({ error: "unauthorized" }, 401);
+      const results: {
+        name: string;
+        ok: boolean;
+        post_id?: string;
+        status?: string;
+        error?: string;
+      }[] = [];
+      for (const sample of POC_SAMPLES) {
+        const r = await publishGame(publish, session.user.id, { html: sample.html, publish: true });
+        results.push(
+          r.ok
+            ? { name: sample.name, ok: true, post_id: r.value.post_id, status: r.value.status }
+            : { name: sample.name, ok: false, error: `${r.error.code}: ${r.error.message}` },
+        );
+      }
+      return c.json({ results });
+    });
+  }
 
   // 運営の復帰（mo#A.7 の restore）。se#A.8: MODERATOR_IDS に含まれるユーザーだけが呼べる。
   // 権限の無い人には、投稿があるかどうかも本文の形も答えない（先に forbidden）

@@ -18,3 +18,21 @@ bucket_name = "gamefeed-games"
 [[kv_namespaces]]
 binding = "SERVE"
 id = "00000000000000000000000000000000"
+
+# ---- PoC（poc ブランチだけ。docs/poc.md） ----
+# 本番と同じ R2 と KV を読む、もう 1 つの Worker。違うのは埋め込みを許すアプリのオリジンだけ
+# （本番の Worker は本番のアプリにしか埋め込めない。se#A.4）。
+# APP_ORIGIN は仮の値。デプロイ時に GitHub の Variables `POC_APP_ORIGIN` に差し替える（.github/workflows/poc-deploy-games.yml）。
+[env.poc]
+name = "gamefeed-games-poc"
+
+[env.poc.vars]
+APP_ORIGIN = "https://poc-app-origin.invalid"
+
+[[env.poc.r2_buckets]]
+binding = "GAMES"
+bucket_name = "gamefeed-games"
+
+[[env.poc.kv_namespaces]]
+binding = "SERVE"
+id = "00000000000000000000000000000000"

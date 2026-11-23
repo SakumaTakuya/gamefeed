@@ -15,7 +15,8 @@
     "db:generate:custom": "drizzle-kit generate --custom",
     "db:migrate": "tsx scripts/migrate.ts",
     "thumb:set": "tsx scripts/set-thumb-key.ts",
-    "gen:guide": "tsx scripts/gen-guide.ts"
+    "gen:guide": "tsx scripts/gen-guide.ts",
+    "gen:poc-samples": "tsx scripts/gen-poc-samples.ts"
   },
   "dependencies": {
     "@better-auth/cimd": "1.7.16",

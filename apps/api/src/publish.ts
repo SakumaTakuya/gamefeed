@@ -19,8 +19,9 @@ import {
 } from "@gamefeed/domain";
 import { and, desc, eq, gte, isNull, sql } from "drizzle-orm";
 import type { Db } from "./db/client.ts";
-import { games, posts, users } from "./db/schema.ts";
+import { games, postStats, posts, users } from "./db/schema.ts";
 import { ulid } from "./id.ts";
+import { pocDistribution, pocMode } from "./poc.ts";
 import { ensureUser } from "./users.ts";
 
 // ---- 定数（暫定値は定数として持つ） ---------------------------------------------------------
@@ -301,7 +302,12 @@ export async function publishGame(
           { reason: "drafts" },
         );
       }
-      const limit = me.trustScore < TRUST_PUBLIC_THRESHOLD ? PUBLISH_LIMIT_NEW : PUBLISH_LIMIT;
+      // PoC: 1 日の上限を外す（サンプルをまとめて投稿する。docs/poc.md）
+      const limit = pocMode()
+        ? Number.POSITIVE_INFINITY
+        : me.trustScore < TRUST_PUBLIC_THRESHOLD
+          ? PUBLISH_LIMIT_NEW
+          : PUBLISH_LIMIT;
       const [t] = await tx
         .select({ n: sql<number>`count(*)::int` })
         .from(posts)
@@ -382,6 +388,19 @@ export async function publishGame(
           publishedAt: now,
         })
         .where(eq(posts.id, postId));
+      // PoC: 公開した瞬間に、目標点から作った仮の分布で校正済み・public にする（docs/poc.md）。
+      // サムネも 20 件の記録も待たずに、次のランから正規枠（偏差値とミスが出る）に入る
+      if (pocMode()) {
+        const scores = pocDistribution(check.meta.target);
+        await tx
+          .insert(postStats)
+          .values({ postId, n: scores.length, scores })
+          .onConflictDoUpdate({ target: postStats.postId, set: { n: scores.length, scores } });
+        await tx
+          .update(posts)
+          .set({ baseStatus: "public", calibration: "calibrated" })
+          .where(eq(posts.id, postId));
+      }
     }
 
     // 10. コミット

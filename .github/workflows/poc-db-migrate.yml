@@ -1,0 +1,36 @@
+name: poc-db-migrate
+# PoC 用の DB（本番とは別の Supabase プロジェクト）に apps/api/migrations/ を当てる。docs/poc.md。
+# `poc` ブランチへの push のたびに走る（このファイルは poc ブランチにしか無いので、main からは動かない）。
+# GitHub Secrets `POC_DIRECT_URL` に direct 接続（:5432）の URL を入れておく。無ければ何もしない。
+on:
+  push:
+    branches: [poc]
+jobs:
+  migrate:
+    runs-on: ubuntu-latest
+    steps:
+      - id: secret
+        env:
+          POC_DIRECT_URL: ${{ secrets.POC_DIRECT_URL }}
+        run: |
+          if [ -z "$POC_DIRECT_URL" ]; then
+            echo "::warning::POC_DIRECT_URL が未設定なので、マイグレーションを当てていません（docs/poc.md）"
+            echo "present=false" >> "$GITHUB_OUTPUT"
+          else
+            echo "present=true" >> "$GITHUB_OUTPUT"
+          fi
+      - if: steps.secret.outputs.present == 'true'
+        uses: actions/checkout@v4
+      - if: steps.secret.outputs.present == 'true'
+        uses: pnpm/action-setup@v4
+      - if: steps.secret.outputs.present == 'true'
+        uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - if: steps.secret.outputs.present == 'true'
+        run: pnpm install --frozen-lockfile
+      - if: steps.secret.outputs.present == 'true'
+        run: pnpm --filter @gamefeed/api db:migrate
+        env:
+          DATABASE_URL: ${{ secrets.POC_DIRECT_URL }}
