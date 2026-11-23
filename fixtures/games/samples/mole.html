@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>もぐらたたき</title>
+<meta name="gf:duration" content="360">
+<meta name="gf:verb" content="たたけ！">
+<meta name="gf:input" content="tap">
+<meta name="gf:target" content="10">
+<style>
+  html, body { margin: 0; height: 100%; background: #1d2b1a; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 9 つの穴から顔を出すもぐらをたたく。1 匹 1 点。出ている時間はだんだん短くなる
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#1d2b1a'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const HOLES = [];
+for (let r = 0; r < 3; r++) for (let c = 0; c < 3; c++) HOLES.push([0.2 + c * 0.3, 0.55 + r * 0.38]);
+const R = 0.12;
+let up, hitAt, taps;              // up[i] = 残りフレーム（0 なら出ていない）
+
+GF.onInit(() => { up = HOLES.map(() => 0); hitAt = HOLES.map(() => -99); taps = []; GF.score = 0; });
+
+GF.onInput((ev) => { if (ev.kind === 'tap') taps.push([ev.data[0], ev.data[1] * A]); });
+
+GF.onTick((frame) => {
+  for (const [x, y] of taps) {
+    for (let i = 0; i < HOLES.length; i++) {
+      const dx = HOLES[i][0] - x, dy = HOLES[i][1] - y;
+      if (up[i] > 0 && dx * dx + dy * dy < R * R) { up[i] = 0; hitAt[i] = frame; GF.score += 1; break; }
+    }
+  }
+  taps = [];
+  for (let i = 0; i < up.length; i++) if (up[i] > 0) up[i] -= 1;
+  if (frame % 22 === 4) {
+    const free = [];
+    for (let i = 0; i < up.length; i++) if (up[i] === 0) free.push(i);
+    if (free.length > 0) up[free[Math.floor(GF.rng() * free.length)]] = Math.max(26, 44 - Math.floor(frame / 20));
+  }
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  for (let i = 0; i < HOLES.length; i++) {
+    const [x, y] = HOLES[i];
+    g.fillStyle = '#0d150c'; g.beginPath(); g.ellipse(x * w, (y + 0.05) * w, R * w, R * 0.5 * w, 0, 0, Math.PI * 2); g.fill();
+    if (up[i] > 0) {
+      g.fillStyle = '#b5793c'; g.beginPath(); g.arc(x * w, y * w, R * 0.8 * w, 0, Math.PI * 2); g.fill();
+      g.fillStyle = '#111';
+      g.beginPath(); g.arc((x - 0.035) * w, (y - 0.02) * w, 0.012 * w, 0, Math.PI * 2); g.fill();
+      g.beginPath(); g.arc((x + 0.035) * w, (y - 0.02) * w, 0.012 * w, 0, Math.PI * 2); g.fill();
+    } else if (GF.frame - hitAt[i] < 10) {
+      g.fillStyle = '#ffd400'; g.font = 'bold ' + Math.round(0.1 * w) + 'px sans-serif'; g.textAlign = 'center';
+      g.fillText('★', x * w, y * w);
+    }
+  }
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>

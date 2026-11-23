@@ -1,0 +1,84 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>スパッと</title>
+<meta name="gf:duration" content="360">
+<meta name="gf:verb" content="きれ！">
+<meta name="gf:input" content="swipe">
+<meta name="gf:target" content="7">
+<style>
+  html, body { margin: 0; height: 100%; background: #1c1420; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 下から飛び出す玉を、スワイプの線で切る。1 個 1 点。1 本の線で何個切ってもよい
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#1c1420'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const R = 0.08;
+let fruits, swipes, cuts;         // fruits: { x, y, vx, vy }、cuts: 直近に切った線（描画用）
+
+GF.onInit(() => { fruits = []; swipes = []; cuts = []; GF.score = 0; });
+
+GF.onInput((ev) => {
+  if (ev.kind === 'swipe') swipes.push([ev.data[0], ev.data[1] * A, ev.data[2], ev.data[3] * A]);
+});
+
+// 点 (px, py) と線分 (x0, y0)-(x1, y1) の距離の 2 乗
+function dist2(px, py, x0, y0, x1, y1) {
+  const dx = x1 - x0, dy = y1 - y0;
+  const len2 = dx * dx + dy * dy;
+  let t = len2 > 0 ? ((px - x0) * dx + (py - y0) * dy) / len2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  const ex = x0 + dx * t - px, ey = y0 + dy * t - py;
+  return ex * ex + ey * ey;
+}
+
+GF.onTick((frame) => {
+  for (const [x0, y0, x1, y1] of swipes) {
+    if ((x1 - x0) ** 2 + (y1 - y0) ** 2 < 0.05 * 0.05) continue;   // 短すぎるものはタップ扱いで無視
+    const before = fruits.length;
+    fruits = fruits.filter(f => dist2(f.x, f.y, x0, y0, x1, y1) >= R * R);
+    GF.score += before - fruits.length;
+    cuts.push([x0, y0, x1, y1, frame]);
+  }
+  swipes = [];
+  cuts = cuts.filter(c => frame - c[4] < 8);
+  if (frame % 34 === 6) {
+    const x = 0.15 + GF.rng() * 0.7;
+    fruits.push({ x, y: A + R, vx: (0.5 - x) * 0.012, vy: -(0.042 + GF.rng() * 0.006) });
+  }
+  for (const f of fruits) { f.x += f.vx; f.y += f.vy; f.vy += 0.0012; }
+  fruits = fruits.filter(f => f.y < A + R * 2);
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  for (const f of fruits) {
+    g.fillStyle = '#ff7a3c'; g.beginPath(); g.arc(f.x * w, f.y * w, R * w, 0, Math.PI * 2); g.fill();
+    g.fillStyle = '#ffd08a'; g.beginPath(); g.arc((f.x - 0.025) * w, (f.y - 0.025) * w, R * 0.3 * w, 0, Math.PI * 2); g.fill();
+  }
+  g.strokeStyle = '#fff'; g.lineWidth = 0.012 * w; g.lineCap = 'round';
+  for (const [x0, y0, x1, y1] of cuts) {
+    g.beginPath(); g.moveTo(x0 * w, y0 * w); g.lineTo(x1 * w, y1 * w); g.stroke();
+  }
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>
