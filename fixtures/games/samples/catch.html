@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>ほしキャッチ</title>
+<meta name="gf:duration" content="420">
+<meta name="gf:verb" content="うけとめろ！">
+<meta name="gf:input" content="drag">
+<meta name="gf:target" content="10">
+<style>
+  html, body { margin: 0; height: 100%; background: #0e1230; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 落ちてくる星を、指の位置に動く皿で受ける。1 個 1 点
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#0e1230'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const BY = 1.5, HALF = 0.1;       // 皿の高さと、幅の半分
+let bx, stars, got, side;         // stars: { x, y, vy }、side: 次の星が落ちる側（0 左、1 右）
+
+GF.onInit(() => { bx = 0.5; stars = []; got = -99; side = GF.rng() < 0.5 ? 0 : 1; GF.score = 0; });
+
+GF.onInput((ev) => { if (ev.kind === 'drag') bx = ev.data[0]; });
+
+GF.onTick((frame) => {
+  if (frame % 28 === 2) {
+    // 左右を交互に。真ん中に置いたままでは取れない
+    stars.push({ x: 0.1 + side * 0.5 + GF.rng() * 0.3, y: -0.05, vy: 0.022 + GF.rng() * 0.008 + frame * 0.00002 });
+    side = 1 - side;
+  }
+  const rest = [];
+  for (const s of stars) {
+    const y1 = s.y + s.vy;
+    if (s.y < BY && y1 >= BY && Math.abs(s.x - bx) < HALF) { GF.score += 1; got = frame; continue; }
+    s.y = y1;
+    if (s.y < A + 0.1) rest.push(s);
+  }
+  stars = rest;
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  g.fillStyle = '#ffd400'; g.textAlign = 'center'; g.font = Math.round(0.11 * w) + 'px sans-serif';
+  for (const s of stars) g.fillText('★', s.x * w, (s.y + 0.04) * w);
+  g.fillStyle = GF.frame - got < 6 ? '#ffd400' : '#fff';
+  g.fillRect((bx - HALF) * w, BY * w, HALF * 2 * w, 0.035 * w);
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>

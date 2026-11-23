@@ -1,0 +1,77 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>まとあて</title>
+<meta name="gf:duration" content="420">
+<meta name="gf:verb" content="なげろ！">
+<meta name="gf:input" content="swipe">
+<meta name="gf:target" content="7">
+<style>
+  html, body { margin: 0; height: 100%; background: #101c1c; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// スワイプした向きに玉が飛ぶ。的に当てると 1 点。当てるたびに的が小さくなる。スワイプを始める場所はどこでもよい
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#101c1c'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const SX = 0.5, SY = 1.5, V = 0.05, BR = 0.035;
+let ball, target, swipes, hitAt;  // ball: 飛んでいる玉 { x, y, vx, vy }（無ければ null）、target: { x, y, r }
+
+function nextTarget() {
+  target = { x: 0.15 + GF.rng() * 0.7, y: 0.3 + GF.rng() * 0.55, r: Math.max(0.05, 0.1 - GF.score * 0.006) };
+}
+
+GF.onInit(() => { GF.score = 0; ball = null; swipes = []; hitAt = -99; nextTarget(); });
+
+GF.onInput((ev) => {
+  if (ev.kind === 'swipe') swipes.push([ev.data[2] - ev.data[0], (ev.data[3] - ev.data[1]) * A]);
+});
+
+GF.onTick((frame) => {
+  const got = swipes; swipes = [];
+  if (!ball) {
+    for (const [dx, dy] of got) {
+      const len = Math.sqrt(dx * dx + dy * dy);
+      if (len < 0.05 || dy >= 0) continue;          // 短いもの、下向きは投げない
+      ball = { x: SX, y: SY, vx: dx / len * V, vy: dy / len * V };
+      break;
+    }
+    return;
+  }
+  ball.x += ball.vx; ball.y += ball.vy;
+  if ((ball.x - target.x) ** 2 + (ball.y - target.y) ** 2 < (target.r + BR) ** 2) {
+    GF.score += 1; hitAt = frame; ball = null; nextTarget();
+  } else if (ball.x < -0.1 || ball.x > 1.1 || ball.y < -0.1) {
+    ball = null;
+  }
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  g.fillStyle = '#ff5c5c'; g.beginPath(); g.arc(target.x * w, target.y * w, target.r * w, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(target.x * w, target.y * w, target.r * 0.6 * w, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#ff5c5c'; g.beginPath(); g.arc(target.x * w, target.y * w, target.r * 0.25 * w, 0, Math.PI * 2); g.fill();
+  g.fillStyle = GF.frame - hitAt < 6 ? '#fff' : '#ffd400';
+  const b = ball || { x: SX, y: SY };
+  g.beginPath(); g.arc(b.x * w, b.y * w, BR * w, 0, Math.PI * 2); g.fill();
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>
