@@ -104,7 +104,7 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 | R-gc.A4-3 | `stick` は SDK が描いて解釈する。原点は押した地点、最大半径は画面幅の 12%、デッドゾーン 15%、`GF.stick.{x,y,active}` が `onTick` ごとに更新される。`onInput` には `stick` イベントが来ない（gc#A.4） | contract | 実ブラウザで押下→移動→離すを再現し、各 tick の `GF.stick` とログの `drag` 列を検証。同じログから `GF.stick` 列が再現される | `packages/sdk/test/contract/stick.spec.ts` | todo |
 | R-gc.A9-1 | 同じシードと同じ入力ログで `onDraw` なしに再実行すると同じ `GF.score` になる（gc#A.9） | contract | A.13 の例を 2 回実行して比較 | `packages/sdk/test/contract/determinism.spec.ts` | todo |
 | R-6.3-5 | ゲームは `onStart` 直後から操作可能（タイトル画面を置かない） | manual | サンプル 30 本を実機で通し、開始遅延を感じる本を記録 | `docs/manual-tests/microgame-tempo.md` | todo |
-| R-gc.A1-1 | 運営のサンプルゲーム（`fixtures/games/samples/`）はゲームの型（gc#A.1）を守る: 静的検査を拒否も警告もなしで通る、入力なしでも時間切れまでに終わり点数が目標に届かない、上手い入力で目標に届く、同じ seed と入力で同じ点数（`replay` も）、描画しなくても同じ点数。動詞と入力が散っている（product#7、plan#5） | unit + manual | 各ファイルのスクリプトを Guest ランタイムに載せてブラウザなしで動かす（seed 30 通り）。手触りと 1.5 倍は試遊ページとランで | `packages/sdk/test/sample-games.spec.ts`、`fixtures/games/samples/README.md` | green（unit、#217。12 本: tap 4・hold 2・swipe 3・drag 3）/ todo（manual。実ブラウザでは未実行） |
+| R-gc.A1-1 | 運営のサンプルゲーム（`fixtures/games/samples/`）はゲームの型（gc#A.1）を守る: 静的検査を拒否も警告もなしで通る、入力なしでも時間切れまでに終わり点数が目標に届かない、上手い入力で目標に届く、同じ seed と入力で同じ点数（`replay` も）、描画しなくても同じ点数。動詞と入力が散っている（product#7、plan#5） | unit + manual | 各ファイルのスクリプトを Guest ランタイムに載せてブラウザなしで動かす（seed 30 通り）。手触りと 1.5 倍は試遊ページとランで | `packages/sdk/test/sample-games.spec.ts`、`fixtures/games/samples/README.md` | green（unit、#217、#221。18 本: tap 6・hold 4・swipe 4・drag 4）/ todo（manual。実ブラウザでは未実行） |
 
 ## protocol A.5 / A.7 / A.8 Host 状態機械と監視タイマー（旧 6.4）
 

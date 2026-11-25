@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>いろあわせ</title>
+<meta name="gf:duration" content="360">
+<meta name="gf:verb" content="えらべ！">
+<meta name="gf:input" content="tap">
+<meta name="gf:target" content="9">
+<style>
+  html, body { margin: 0; height: 100%; background: #17161f; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 上の玉と同じ色のボタン（左か右）をたたく。合えば 1 点。違うと少しのあいだ動けない
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#17161f'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const COLORS = ['#ff5c5c', '#4fa3ff', '#ffd400', '#5fd17a'];
+let want, left, right, wait, freeze, taps;   // want: 玉の色。left / right: ボタンの色
+
+function deal() {
+  want = Math.floor(GF.rng() * 4);
+  const other = (want + 1 + Math.floor(GF.rng() * 3)) % 4;
+  if (GF.rng() < 0.5) { left = want; right = other; } else { left = other; right = want; }
+}
+
+GF.onInit(() => { wait = 0; freeze = 0; taps = []; GF.score = 0; deal(); });
+
+GF.onInput((ev) => { if (ev.kind === 'tap') taps.push(ev.data[0]); });
+
+GF.onTick(() => {
+  const got = taps; taps = [];
+  if (wait > 0) { wait -= 1; return; }
+  if (freeze > 0) { freeze -= 1; return; }
+  if (got.length === 0) return;
+  const picked = got[0] < 0.5 ? left : right;   // 1 フレームに 1 回だけ見る
+  if (picked === want) { GF.score += 1; deal(); wait = 8; } else { freeze = 30; }
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  if (wait === 0) {
+    g.fillStyle = COLORS[want]; g.beginPath(); g.arc(0.5 * w, 0.6 * w, 0.16 * w, 0, Math.PI * 2); g.fill();
+  }
+  g.globalAlpha = freeze > 0 ? 0.35 : 1;
+  g.fillStyle = COLORS[left]; g.fillRect(0.06 * w, 1.15 * w, 0.4 * w, 0.4 * w);
+  g.fillStyle = COLORS[right]; g.fillRect(0.54 * w, 1.15 * w, 0.4 * w, 0.4 * w);
+  g.globalAlpha = 1;
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>
