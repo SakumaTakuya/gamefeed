@@ -38,7 +38,7 @@ export type TurnAt =
  * earlier はそれより前の手番の扱いで、添字が手番番号。
  *
  * 手番 0 は位置 0、周回 0。以後、手番ごとに山札の次の位置へ進み、末尾を越えて先頭に戻るたびに
- * 周回が 1 増える。skip（満了・`error`・読み込みの skip）になった位置は、それ以後飛ばす（run#A.6）。
+ * 周回が 1 増える。デイリーは 1 周で、末尾を越えたら done（run#A.2）。skip（満了・`error`・読み込みの skip）になった位置は、それ以後飛ばす（run#A.6）。
  * 上限の手番より先と、出せる位置が無くなったときは done（次の手番が無い）。
  */
 export function turnAt(mode: RunMode, deckLength: number, earlier: readonly TurnOutcome[]): TurnAt {
@@ -55,6 +55,8 @@ export function turnAt(mode: RunMode, deckLength: number, earlier: readonly Turn
     do {
       index++;
       if (index === deckLength) {
+        // デイリーは 1 周（run#A.2）。出せないお題があって山札が上限より短くても、末尾の次は無い（#182）
+        if (mode === "daily") return { done: true, reason: "limit" };
         index = 0;
         lap++;
       }

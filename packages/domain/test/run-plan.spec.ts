@@ -94,6 +94,21 @@ describe("turnAt: 手番の位置・周回・速度（run#A.3、A.8。R-run.A3-3
     expect(turnAt("daily", 10, outcomes("ooooo"))).toMatchObject({ index: 5, lap: 0, speed: 1 });
   });
 
+  it("デイリーは山札が 10 本より短くても 2 周目に入らない（run#A.2。#182）", () => {
+    // 作成時点で出せないお題があると山札は短くなる（run#A.2、#175）
+    expect(positions(7, "ooooooo", "daily")).toEqual([0, 1, 2, 3, 4, 5, 6, null]);
+    expect(turnAt("daily", 7, outcomes("ooooooo"))).toEqual({ done: true, reason: "limit" });
+    expect(turnAt("daily", 1, outcomes("o"))).toEqual({ done: true, reason: "limit" });
+    // skip で飛ばした位置があっても、末尾の次は無い
+    expect(positions(7, "osonomo", "daily")).toEqual([0, 1, 2, 3, 4, 5, 6, null]);
+    expect(turnAt("daily", 3, outcomes("oos"))).toEqual({ done: true, reason: "limit" });
+    // 末尾までは今までどおり
+    expect(turnAt("daily", 7, outcomes("oooooo"))).toMatchObject({ index: 6, lap: 0, speed: 1 });
+  });
+  it("エンドレスは山札が短くても周回する（デイリーだけの規則）", () => {
+    expect(turnAt("endless", 7, outcomes("ooooooo"))).toMatchObject({ index: 0, lap: 1 });
+  });
+
   it("空の山札は例外", () => {
     expect(() => turnAt("endless", 0, [])).toThrow(RangeError);
   });
@@ -171,6 +186,17 @@ describe("logState: 記録からランが閉じたかを決める（run#A.3。R-
     expect(logState("endless", 12, outcomes("o".repeat(49))).ended).toBeNull();
     expect(logState("endless", 12, outcomes("o".repeat(50))).ended).toBe("limit");
     expect(logState("daily", 10, outcomes("o".repeat(10))).ended).toBe("limit");
+  });
+
+  it("デイリーは山札の末尾で limit（10 本より短い山札。#182）", () => {
+    expect(logState("daily", 7, outcomes("oooooo")).ended).toBeNull();
+    expect(logState("daily", 7, outcomes("ooooooo")).ended).toBe("limit");
+    expect(logState("daily", 7, outcomes("ossssso")).ended).toBe("limit");
+    expect(summarizeLog("daily", 7, log("ooooooo", 50))).toMatchObject({
+      reached: 7,
+      symbols: "○".repeat(7),
+      ended: "limit",
+    });
   });
 
   it("次の手番が無ければ limit: 山札の出せる位置が無くなった（skip が続いてもランは終わる。F6）", () => {
