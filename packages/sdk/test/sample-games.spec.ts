@@ -181,6 +181,39 @@ const BOTS: Record<string, Bot> = {
     const s = peek<{ ball: unknown; target: { x: number; y: number } }>("({ ball, target })");
     return s.ball ? [] : [["swipe", 0.5, 1.5 / A, s.target.x, s.target.y / A]];
   },
+  "rocket.html": (_peek, frame) => (frame % 8 === 0 ? [["tap", 0.5, 0.5]] : []),
+  "color.html": (peek) => {
+    const s = peek<{ want: number; left: number; wait: number; freeze: number }>(
+      "({ want, left, wait, freeze })",
+    );
+    if (s.wait > 0 || s.freeze > 0) return [];
+    return [["tap", s.left === s.want ? 0.25 : 0.75, 0.75]];
+  },
+  "charge.html": (peek) => {
+    const s = peek<{ round: number; power: number; goal: number; holding: boolean; wait: number }>(
+      "({ round, power, goal, holding, wait })",
+    );
+    if (s.round >= 3 || s.wait > 0) return [];
+    if (!s.holding) return [["hold", 0.5, 0.5, 1]];
+    // 今離したときと、もう 1 フレーム待ったときの近い方
+    return s.power >= s.goal - 1 / 140 ? [["hold", 0.5, 0.5, 0]] : [];
+  },
+  "lane.html": (peek) => {
+    const s = peek<{ lane: number; rocks: { lane: number; y: number }[] }>("({ lane, rocks })");
+    const near = (lane: number, above: number) =>
+      s.rocks.some((r) => r.lane === lane && r.y > 1.45 - above && r.y < 1.45 + 0.2);
+    if (!near(s.lane, 0.7)) return [];
+    const to = [s.lane - 1, s.lane + 1].find((l) => l >= 0 && l <= 2 && !near(l, 0.9));
+    return to === undefined ? [] : [["swipe", 0.5, 0.5, 0.5 + (to - s.lane) * 0.3, 0.5]];
+  },
+  "chase.html": (peek, frame) => {
+    const [x, y] = peek<[number, number]>(`spot(${frame})`);
+    return [["drag", q(x), q(y / A), 1]];
+  },
+  "press.html": (peek, frame) => {
+    const s = peek<{ want: boolean; holding: boolean }>(`({ want: active(${frame}), holding })`);
+    return s.want === s.holding ? [] : [["hold", 0.5, 0.5, s.want ? 1 : 0]];
+  },
 };
 
 const botOf = (name: string): Bot => {
@@ -190,13 +223,13 @@ const botOf = (name: string): Bot => {
 };
 
 describe("サンプルゲーム（#217、R-gc.A1-1）", () => {
-  it("12 本あり、題名と動詞が重ならず、tap / hold / swipe / drag がどれも 2 本以上ある", () => {
+  it("18 本あり、題名と動詞が重ならず、tap / hold / swipe / drag がどれも 4 本以上ある", () => {
     const metas = FILES.map((f) => metaOf(read(f)));
-    expect(FILES.length).toBe(12);
+    expect(FILES.length).toBe(18);
     expect(new Set(metas.map((m) => m.title)).size).toBe(metas.length);
     expect(new Set(metas.map((m) => m.verb)).size).toBe(metas.length);
     for (const kind of ["tap", "hold", "swipe", "drag"]) {
-      expect(metas.filter((m) => m.input === kind).length, kind).toBeGreaterThanOrEqual(2);
+      expect(metas.filter((m) => m.input === kind).length, kind).toBeGreaterThanOrEqual(4);
     }
     // 長さも散っている（3 秒から 10 秒まで）
     const durations = metas.map((m) => m.duration);

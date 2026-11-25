@@ -1,0 +1,75 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>レーンチェンジ</title>
+<meta name="gf:duration" content="480">
+<meta name="gf:verb" content="きりかえろ！">
+<meta name="gf:input" content="swipe">
+<meta name="gf:target" content="8">
+<style>
+  html, body { margin: 0; height: 100%; background: #15181c; overflow: hidden; }
+  canvas { display: block; width: 100vw; height: 100vh; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<script>
+// 3 本のレーンを左右のスワイプで移り、落ちてくる岩をかわす。かわした数が点数。当たると終わり
+const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
+const cv = document.getElementById('c');
+const g = cv.getContext('2d');
+function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = '#15181c'; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function hud(w, text) {
+  g.fillStyle = '#fff'; g.textAlign = 'center';
+  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.15 * w);
+}
+const PY = 1.45, LX = [0.2, 0.5, 0.8];
+let lane, rocks, moves, count, dead;   // rocks: { lane, y }
+
+GF.onInit(() => { lane = 1; rocks = []; moves = []; count = 0; dead = false; GF.score = 0; });
+
+GF.onInput((ev) => {
+  if (ev.kind !== 'swipe') return;
+  const dx = ev.data[2] - ev.data[0];
+  if (Math.abs(dx) > 0.08) moves.push(dx > 0 ? 1 : -1);
+});
+
+GF.onTick((frame) => {
+  const got = moves; moves = [];
+  if (dead) { GF.end(); return; }
+  if (got.length > 0) lane = Math.max(0, Math.min(2, lane + got[0]));   // 1 フレームに 1 レーンだけ
+  if (frame % 40 === 10) {
+    // 2 個に 1 個は今いるレーンに落とす。動かなければ必ず当たる
+    rocks.push({ lane: count % 2 === 0 ? lane : Math.floor(GF.rng() * 3), y: -0.1 });
+    count += 1;
+  }
+  const speed = 0.026 + frame * 0.00002;
+  const rest = [];
+  for (const r of rocks) {
+    r.y += speed;
+    if (r.lane === lane && Math.abs(r.y - PY) < 0.11) dead = true;
+    if (r.y > PY + 0.11 && !r.passed) { r.passed = true; if (!dead) GF.score += 1; }
+    if (r.y < A + 0.1) rest.push(r);
+  }
+  rocks = rest;
+});
+
+GF.onDraw(() => {
+  const w = begin();
+  g.fillStyle = '#262b33'; g.fillRect(0.345 * w, 0, 0.01 * w, A * w); g.fillRect(0.645 * w, 0, 0.01 * w, A * w);
+  g.fillStyle = '#9aa3ad';
+  for (const r of rocks) { g.beginPath(); g.arc(LX[r.lane] * w, r.y * w, 0.07 * w, 0, Math.PI * 2); g.fill(); }
+  g.fillStyle = dead ? '#ff5c5c' : '#ffd400';
+  g.fillRect((LX[lane] - 0.06) * w, (PY - 0.05) * w, 0.12 * w, 0.1 * w);
+  hud(w, GF.score);
+});
+</script>
+</body>
+</html>
