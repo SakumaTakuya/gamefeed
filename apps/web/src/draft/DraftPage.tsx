@@ -1,6 +1,6 @@
 // 下書きの試遊ページ（mc#A.9、product#9 の 3、protocol#A.11）。
 // 作者がログインして試遊トークンを取り、配信オリジンのゲームを iframe に入れて遊ぶ。
-import type { Speed } from "@gamefeed/domain";
+import { SPEEDS } from "@gamefeed/domain";
 import { useEffect, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { gameUrl } from "../game-url.ts";
@@ -18,7 +18,6 @@ type Access =
   | { kind: "ok"; src: string };
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
-const SPEED: Speed = 1;
 
 /** 試遊トークンを取り、iframe の URL を作る（se#A.5）。 */
 async function loadAccess(postId: string): Promise<Access> {
@@ -97,7 +96,7 @@ const HALT_TEXT: Record<Halt, string> = {
 
 function Player({ postId, src }: { postId: string; src: string }) {
   // iframe 1 枚の扱い（ready → init、2 回目の load で破棄、ready 待ちの時間切れ）はゲームページと同じ部品
-  const { player, frameRef } = useSinglePlayer(SPEED);
+  const { player, frameRef } = useSinglePlayer();
   const [copied, setCopied] = useState(false);
 
   const { state, meta, result } = player;
@@ -108,7 +107,8 @@ function Player({ postId, src }: { postId: string; src: string }) {
     const text = diagnose({
       postId,
       meta,
-      speed: SPEED,
+      // 結果は遊んだときの速度のもの（次に選んだ速度ではない）
+      speed: player.sessionSpeed,
       result,
       inputs: player.inputs.length,
       problem,
@@ -138,6 +138,7 @@ function Player({ postId, src }: { postId: string; src: string }) {
               <button type="button" style={styles.start} onClick={player.start}>
                 <span style={styles.verb}>{meta.verb}</span>
                 <span style={styles.title}>{meta.title}</span>
+                {player.sessionSpeed !== 1 && <span>{player.sessionSpeed} 倍速</span>}
                 <span>タップしてスタート</span>
               </button>
             )}
@@ -161,6 +162,20 @@ function Player({ postId, src }: { postId: string; src: string }) {
                 <button type="button" style={styles.button} onClick={player.again}>
                   もう一回
                 </button>
+                {/* 速度（run#A.12）。選ぶとその速度で init し直し、スタートの幕に戻る */}
+                <div style={styles.speeds}>
+                  {SPEEDS.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      aria-pressed={s === player.sessionSpeed}
+                      style={s === player.sessionSpeed ? styles.speedOn : styles.speed}
+                      onClick={() => player.setSpeed(s)}
+                    >
+                      ×{s}
+                    </button>
+                  ))}
+                </div>
               </>
             )}
 
@@ -246,6 +261,27 @@ const styles = {
     gap: "1rem",
     cursor: "pointer",
     color: "#fff",
+  },
+  speeds: { display: "flex", gap: "0.4rem", flexWrap: "wrap", justifyContent: "center" },
+  speed: {
+    font: "inherit",
+    fontSize: "0.85rem",
+    padding: "0.45rem 0.6rem",
+    borderRadius: "0.6rem",
+    border: "1px solid #888",
+    background: "transparent",
+    color: "#fff",
+    cursor: "pointer",
+  },
+  speedOn: {
+    font: "inherit",
+    fontSize: "0.85rem",
+    padding: "0.45rem 0.6rem",
+    borderRadius: "0.6rem",
+    border: "1px solid #ffd400",
+    background: "#ffd400",
+    color: "#111",
+    cursor: "pointer",
   },
   verb: { fontSize: "2.5rem", fontWeight: 700, margin: 0 },
   title: { fontSize: "1rem", opacity: 0.8 },

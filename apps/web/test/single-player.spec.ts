@@ -112,6 +112,69 @@ describe("createSinglePlayer（iframe 1 枚で 1 本だけ遊ぶ）", () => {
     expect(player.result).toMatchObject({ via: "guest", score: 12 });
   });
 
+  it("R-run.A12-1 結果が出ているときに速度を変えると、その速度ですぐ init し直す（run#A.12）", () => {
+    const { player, sent, load, advance } = setup({ score: 12 });
+    load();
+    expect(player.speed).toBe(1);
+    player.start();
+    advance(3100);
+    expect(player.state.kind).toBe("ENDED");
+
+    player.setSpeed(1.5);
+    expect(player.speed).toBe(1.5);
+    expect(player.state.kind).toBe("INITED");
+    expect(player.result).toBeNull();
+    expect(sent.at(-1)).toMatchObject({ type: "init", session_id: "s-2", speed: 1.5 });
+
+    // 1.5 倍なら 180 フレームは 2 秒で終わる
+    player.start();
+    advance(2100);
+    expect(player.result).toMatchObject({ via: "guest", score: 12, frames: 180 });
+
+    // 「もう一回」も選んだ速度のまま
+    player.again();
+    expect(sent.at(-1)).toMatchObject({ type: "init", session_id: "s-3", speed: 1.5 });
+  });
+
+  it("R-run.A12-1 init し直せない状態（スタート待ち、プレイ中）で速度を変えても init は送らず、次の「もう一回」から効く（pr#A.5）", () => {
+    const { player, sent, load, advance } = setup();
+    player.setSpeed(1.25);
+    expect(sent).toEqual([]);
+    load();
+    // ready の前に選んだ速度は最初の init に入る
+    expect(sent.at(-1)).toMatchObject({ type: "init", speed: 1.25 });
+
+    player.setSpeed(1.5);
+    expect(player.state.kind).toBe("INITED");
+    player.start();
+    player.setSpeed(1.375);
+    expect(sent.map((m) => m.type)).toEqual(["init", "start"]);
+    expect(player.state.kind).toBe("RUNNING");
+
+    advance(3100);
+    // 結果は遊んだときの速度のもの（診断に書く値）
+    expect([player.speed, player.sessionSpeed]).toEqual([1.375, 1.25]);
+    player.again();
+    expect(sent.at(-1)).toMatchObject({ type: "init", speed: 1.375 });
+    expect(player.sessionSpeed).toBe(1.375);
+  });
+
+  it("R-run.A12-1 同じ速度を選び直しても init し直さない。破棄した後は何もしない", () => {
+    const { player, sent, load, advance } = setup();
+    load();
+    player.start();
+    advance(3100);
+    player.setSpeed(1);
+    expect(player.state.kind).toBe("ENDED");
+    expect(sent.map((m) => m.type)).toEqual(["init", "start"]);
+
+    player.frameLoaded(); // 2 回目の load で破棄
+    expect(player.state.kind).toBe("DESTROYED");
+    player.setSpeed(1.5);
+    expect(sent.map((m) => m.type)).toEqual(["init", "start", "destroy"]);
+    expect(player.speed).toBe(1);
+  });
+
   it("start と again は効く状態でだけ効く（LOADING の start、RUNNING の again は何もしない）", () => {
     const { player, sent, load } = setup();
     player.start();

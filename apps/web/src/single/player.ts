@@ -25,6 +25,10 @@ export interface SinglePlayer {
   /** Guest の `error.message`、またはプロトコル違反の理由 */
   readonly problem: string | null;
   readonly halted: Halt | null;
+  /** 次の `init` に入れる速度 */
+  readonly speed: Speed;
+  /** 今の（直近の）セッションを `init` したときの速度。`result` はこの速度で遊んだもの */
+  readonly sessionSpeed: Speed;
   /** iframe の `load` イベント */
   frameLoaded(): void;
   /** Guest から届いた生のメッセージ。送り元の照合は呼び出し側で済ませる（pr#A.1） */
@@ -33,6 +37,11 @@ export interface SinglePlayer {
   start(): void;
   /** 「もう一回」。同じ iframe に `init` し直す（pr#A.6） */
   again(): void;
+  /**
+   * 速度を変える（run#A.12 の試遊ページ）。結果が出ているとき（ENDED）は、その速度ですぐ `init` し直す。
+   * `init` し直せない状態（pr#A.5: スタート待ち、プレイ中）では値だけ覚え、次の `init` から効く
+   */
+  setSpeed(speed: Speed): void;
 }
 
 export function createSinglePlayer(opts: {
@@ -42,11 +51,16 @@ export function createSinglePlayer(opts: {
   onChange: () => void;
 }): SinglePlayer {
   const { env, onChange } = opts;
-  const speed: Speed = opts.speed ?? 1;
+  let speed: Speed = opts.speed ?? 1;
+  let sessionSpeed: Speed = speed;
   const host = createHost(env, onChange);
   let meta: GameMeta | null = null;
   let halted: Halt | null = null;
   let loads = 0;
+
+  function init(): void {
+    if (host.init({ speed })) sessionSpeed = speed;
+  }
 
   function halt(reason: Halt): void {
     halted = reason;
@@ -73,6 +87,12 @@ export function createSinglePlayer(opts: {
     get halted() {
       return halted;
     },
+    get speed() {
+      return speed;
+    },
+    get sessionSpeed() {
+      return sessionSpeed;
+    },
 
     frameLoaded() {
       loads += 1;
@@ -91,7 +111,7 @@ export function createSinglePlayer(opts: {
       host.receive(raw);
       if ("meta" in host.state) meta = host.state.meta;
       // ready が届いたら、すぐ遊べるように準備しておく
-      if (host.state.kind === "READY") host.init({ speed });
+      if (host.state.kind === "READY") init();
     },
 
     start() {
@@ -99,7 +119,14 @@ export function createSinglePlayer(opts: {
     },
 
     again() {
-      if (host.state.kind === "ENDED") host.init({ speed });
+      if (host.state.kind === "ENDED") init();
+    },
+
+    setSpeed(next) {
+      if (next === speed || host.state.kind === "DESTROYED") return;
+      speed = next;
+      if (host.state.kind === "ENDED") init();
+      else onChange();
     },
   };
 }
