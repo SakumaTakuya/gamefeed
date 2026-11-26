@@ -8,7 +8,7 @@
 <meta name="gf:input" content="swipe">
 <meta name="gf:target" content="7">
 <style>
-  html, body { margin: 0; height: 100%; background: #1c1420; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #070512; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
@@ -19,17 +19,7 @@
 const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
 const cv = document.getElementById('c');
 const g = cv.getContext('2d');
-function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
-  const w = cv.width = cv.clientWidth;
-  cv.height = cv.clientHeight;
-  g.fillStyle = '#1c1420'; g.fillRect(0, 0, w, cv.height);
-  return w;
-}
-function hud(w, text) {
-  g.fillStyle = '#fff'; g.textAlign = 'center';
-  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
-  g.fillText(String(text), 0.5 * w, 0.15 * w);
-}
+
 const R = 0.08;
 let fruits, swipes, cuts;         // fruits: { x, y, vx, vy }、cuts: 直近に切った線（描画用）
 
@@ -67,17 +57,98 @@ GF.onTick((frame) => {
   fruits = fruits.filter(f => f.y < A + R * 2);
 });
 
+// ---- 絵: 画風カード「ネオン」（gf://style/neon）。暗い地に光だけで描く。光は加算、動く物は尾を引く ----
+const hh = (n) => { const x = Math.sin(n * 127.1 + 11.7) * 43758.5453; return x - Math.floor(x); };   // 絵のための乱数。引数だけで決まる。GF.rng() は絵に使わない
+function lit(draw) { g.save(); g.globalCompositeOperation = 'lighter'; draw(); g.restore(); }   // 光は加算で重ねる
+function glowLine(w, pts, color, width, closed) {   // ネオン管の線。色つきの太い線の上に白い芯（pts は px）
+  g.lineCap = g.lineJoin = 'round';
+  g.beginPath(); pts.forEach((p, i) => (i ? g.lineTo(p[0], p[1]) : g.moveTo(p[0], p[1])));
+  if (closed) g.closePath();
+  g.shadowColor = color; g.shadowBlur = 0.06 * w; g.strokeStyle = color; g.lineWidth = width; g.stroke();
+  g.shadowBlur = 0; g.strokeStyle = '#fff'; g.lineWidth = width * 0.28; g.stroke();
+}
+function circlePts(x, y, r, n = 24) {
+  const pts = [];
+  for (let i = 0; i < n; i++) pts.push([x + Math.cos(i / n * Math.PI * 2) * r, y + Math.sin(i / n * Math.PI * 2) * r]);
+  return pts;
+}
+function orb(x, y, r, rgb, tx, ty) {   // 光の玉（px）。r が当たりの大きさ。(tx, ty) は尾の向きと長さ
+  if (tx || ty) {
+    const t = g.createLinearGradient(x + tx, y + ty, x, y);
+    t.addColorStop(0, 'rgba(' + rgb + ',0)'); t.addColorStop(1, 'rgba(' + rgb + ',.7)');
+    g.strokeStyle = t; g.lineWidth = r * 1.1; g.lineCap = 'round';
+    g.beginPath(); g.moveTo(x + tx, y + ty); g.lineTo(x, y); g.stroke();
+  }
+  const halo = g.createRadialGradient(x, y, 0, x, y, r * 2.4);
+  halo.addColorStop(0, 'rgba(' + rgb + ',.95)'); halo.addColorStop(0.4, 'rgba(' + rgb + ',.55)'); halo.addColorStop(1, 'rgba(' + rgb + ',0)');
+  g.fillStyle = halo; g.beginPath(); g.arc(x, y, r * 2.4, 0, Math.PI * 2); g.fill();
+  g.fillStyle = '#fff'; g.beginPath(); g.arc(x, y, r * 0.45, 0, Math.PI * 2); g.fill();
+}
+function ring(w, x, y, u, color) {   // 広がって消える輪。u は 0（出た瞬間）から 1（消える）
+  if (u < 0 || u >= 1) return;
+  g.globalAlpha = 1 - u; g.strokeStyle = color; g.lineWidth = 0.014 * w * (1 - u) + 1;
+  g.beginPath(); g.arc(x, y, (0.03 + u * 0.22) * w, 0, Math.PI * 2); g.stroke(); g.globalAlpha = 1;
+}
+function sparks(w, x, y, age, seed, color) {   // 火花。位置は age から計算する（状態を持たない）
+  if (age < 0 || age > 18) return;
+  g.strokeStyle = color; g.lineWidth = 0.006 * w; g.lineCap = 'round'; g.globalAlpha = 1 - age / 18;
+  for (let i = 0; i < 10; i++) {
+    const t = hh(seed + i * 1.3) * Math.PI * 2, sp = (0.008 + hh(seed + i * 2.9) * 0.014) * w;
+    g.beginPath(); g.moveTo(x + Math.cos(t) * sp * age, y + Math.sin(t) * sp * age);
+    g.lineTo(x + Math.cos(t) * sp * (age + 2.5), y + Math.sin(t) * sp * (age + 2.5)); g.stroke();
+  }
+  g.globalAlpha = 1;
+}
+function gridFloor(w, h, hz, frame) {   // 奥へ伸びる床の格子。hz は地平線（px）
+  g.strokeStyle = 'rgba(255,60,210,.5)'; g.lineWidth = Math.max(1, 0.004 * w);
+  g.shadowColor = '#ff3cd2'; g.shadowBlur = 0.02 * w;
+  g.beginPath();
+  for (let i = -9; i <= 9; i++) { g.moveTo(w / 2 + i * 0.028 * w, hz); g.lineTo(w / 2 + i * 0.26 * w, h); }
+  const ph = (frame * 0.02) % 1;
+  for (let i = 0; i < 9; i++) { const u = (i + ph) / 9, y = hz + (h - hz) * u * u; g.moveTo(0, y); g.lineTo(w, y); }
+  g.moveTo(0, hz); g.lineTo(w, hz); g.stroke(); g.shadowBlur = 0;
+}
+let scan = null;
+function scanlines(w, h) {        // 走査線。1 回だけ作り、毎フレームいちばん最後に重ねる
+  if (!scan) {
+    scan = document.createElement('canvas'); scan.width = 2; scan.height = 3;
+    const c = scan.getContext('2d'); c.fillStyle = 'rgba(0,0,0,.28)'; c.fillRect(0, 2, 2, 1);
+  }
+  g.fillStyle = g.createPattern(scan, 'repeat'); g.fillRect(0, 0, w, h);
+}
+function begin() {                // 描画の前に呼ぶ。暗い地と星を描き、画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth, h = cv.height = cv.clientHeight;
+  const bg = g.createLinearGradient(0, 0, 0, h); bg.addColorStop(0, '#070512'); bg.addColorStop(1, '#22093c');
+  g.fillStyle = bg; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 40; i++) {
+    g.fillStyle = 'rgba(190,220,255,' + (0.25 + 0.5 * hh(i + Math.floor(GF.frame / 14) * 0.37)) + ')';
+    g.fillRect(hh(i * 3.1) * w, hh(i * 7.7) * h, 0.004 * w, 0.004 * w);
+  }
+  return w;
+}
+function glowText(w, text) {      // 点数。左右に色をずらして重ね、最後に白
+  g.textAlign = 'center'; g.font = 'bold ' + Math.round(0.12 * w) + 'px sans-serif';
+  lit(() => { g.fillStyle = '#ff3df0'; g.fillText(String(text), 0.494 * w, 0.2 * w); g.fillStyle = '#19e6ff'; g.fillText(String(text), 0.506 * w, 0.2 * w); });
+  g.fillStyle = '#fff'; g.fillText(String(text), 0.5 * w, 0.2 * w);
+}
+
 GF.onDraw(() => {
-  const w = begin();
-  for (const f of fruits) {
-    g.fillStyle = '#ff7a3c'; g.beginPath(); g.arc(f.x * w, f.y * w, R * w, 0, Math.PI * 2); g.fill();
-    g.fillStyle = '#ffd08a'; g.beginPath(); g.arc((f.x - 0.025) * w, (f.y - 0.025) * w, R * 0.3 * w, 0, Math.PI * 2); g.fill();
-  }
-  g.strokeStyle = '#fff'; g.lineWidth = 0.012 * w; g.lineCap = 'round';
-  for (const [x0, y0, x1, y1] of cuts) {
-    g.beginPath(); g.moveTo(x0 * w, y0 * w); g.lineTo(x1 * w, y1 * w); g.stroke();
-  }
-  hud(w, GF.score);
+  const w = begin(), h = cv.height, f = GF.frame;
+  lit(() => {
+    for (const o of fruits) {
+      orb(o.x * w, o.y * w, R * w * 0.5, '125,249,255', -o.vx * w * 8, -o.vy * w * 8);
+      glowLine(w, circlePts(o.x * w, o.y * w, R * w, 18), '#7df9ff', 0.008 * w, true);
+    }
+    for (const [x0, y0, x1, y1, at] of cuts) {                             // 切った線は細くなって消える
+      const age = f - at;
+      g.globalAlpha = 1 - age / 8;
+      glowLine(w, [[x0 * w, y0 * w], [x1 * w, y1 * w]], '#ff3df0', 0.022 * w * (1 - age / 10));
+      g.globalAlpha = 1;
+      sparks(w, (x0 + x1) / 2 * w, (y0 + y1) / 2 * w, age * 2, at, '#ffffff');
+    }
+  });
+  glowText(w, GF.score);
+  scanlines(w, h);
 });
 </script>
 </body>
