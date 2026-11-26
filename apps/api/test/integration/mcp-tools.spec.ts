@@ -14,6 +14,7 @@ import { createDb, type Db, migrateDb, resetDb } from "../../src/db/client.ts";
 import { GUIDE_MARKDOWN } from "../../src/guide.gen.ts";
 import { createMcpServer } from "../../src/mcp.ts";
 import type { PublishDeps } from "../../src/publish.ts";
+import { STYLE_CARDS } from "../../src/styles.gen.ts";
 import { gameHtml } from "../helpers/game-html.ts";
 
 const url = process.env.DATABASE_URL;
@@ -79,6 +80,9 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     expect(tool?.description).toMatch(
       /^GameFeed にミクロゲームを投稿する。先にリソース `gf:\/\/guide` を読み/,
     );
+    expect(tool?.description?.split("\n")[0]).toMatch(
+      /そのカード `gf:\/\/style\/<id>` を読んでから描く。カードは参考で、合う画風が無ければ自分で作る。$/,
+    );
     expect(Object.keys(tool?.inputSchema.properties ?? {}).sort()).toEqual([
       "html",
       "post_id",
@@ -90,7 +94,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     await client.close();
   });
 
-  it("R-mc.A3-1 tools/list は 3 本、resources/list は gf://guide の 1 つだけ（C1）。本文は game-contract.md の A 部", async () => {
+  it("R-mc.A3-1 tools/list は 3 本、resources/list は gf://guide と画風カードだけ（C1）。本文は game-contract.md の A 部と docs/styles/", async () => {
     const client = await connect();
     const { tools } = await client.listTools();
     expect(tools.map((t) => t.name).sort()).toEqual([
@@ -103,7 +107,13 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     expect(descriptions.get("unpublish_game")).toMatch(/^公開した投稿を非公開にする。取り消せる/);
 
     const { resources } = await client.listResources();
-    expect(resources.map((r) => r.uri)).toEqual(["gf://guide"]);
+    expect(resources.map((r) => r.uri)).toEqual([
+      "gf://guide",
+      "gf://style/kirie",
+      "gf://style/neon",
+      "gf://style/kokuban",
+      "gf://style/dot",
+    ]);
     expect(resources[0]).toMatchObject({
       mimeType: "text/markdown",
       description: "GameFeed のミクロゲーム規約。`publish_game` を呼ぶ前に読む。",
@@ -113,6 +123,20 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       { uri: "gf://guide", mimeType: "text/markdown", text: GUIDE_MARKDOWN },
     ]);
     expect(GUIDE_MARKDOWN).toContain("## A.13 ");
+
+    const kirie = resources.find((r) => r.uri === "gf://style/kirie");
+    expect(kirie).toMatchObject({
+      mimeType: "text/markdown",
+      description:
+        "画風カード「切り絵」。色紙を切って重ねた絵。面で塗り、線は引かない。紙ごとに影、全体に紙目。配色・決まり・描き方のコード。カードは参考で、題材に合うときに、絵を描く前に読む。",
+    });
+    for (const card of STYLE_CARDS) {
+      const uri = `gf://style/${card.id}`;
+      const got = await client.readResource({ uri });
+      expect(got.contents).toEqual([{ uri, mimeType: "text/markdown", text: card.markdown }]);
+      expect(card.markdown).toContain("## 描き方");
+    }
+    await expect(client.readResource({ uri: "gf://style/nope" })).rejects.toThrow();
     await client.close();
   });
 

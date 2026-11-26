@@ -1,13 +1,15 @@
 /**
  * MCP サーバ（mcp.md）。ツールの入出力の形と説明文だけを持ち、処理は API の関数（publish.ts）を同じプロセスで呼ぶ。
- * 公開するのはツール 3 本とリソース 1 つだけ（mc#A.3、C1）。
+ * 公開するのはツール 3 本と、リソース（規約 `gf://guide` と画風カード `gf://style/<id>`）だけ（mc#A.3、C1）。
  */
 
 import { createMcpHandler, McpServer } from "@modelcontextprotocol/server";
 import * as z from "zod";
 import { GUIDE_MARKDOWN } from "./guide.gen.ts";
+import { styleDescription, styleUri } from "./guide.ts";
 import { listMyGames, unpublishGame } from "./my-games.ts";
 import { type PublishDeps, publishGame, type ToolError, type ToolOutcome } from "./publish.ts";
+import { STYLE_CARDS } from "./styles.gen.ts";
 
 /** mc#A.2: `version` はデプロイのコミット短縮ハッシュ（Vercel が入れる環境変数。ローカルは dev） */
 export const MCP_SERVER_INFO = {
@@ -17,7 +19,7 @@ export const MCP_SERVER_INFO = {
 
 /** mc#A.4（暫定）。AI がこれだけを読んで正しく動けるように書く。変えるときは下書き → 試遊 → 公開の流れを変えない */
 export const PUBLISH_GAME_DESCRIPTION = [
-  "GameFeed にミクロゲームを投稿する。先にリソース `gf://guide` を読み、その規約（1 ファイルの HTML、`gf:*` メタ、`GF` SDK、使えない API）に沿って HTML を書くこと。",
+  "GameFeed にミクロゲームを投稿する。先にリソース `gf://guide` を読み、その規約（1 ファイルの HTML、`gf:*` メタ、`GF` SDK、使えない API）に沿って HTML を書くこと。絵は、規約の「絵と画風カード」の表に題材に合う画風があれば、そのカード `gf://style/<id>` を読んでから描く。カードは参考で、合う画風が無ければ自分で作る。",
   "初回は下書きになり、`post_id` と試遊 URL が返る。作者に試遊 URL を開いて遊んでもらい、「診断をコピー」で貼られた文に従って直す。直したら同じ `post_id` を渡して再投稿する（内容が置き換わる）。",
   "`rejected` で返ったら `errors[].fix` のとおりに直して再投稿する。`warnings` は通るが、作者に伝える。",
   "作者が公開を望んだときだけ `publish: true` を付ける。公開後は内容を変えられない。直すなら新しい下書きにする。",
@@ -107,6 +109,21 @@ export function createMcpServer(ctx: McpContext): McpServer {
       contents: [{ uri: GUIDE_URI, mimeType: "text/markdown", text: GUIDE_MARKDOWN }],
     }),
   );
+
+  // 画風カード（gc#A.14）。表にある 1 枚ずつを一覧に出す。表にない id はリソースが無い
+  for (const card of STYLE_CARDS) {
+    const uri = styleUri(card.id);
+    server.registerResource(
+      `style-${card.id}`,
+      uri,
+      {
+        title: `画風カード: ${card.name}`,
+        description: styleDescription(card),
+        mimeType: "text/markdown",
+      },
+      async () => ({ contents: [{ uri, mimeType: "text/markdown", text: card.markdown }] }),
+    );
+  }
 
   return server;
 }
