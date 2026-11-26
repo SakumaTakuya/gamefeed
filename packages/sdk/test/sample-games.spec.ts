@@ -42,18 +42,25 @@ function play(
   const sent: GuestToHost[] = [];
   const clock = { t: 1000 };
   const guest = createGuest({ post: (m) => sent.push(m), now: () => clock.t });
-  // 呼ばれても何もしない 2D コンテキスト
-  const ctx2d = new Proxy<Record<string | symbol, unknown>>(
-    {},
-    { get: (t, k) => (k in t ? t[k] : () => undefined), set: (t, k, v) => Reflect.set(t, k, v) },
-  );
-  const canvas = {
-    width: 0,
-    height: 0,
-    clientWidth: 360,
-    clientHeight: 640,
-    getContext: () => ctx2d,
+  // 呼ばれても何もしない 2D コンテキスト。メソッドの戻り値（グラデーション、パターン）も、何を呼ばれても何もしない
+  const nothing: unknown = new Proxy(() => undefined, {
+    get: () => nothing,
+    set: () => true,
+    apply: () => nothing,
+  });
+  const context2d = () =>
+    new Proxy<Record<string | symbol, unknown>>(
+      {
+        // 画素を書き込むゲーム（紙目など）のために、ここだけ本物の配列を返す
+        createImageData: (w: number, h: number) => ({ data: new Uint8ClampedArray(w * h * 4) }),
+      },
+      { get: (t, k) => (k in t ? t[k] : nothing), set: (t, k, v) => Reflect.set(t, k, v) },
+    );
+  const makeCanvas = () => {
+    const ctx = context2d();
+    return { width: 0, height: 0, clientWidth: 360, clientHeight: 640, getContext: () => ctx };
   };
+  const canvas = makeCanvas();
   const GF =
     opts.draw === false
       ? new Proxy(guest.GF, {
@@ -61,7 +68,11 @@ function play(
           set: (t, k, v) => Reflect.set(t, k, v),
         })
       : guest.GF;
-  const context = createContext({ GF, document: { getElementById: () => canvas } });
+  // createElement は、絵のための作業用の canvas（画風カードの紙目・黒板・小さな画面）だけに使われる
+  const context = createContext({
+    GF,
+    document: { getElementById: () => canvas, createElement: () => makeCanvas() },
+  });
   for (const m of html.matchAll(/<script>([\s\S]*?)<\/script>/g)) {
     new Script(m[1] as string).runInContext(context);
   }
@@ -216,6 +227,12 @@ const BOTS: Record<string, Bot> = {
   },
 };
 
+/**
+ * seed 30 通りのうち、描画もするのは最初のこの数だけ。絵（画風カード）は 1 フレームに数百回 canvas を呼ぶので、
+ * 全部で描くと代役の canvas だけで 1 分かかる。描画が点数を変えないことは別のテストが見ている
+ */
+const DRAWN_SEEDS = 3;
+
 const botOf = (name: string): Bot => {
   const bot = BOTS[name];
   if (!bot) throw new Error(`${name} の入力（BOTS）がテストに無い`);
@@ -237,6 +254,34 @@ describe("サンプルゲーム（#217、R-gc.A1-1）", () => {
     expect(Math.max(...durations)).toBe(600);
   });
 
+  it("どのゲームも画風カード（gc#A.14）を 1 枚使い、4 つの画風がどれも 4 本以上ある。README.md の表と合っている", () => {
+    const readme = read("README.md");
+    const listed = new Map(
+      [...readme.matchAll(/^\| `([a-z-]+\.html)` \| ([^|]+) \|/gm)].map((m) => [
+        m[1] as string,
+        (m[2] as string).trim(),
+      ]),
+    );
+    const names: Record<string, string> = {
+      kirie: "切り絵",
+      neon: "ネオン",
+      kokuban: "黒板",
+      dot: "ドット絵",
+    };
+    const count: Record<string, number> = {};
+    for (const name of FILES) {
+      const used = [
+        ...read(name).matchAll(/^\/\/ ---- 絵: 画風カード「(.+?)」（gf:\/\/style\/([a-z]+)）/gm),
+      ];
+      expect(used.length, name).toBe(1);
+      const [, label, id] = used[0] as RegExpMatchArray;
+      expect(names[id as string], name).toBe(label);
+      expect(listed.get(name), name).toBe(label);
+      count[id as string] = (count[id as string] ?? 0) + 1;
+    }
+    for (const id of Object.keys(names)) expect(count[id] ?? 0, id).toBeGreaterThanOrEqual(4);
+  });
+
   it("README.md の表に、すべてのファイルが 1 行ずつある", () => {
     const readme = read("README.md");
     const listed = [...readme.matchAll(/^\| `([a-z-]+\.html)` \|/gm)].map((m) => m[1] as string);
@@ -254,24 +299,24 @@ describe("サンプルゲーム（#217、R-gc.A1-1）", () => {
     it("入力なしでも時間切れまでに終わり、点数は目標に届かない（gc#A.1 の 1・4）", () => {
       const meta = metaOf(html);
       for (let seed = 0; seed < 30; seed++) {
-        const r = play(html, { seed });
+        const r = play(html, { seed, draw: seed < DRAWN_SEEDS });
         expect(r.errors, `seed ${seed}`).toEqual([]);
         expect(r.frames, `seed ${seed}`).toBeGreaterThanOrEqual(1);
         expect(r.frames, `seed ${seed}`).toBeLessThanOrEqual(meta.duration);
         expect(Number.isInteger(r.score) && r.score >= 0, `seed ${seed}: ${r.score}`).toBe(true);
         expect(r.score, `seed ${seed}`).toBeLessThan(meta.target);
       }
-    });
+    }, 30_000);
 
     it("上手い入力なら、どの seed でも目標に届く（gc#A.1 の 5、A.10）", () => {
       const meta = metaOf(html);
       for (let seed = 0; seed < 30; seed++) {
-        const r = play(html, { seed, bot: botOf(name) });
+        const r = play(html, { seed, bot: botOf(name), draw: seed < DRAWN_SEEDS });
         expect(r.errors, `seed ${seed}`).toEqual([]);
         expect(r.score, `seed ${seed}`).toBeGreaterThanOrEqual(meta.target);
         expect(r.frames, `seed ${seed}`).toBeLessThanOrEqual(meta.duration);
       }
-    });
+    }, 30_000);
 
     it("同じ seed と同じ入力で同じ点数になる。replay でも同じ（gc#A.1 の 7、A.9）", () => {
       for (const seed of [7, 8, 9]) {
@@ -281,7 +326,7 @@ describe("サンプルゲーム（#217、R-gc.A1-1）", () => {
         const r = play(html, { seed, replay: a.inputs });
         expect([r.score, r.frames], `seed ${seed}`).toEqual([a.score, a.frames]);
       }
-    });
+    }, 30_000);
 
     it("描画しなくても同じ点数になる（onDraw が状態を変えない。gc#A.4）", () => {
       for (const seed of [7, 8, 9]) {
@@ -289,6 +334,6 @@ describe("サンプルゲーム（#217、R-gc.A1-1）", () => {
         const b = play(html, { seed, bot: botOf(name), draw: false });
         expect([b.score, b.frames]).toEqual([a.score, a.frames]);
       }
-    });
+    }, 30_000);
   });
 });

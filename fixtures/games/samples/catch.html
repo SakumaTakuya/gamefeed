@@ -8,7 +8,7 @@
 <meta name="gf:input" content="drag">
 <meta name="gf:target" content="10">
 <style>
-  html, body { margin: 0; height: 100%; background: #0e1230; overflow: hidden; }
+  html, body { margin: 0; height: 100%; background: #2c6170; overflow: hidden; }
   canvas { display: block; width: 100vw; height: 100vh; }
 </style>
 </head>
@@ -19,17 +19,7 @@
 const A = 16 / 9;                 // 画面の幅を 1 としたときの高さ。座標はこの単位で持つ
 const cv = document.getElementById('c');
 const g = cv.getContext('2d');
-function begin() {                // 描画の前に呼ぶ。画面の幅（px）を返す
-  const w = cv.width = cv.clientWidth;
-  cv.height = cv.clientHeight;
-  g.fillStyle = '#0e1230'; g.fillRect(0, 0, w, cv.height);
-  return w;
-}
-function hud(w, text) {
-  g.fillStyle = '#fff'; g.textAlign = 'center';
-  g.font = 'bold ' + Math.round(0.09 * w) + 'px sans-serif';
-  g.fillText(String(text), 0.5 * w, 0.15 * w);
-}
+
 const BY = 1.5, HALF = 0.1;       // 皿の高さと、幅の半分
 let bx, stars, got, side;         // stars: { x, y, vy }、side: 次の星が落ちる側（0 左、1 右）
 
@@ -53,13 +43,97 @@ GF.onTick((frame) => {
   stars = rest;
 });
 
+// ---- 絵: 画風カード「切り絵」（gf://style/kirie）。色は面で塗り、線は引かない。紙ごとに影、最後に紙目 ----
+const hh = (n) => { const x = Math.sin(n * 127.1 + 11.7) * 43758.5453; return x - Math.floor(x); };   // 絵のための乱数。引数だけで決まる。GF.rng() は絵に使わない
+function paperShadow(w, on) {     // 紙の影。紙を描く前に on、描いたら off
+  g.shadowColor = on ? 'rgba(8,22,26,.42)' : 'transparent';
+  g.shadowBlur = on ? 0.022 * w : 0; g.shadowOffsetX = 0; g.shadowOffsetY = on ? 0.011 * w : 0;
+}
+function cutBlob(x, y, r, seed, n = 11) {   // 切り口の不揃いな丸（px）。seed は物ごとに固定
+  g.beginPath();
+  for (let i = 0; i < n; i++) {
+    const t = i / n * Math.PI * 2, rr = r * (0.92 + hh(seed + i * 5.3) * 0.16);
+    g.lineTo(x + Math.cos(t) * rr, y + Math.sin(t) * rr);
+  }
+  g.closePath(); g.fill();
+}
+function cutStar(w, x, y, r, rot, seed) {   // 紙の星（x, y, r は幅 1 の単位）
+  g.beginPath();
+  for (let i = 0; i < 10; i++) {
+    const t = rot + i * Math.PI / 5 - Math.PI / 2, rr = (i % 2 ? 0.48 : 1) * r * (0.94 + hh(seed + i * 3.7) * 0.12);
+    g.lineTo((x + Math.cos(t) * rr) * w, (y + Math.sin(t) * rr) * w);
+  }
+  g.closePath(); g.fill();
+}
+function cutHill(w, h, base, amp, seed, color, off = 0) {   // 紙の山。off を増やすと左へ流れる
+  const k = Math.floor(off), fr = off - k;
+  g.fillStyle = color; g.beginPath(); g.moveTo(-0.1 * w, h * 1.1);
+  for (let i = -2; i <= 36; i++) {
+    const n = i + k;
+    g.lineTo((i - fr) / 32 * w, base + Math.sin(n * 0.3 + seed) * amp + (hh(n * 1.3 + seed * 9) - 0.5) * 0.014 * w);
+  }
+  g.lineTo(1.1 * w, h * 1.1); g.closePath(); g.fill();
+}
+function cloud(w, x, y) {         // 紙の雲（x, y は幅 1 の単位）
+  g.fillStyle = '#d9e6df';
+  cutBlob(x * w, y * w, 0.055 * w, x * 50, 12); cutBlob((x + 0.07) * w, (y - 0.02) * w, 0.07 * w, x * 50 + 1, 12); cutBlob((x + 0.15) * w, y * w, 0.05 * w, x * 50 + 2, 12);
+}
+function confetti(w, x, y, age, seed) {   // 紙吹雪。age は出てからのフレーム数。位置は age から計算する（状態を持たない）
+  if (age < 0 || age > 40) return;
+  const C = ['#f08a24', '#f7d154', '#5f8f3e', '#f3e3b0'];
+  for (let i = 0; i < 10; i++) {
+    const vx = (hh(seed + i * 1.1) - 0.5) * 0.02, vy = -0.006 - hh(seed + i * 1.7) * 0.014;
+    g.save(); g.translate((x + vx * age) * w, (y + vy * age + 0.0004 * age * age) * w);
+    g.rotate(i + age * 0.2); g.scale(Math.cos(age * 0.35 + i), 1);
+    g.globalAlpha = Math.min(1, (40 - age) / 10); g.fillStyle = C[i % 4];
+    g.fillRect(-0.012 * w, -0.008 * w, 0.024 * w, 0.016 * w); g.restore();
+  }
+}
+let grain = null;
+function paperGrain(w, h) {       // 紙目。1 回だけ作り、毎フレームいちばん最後に重ねる
+  if (!grain) {
+    grain = document.createElement('canvas'); grain.width = grain.height = 128;
+    const c = grain.getContext('2d'), im = c.createImageData(128, 128);
+    for (let i = 0; i < 128 * 128; i++) {
+      const v = hh(i * 0.37) < 0.5 ? 0 : 255;
+      im.data[i * 4] = im.data[i * 4 + 1] = im.data[i * 4 + 2] = v; im.data[i * 4 + 3] = hh(i * 0.91 + 3) * 15;
+    }
+    c.putImageData(im, 0, 0);
+  }
+  g.fillStyle = g.createPattern(grain, 'repeat'); g.fillRect(0, 0, w, h);
+}
+function begin(sky) {             // 描画の前に呼ぶ。空を塗り、画面の幅（px）を返す
+  const w = cv.width = cv.clientWidth;
+  cv.height = cv.clientHeight;
+  g.fillStyle = sky; g.fillRect(0, 0, w, cv.height);
+  return w;
+}
+function label(w, text) {         // 点数。文字も紙として、影つきで
+  paperShadow(w, true); g.fillStyle = '#f3e3b0'; g.textAlign = 'center';
+  g.font = '900 ' + Math.round(0.13 * w) + 'px sans-serif';
+  g.fillText(String(text), 0.5 * w, 0.2 * w); paperShadow(w, false);
+}
+
 GF.onDraw(() => {
-  const w = begin();
-  g.fillStyle = '#ffd400'; g.textAlign = 'center'; g.font = Math.round(0.11 * w) + 'px sans-serif';
-  for (const s of stars) g.fillText('★', s.x * w, (s.y + 0.04) * w);
-  g.fillStyle = GF.frame - got < 6 ? '#ffd400' : '#fff';
-  g.fillRect((bx - HALF) * w, BY * w, HALF * 2 * w, 0.035 * w);
-  hud(w, GF.score);
+  const w = begin('#2c6170'), hgt = cv.height, f = GF.frame;
+  paperShadow(w, true);
+  g.fillStyle = '#f3e3b0'; cutBlob((0.76 - (bx - 0.5) * 0.03) * w, 0.36 * w, 0.12 * w, 3, 28);
+  cutHill(w, hgt, 1.12 * w, 0.07 * w, 1.2, '#3f8376', (bx - 0.5) * 1);     // 奥の山ほど小さくずらす
+  cutHill(w, hgt, 1.27 * w, 0.055 * w, 3.1, '#2f6a60', (bx - 0.5) * 2);
+  cutHill(w, hgt, 1.44 * w, 0.04 * w, 0.4, '#22504a', (bx - 0.5) * 3);
+  cutHill(w, hgt, 1.67 * w, 0.006 * w, 5, '#1b3f3b');
+  g.fillStyle = '#f7d154';
+  for (const s of stars) cutStar(w, s.x, s.y, 0.06, s.y * 2.5 + s.x * 9, Math.round(s.x * 999));
+  const q = Math.max(0, 1 - (f - got) / 6);                                // 受けた瞬間に潰して戻す
+  g.save(); g.translate(bx * w, (BY + 0.15) * w); g.scale(1 + q * 0.15, 1 - q * 0.2);
+  g.fillStyle = '#b9814a'; g.beginPath();
+  g.moveTo(-HALF * w, -0.15 * w); g.lineTo(HALF * w, -0.15 * w); g.lineTo((HALF - 0.03) * w, 0); g.lineTo((0.03 - HALF) * w, 0); g.closePath(); g.fill();
+  g.fillStyle = '#d7a565'; g.fillRect(-(HALF + 0.012) * w, -0.165 * w, (HALF * 2 + 0.024) * w, 0.032 * w);
+  g.restore();
+  paperShadow(w, false);
+  confetti(w, bx, BY, f - got, got);
+  label(w, GF.score);
+  paperGrain(w, hgt);
 });
 </script>
 </body>
