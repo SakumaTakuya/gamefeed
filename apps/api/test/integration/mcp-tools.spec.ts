@@ -81,7 +81,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
       /^GameFeed にミクロゲームを投稿する。先にリソース `gf:\/\/guide` を読み/,
     );
     expect(tool?.description?.split("\n")[0]).toMatch(
-      /画風を 1 つ選び、そのカード `gf:\/\/style\/<id>` を読んでから描く。$/,
+      /そのカード `gf:\/\/style\/<id>` を読んでから描く。カードは参考で、合う画風が無ければ自分で作る。$/,
     );
     expect(Object.keys(tool?.inputSchema.properties ?? {}).sort()).toEqual([
       "html",
@@ -128,7 +128,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
     expect(kirie).toMatchObject({
       mimeType: "text/markdown",
       description:
-        "画風カード「切り絵」。色紙を切って重ねた絵。面で塗り、線は引かない。紙ごとに影、全体に紙目。配色・決まり・描き方のコード。ゲームの絵を描く前に 1 枚選んで読む。",
+        "画風カード「切り絵」。色紙を切って重ねた絵。面で塗り、線は引かない。紙ごとに影、全体に紙目。配色・決まり・描き方のコード。カードは参考で、題材に合うときに、絵を描く前に読む。",
     });
     for (const card of STYLE_CARDS) {
       const uri = `gf://style/${card.id}`;

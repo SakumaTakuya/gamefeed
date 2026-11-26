@@ -73,5 +73,5 @@ export function styleUri(id: string): string {
 
 /** mc#A.4 の説明文（暫定） */
 export function styleDescription(row: StyleRow): string {
-  return `画風カード「${row.name}」。${row.summary}。配色・決まり・描き方のコード。ゲームの絵を描く前に 1 枚選んで読む。`;
+  return `画風カード「${row.name}」。${row.summary}。配色・決まり・描き方のコード。カードは参考で、題材に合うときに、絵を描く前に読む。`;
 }
