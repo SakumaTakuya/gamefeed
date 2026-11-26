@@ -17,7 +17,7 @@
 
 ## 決まり
 
-- 絵は 90 × 160 の小さな canvas に描き、表示の canvas へ `imageSmoothingEnabled = false` で引き伸ばす
+- 絵は 90 × 160 の小さな canvas に描き、表示の canvas へ `imageSmoothingEnabled = false` で引き伸ばす。大きさは幅に合わせる（縦長の端末で縦に伸ばさない）
 - 座標は整数に丸める。半端な位置に描かない
 - 物は文字の行で書いたスプライトで描く。丸や斜めの線を `arc` や `lineTo` で描かない
 - 動きはコマで見せる（2 コマの切り替えで足りる）。回転と拡大は使わない
@@ -51,7 +51,11 @@ function sprite(rows, x, y, map) {
 
 // 小さな画面を表示の canvas へ。毎フレームいちばん最後に呼ぶ
 // （canvas の width を書き換えると imageSmoothingEnabled が戻るので、毎回 false にする）
-function blit(g, w, h) { g.imageSmoothingEnabled = false; g.drawImage(low, 0, 0, w, h); }
+// 縦は幅に合わせる。h まで伸ばすと、縦長の端末で絵が縦に伸びて当たりとずれる。余った下は地の色で塗る
+function blit(g, w, h) {
+  g.fillStyle = '#141433'; g.fillRect(0, 0, w, h);
+  g.imageSmoothingEnabled = false; g.drawImage(low, 0, 0, w, w * LOW_H / LOW_W);
+}
 
 // スプライトの例（7 × 7 の星）。W を Y と入れ替えると瞬く
 const STAR = [
@@ -76,4 +80,4 @@ const STAR = [
 - 受けた、当たった瞬間に 2 × 2 の粒を 8 方向へ飛ばし、途中で 1 × 1 にして消す
 - 揺れは、小さな画面に描く前に `lg.setTransform(1, 0, 0, 1, dx, dy)` で 1〜2 ドットずらす（`dx` / `dy` は整数。描き終えたら戻す）
 - 動かす物は、動いている向きに目を 1 ドット寄せる
-- 粒の位置などは `onTick` で持ち、`onDraw` は描くだけにする
+- 粒は「出てからのフレーム数」から位置を計算すると、状態を足さずに描ける（`x = x0 + vx * age`、`y = y0 + vy * age + 重力 * age * age`。速度は `hh(seed + i)` で決める）。`onTick` で持つなら、`onDraw` は描くだけにする
