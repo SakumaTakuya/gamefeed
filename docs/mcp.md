@@ -3,7 +3,7 @@
 2026-11-08 作成。前提は `product.md` 9（作る側のループ）、`game-contract.md` A.11 / A.12（静的検査と投稿の流れ）、`data-model.md` A.3（`users` / `games` / `posts`）、`moderation.md` A.2 / A.5（投稿状態と信頼スコア）、`security.md` A.5 / A.8（配信可否と認証）。読む人は `apps/api` の `mcp.ts` と「作る」ページの実装者、ツール説明文を直す人。
 節番号は `mc#A.6` のように参照する。A 部が規約、B 部が理由。
 
-作る側は AI チャットから離れない（`product.md` 9）。MCP サーバはそのための入口で、公開するのはツール 3 本とリソース 1 つだけ。取り消せない操作（削除）は含めない。
+作る側は AI チャットから離れない（`product.md` 9）。MCP サーバはそのための入口で、公開するのはツール 3 本と、リソース（規約 1 つと画風カード）だけ。取り消せない操作（削除）は含めない。
 
 ---
 
@@ -15,7 +15,7 @@
 | --- | --- |
 | クライアント | MCP クライアント。一次対象は Muse（iOS）と Claude のカスタムコネクタ |
 | ツール | `publish_game` / `list_my_games` / `unpublish_game` |
-| リソース | `gf://guide`。`game-contract.md` の A 部の本文 |
+| リソース | `gf://guide`（`game-contract.md` の A 部の本文）と、画風カード `gf://style/<id>`（`docs/styles/<id>.md` の本文） |
 | 下書き | `base_status = draft` の投稿。`publish_game` が作り、置き換えられる（`moderation.md` A.2） |
 | 試遊 URL | 下書きを作者が遊ぶ Host のページ。`<app-origin>/draft/<post_id>`（A.9） |
 | 公開 | 下書きを `limited` / `public` にすること。以後は不変 |
@@ -81,7 +81,11 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 
 ### リソース `gf://guide`
 
-`game-contract.md` の A 部（A.1〜A.13）の本文を `text/markdown` で返す。本文は `pnpm --filter @gamefeed/api gen:guide` がリポジトリから `apps/api/src/guide.gen.ts` に取り込み、コミットする。`game-contract.md` の A 部とずれていれば CI のテストが落ちる（B.9）。サーバの `version` と一緒に変わる。URI は 1 つだけで、一覧（`resources/list`）に出す。
+`game-contract.md` の A 部（A.1〜A.14）の本文を `text/markdown` で返す。本文は `pnpm --filter @gamefeed/api gen:guide` がリポジトリから `apps/api/src/guide.gen.ts` に取り込み、コミットする。`game-contract.md` の A 部とずれていれば CI のテストが落ちる（B.9）。サーバの `version` と一緒に変わる。一覧（`resources/list`）に出す。
+
+### リソース `gf://style/<id>`
+
+画風カード（`game-contract.md` A.14）。`docs/styles/<id>.md` の本文を `text/markdown` で返す。`<id>` は A.14 の表にあるものだけで、1 枚ずつ一覧（`resources/list`）に出す。表にない `<id>` は、リソースが無いときの MCP のエラーを返す。本文の取り込みは `gf://guide` と同じ（`gen:guide` が `docs/styles/` も取り込み、ずれていれば CI のテストが落ちる）。A.14 の表の `id` と `docs/styles/` のファイルが 1 対 1 であることも同じテストが見る。
 
 ## A.4 説明文（AI が読む。暫定）
 
@@ -89,7 +93,7 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 
 `publish_game`:
 
-> GameFeed にミクロゲームを投稿する。先にリソース `gf://guide` を読み、その規約（1 ファイルの HTML、`gf:*` メタ、`GF` SDK、使えない API）に沿って HTML を書くこと。
+> GameFeed にミクロゲームを投稿する。先にリソース `gf://guide` を読み、その規約（1 ファイルの HTML、`gf:*` メタ、`GF` SDK、使えない API）に沿って HTML を書くこと。絵は、規約の「絵と画風カード」の表から題材に合う画風を 1 つ選び、そのカード `gf://style/<id>` を読んでから描く。
 > 初回は下書きになり、`post_id` と試遊 URL が返る。作者に試遊 URL を開いて遊んでもらい、「診断をコピー」で貼られた文に従って直す。直したら同じ `post_id` を渡して再投稿する（内容が置き換わる）。
 > `rejected` で返ったら `errors[].fix` のとおりに直して再投稿する。`warnings` は通るが、作者に伝える。
 > 作者が公開を望んだときだけ `publish: true` を付ける。公開後は内容を変えられない。直すなら新しい下書きにする。
@@ -106,6 +110,10 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 `gf://guide`:
 
 > GameFeed のミクロゲーム規約。`publish_game` を呼ぶ前に読む。
+
+`gf://style/<id>`（カードごと。「どんな絵か」は `game-contract.md` A.14 の表の文）:
+
+> 画風カード「<画風>」。<どんな絵か>。配色・決まり・描き方のコード。ゲームの絵を描く前に 1 枚選んで読む。
 
 説明文の文面は暫定で、AI の挙動を見て直す。変えるときは `product.md` 9 の流れ（下書き → 試遊 → 公開）を変えない。
 
@@ -220,7 +228,7 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 
 | ID | 性質 | 担保 |
 | --- | --- | --- |
-| C1 | ツール 3 本とリソース 1 つだけが `tools/list` / `resources/list` に出る | R-mc.A3-1 |
+| C1 | ツール 3 本と、リソース `gf://guide` と `game-contract.md` A.14 の表の画風カードだけが `tools/list` / `resources/list` に出る | R-mc.A3-1 |
 | C2 | `publish_game` は静的検査の拒否で何も書かない（`games` / `posts` / R2 / KV） | A.6 の 4、R-9-3 |
 | C3 | 同じ入力を 2 回呼んでも投稿は 1 つで、2 回目は投稿の状態と内容を変えず、同じ出力を返す（`post_id` の有無を問わない。1 回目が `storage_failed` でも）。上限を消費しない | A.7、R-mc.A7-1、`verification/Publish.tla` G1・G7・G8 |
 | C4 | `publish: true` の結果は `trust_score` で `limited` / `public`（`moderation.md` A.2） | R-mo.A2-1 |
@@ -279,6 +287,8 @@ Vercel の関数は呼び出しごとに別のインスタンスで動きうる�
 `restricted_reason` から `dismissed` を除くのは、運営が退けた通報を「制限の理由」として作者に見せると、直すべきでない点を直させてしまうため。`open` と `upheld` は数える（自動制限は `open` の重みで起きる）。
 
 `gf://guide` をビルド時に取り込む案（esbuild のローダで `.md` を束ねる）は、Vercel のビルド・vitest・tsx の 3 つで同じ設定が要り、どれかで外れると本文が空のまま動く。生成物をコミットして CI で文書との一致を見れば、どの実行環境でも同じ本文になり、ずれは PR で見つかる。代わりに、`game-contract.md` の A 部を直す PR は `gen:guide` の実行が要る。
+
+画風カードを `gf://guide` に含めず、1 枚ずつ別のリソースにする理由は `game-contract.md` B.13。ツール（`get_style` など）にしないのは、読むだけの物はリソースで足り、ツールを増やすとクライアントの許可の確認が 1 つ増えるため。リソースを読めないクライアントが出てきたら見直す。
 
 ---
 
