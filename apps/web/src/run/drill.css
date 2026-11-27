@@ -75,6 +75,63 @@
   overflow: hidden;
 }
 
+/* 紙 1 枚ぶんの重なり（`Pages.tsx`）。ゲームの画面（iframe）より上 */
+.dr-sheet {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+}
+/* めくられている紙（hd#A.7）。前のゲームの画面（z-index 2）の上に重ね、同じ形に切り抜く */
+.dr-leaf {
+  z-index: 3;
+  pointer-events: none;
+}
+/* 下から出るページに落ちる影。折り目から角の側へ伸びる */
+.dr-flip-shadow {
+  position: absolute;
+  left: 0;
+  top: -200cqw;
+  width: 22cqw;
+  height: 400cqw;
+  z-index: 2;
+  transform-origin: 0 50%;
+  background: linear-gradient(
+    90deg,
+    rgba(20, 24, 40, 0.34),
+    rgba(20, 24, 40, 0.1) 40%,
+    transparent
+  );
+  pointer-events: none;
+  opacity: 0;
+}
+/* 紙の裏。折り返す前の形で切り抜き、折り目で鏡映しにする */
+.dr-flip-back {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  display: none;
+  transform-origin: 0 0;
+  background: var(--paper-back);
+  overflow: hidden;
+  pointer-events: none;
+}
+/* 裏の陰影。折り目の近くを暗く、少し離れたところを明るくして、紙のしなりに見せる */
+.dr-flip-back > i {
+  position: absolute;
+  left: 0;
+  top: -200cqw;
+  width: 60cqw;
+  height: 400cqw;
+  transform-origin: 0 50%;
+  background: linear-gradient(
+    90deg,
+    rgba(40, 34, 20, 0.3),
+    rgba(40, 34, 20, 0.08) 16%,
+    rgba(255, 255, 255, 0.4) 38%,
+    rgba(255, 255, 255, 0) 70%
+  );
+}
+
 /* 紙。Host の層は必ず紙を持つ（hd#A.9） */
 .dr-page {
   position: absolute;

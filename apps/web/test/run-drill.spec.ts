@@ -1,6 +1,7 @@
 // ドリルの絵の計算（hd#A.6 の印、hd#A.7 のめくりの形）。DOM に触らない。
-import { describe, expect, it } from "vitest";
+
 import { INTERLUDE_MS } from "@gamefeed/domain";
+import { describe, expect, it } from "vitest";
 import {
   FLIP_MS,
   flipEase,
@@ -182,13 +183,17 @@ describe("R-hd.A7-1 flipFrame（めくりの 1 コマを CSS の値にする。h
       const fold = pageFold(t, W, H);
       const f = flipFrame(t, W, H);
       expect(f.clip).toMatch(/^polygon\((-?[\d.]+px -?[\d.]+px(, )?){3,}\)$/);
-      expect(polygonArea(points(f.clip)), `t=${t}`).toBeCloseTo(polygonArea(fold.front), 0);
+      // 座標を 0.01 px に丸めるので、面積は数 px² までずれる
+      expect(polygonArea(points(f.clip)), `t=${t}`).toBeCloseTo(polygonArea(fold.front), -1);
       expect(f.back, `t=${t}`).not.toBeNull();
       expect(polygonArea(points(f.back?.clip ?? "")), `t=${t}`).toBeCloseTo(
         polygonArea(fold.back),
-        0,
+        -1,
       );
-      const m = /^matrix\((.+)\)$/.exec(f.back?.transform ?? "")?.[1]?.split(", ").map(Number);
+      const m = /^matrix\((.+)\)$/
+        .exec(f.back?.transform ?? "")?.[1]
+        ?.split(", ")
+        .map(Number);
       expect(m).toHaveLength(6);
       fold.mirror.forEach((v, i) => {
         expect(m?.[i], `t=${t} m[${i}]`).toBeCloseTo(v, 3);
