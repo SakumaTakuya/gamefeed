@@ -101,7 +101,9 @@ def main() -> int:
         results.append(check(f"S2 bounded 20-80 [{name}]", bounded, f"min={min(devs)} max={max(devs)}"))
         results.append(check(f"S5 finite        [{name}]", finite))
 
-    # S3 attainable maximum at n = 20
+    # S3 attainable maximum at n = 5 (calibration threshold, #242) and n = 20
+    results.append(check("S3 n=5 max == 63.8", deviation(10**9, [1, 2, 3, 4, 5]) == 63.8,
+                         f"got {deviation(10**9, [1, 2, 3, 4, 5])}"))
     best = deviation(10**9, dists["small_n20"])
     results.append(check("S3 n=20 max == 69.8", best == 69.8, f"got {best}"))
     for n, expect in ((100, 75.8), (1000, 80.0)):
@@ -123,7 +125,7 @@ def main() -> int:
 
     for name, dist in dists.items():
         s4(name, dist)
-    for n in range(20, 61):  # boundary sample sizes, distinct scores 0..n-1 (Codex's case: n = 25)
+    for n in range(5, 61):  # boundary sample sizes, distinct scores 0..n-1 (Codex's case: n = 25)
         s4(f"distinct n={n}", list(range(n)))
 
     # S6 frozen values never change when the distribution grows
