@@ -1,13 +1,19 @@
 // ドリルの絵の計算（hd#A.6 の印、hd#A.7 のめくりの形）。DOM に触らない。
 import { describe, expect, it } from "vitest";
+import { INTERLUDE_MS } from "@gamefeed/domain";
 import {
   FLIP_MS,
   flipEase,
+  flipFrame,
   type Mark,
   markOf,
   mirrorPoint,
+  type Paper,
   pageFold,
+  paperOf,
   polygonArea,
+  REDUCED_SWAP_MS,
+  turnsPage,
 } from "../src/run/drill.ts";
 
 describe("R-hd.A6-1 markOf（採点の印。hd#A.6、H1）", () => {
@@ -110,5 +116,96 @@ describe("R-hd.A7-1 pageFold（めくりの形。hd#A.7、H2）", () => {
     expect(flipEase(0.75)).toBeCloseTo(0.875, 9);
     expect(flipEase(1)).toBe(1);
     expect(FLIP_MS).toBe(620);
+  });
+});
+
+describe("R-hd.A7-2 どの紙が出ているか、いつめくるか（hd#A.7 の表）", () => {
+  it("紙は phase・終わった理由・成績表の有無だけから決まる", () => {
+    const at = (phase: string, ended: string | null = null, report = false) =>
+      paperOf({ phase, ended, report });
+    expect(at("idle")).toBe("cover");
+    expect(at("interlude")).toBe("question");
+    // 「続きから」の幕間も問題のページ
+    expect(at("resuming")).toBe("question");
+    expect(at("running")).toBe("game");
+    expect(at("flash")).toBe("grading");
+    expect(at("closing", "lives")).toBe("end");
+    expect(at("finished", "limit")).toBe("end");
+    expect(at("finished", "abandoned")).toBe("end");
+    expect(at("finished", "lives", true)).toBe("report");
+    // 通信エラーは成績表を出さない（run#A.6）
+    expect(at("closing", "error")).toBe("notice");
+    expect(at("finished", "error", true)).toBe("notice");
+  });
+
+  it("めくるのは表の 4 通りだけ", () => {
+    const papers: Paper[] = ["cover", "question", "game", "grading", "end", "report", "notice"];
+    const turned = papers.flatMap((from) =>
+      papers.filter((to) => turnsPage(from, to)).map((to) => `${from} → ${to}`),
+    );
+    expect(turned.sort()).toEqual(
+      ["cover → question", "grading → question", "end → report", "report → question"].sort(),
+    );
+  });
+
+  it("めくりも、動きを減らす設定の入れ替えも、幕間の内側で終わる", () => {
+    expect(FLIP_MS).toBeLessThan(INTERLUDE_MS);
+    expect(REDUCED_SWAP_MS).toBeLessThan(FLIP_MS);
+    expect(REDUCED_SWAP_MS).toBe(150);
+  });
+});
+
+describe("R-hd.A7-1 flipFrame（めくりの 1 コマを CSS の値にする。hd#A.7）", () => {
+  const W = 360;
+  const H = 640;
+  const points = (clip: string) =>
+    [...clip.matchAll(/(-?[\d.]+)px (-?[\d.]+)px/g)].map(
+      (m) => [Number(m[1]), Number(m[2])] as const,
+    );
+
+  it("t = 0 は紙の全面を見せ、裏も陰影も無い", () => {
+    const f = flipFrame(0, W, H);
+    expect(polygonArea(points(f.clip))).toBeCloseTo(W * H, 3);
+    expect(f.back).toBeNull();
+    expect(f.shade).toBe(0);
+  });
+
+  it("t = 1 は紙を見せない。裏は綴じ目の上（舞台の外）にある", () => {
+    const f = flipFrame(1, W, H);
+    expect(f.clip).toMatch(/^polygon\(/);
+    expect(polygonArea(points(f.clip))).toBe(0);
+    expect(f.shade).toBeCloseTo(0, 9);
+  });
+
+  it("途中は pageFold の表を切り抜きに、裏を「折り返す前の形 + 鏡映し」にする", () => {
+    for (const t of [0.1, 0.37, 0.5, 0.82]) {
+      const fold = pageFold(t, W, H);
+      const f = flipFrame(t, W, H);
+      expect(f.clip).toMatch(/^polygon\((-?[\d.]+px -?[\d.]+px(, )?){3,}\)$/);
+      expect(polygonArea(points(f.clip)), `t=${t}`).toBeCloseTo(polygonArea(fold.front), 0);
+      expect(f.back, `t=${t}`).not.toBeNull();
+      expect(polygonArea(points(f.back?.clip ?? "")), `t=${t}`).toBeCloseTo(
+        polygonArea(fold.back),
+        0,
+      );
+      const m = /^matrix\((.+)\)$/.exec(f.back?.transform ?? "")?.[1]?.split(", ").map(Number);
+      expect(m).toHaveLength(6);
+      fold.mirror.forEach((v, i) => {
+        expect(m?.[i], `t=${t} m[${i}]`).toBeCloseTo(v, 3);
+      });
+      // 陰影は折り目の上の 1 点に置き、角の側（法線の向き）へ伸ばす
+      const [x, y, deg] = (
+        /^translate\((-?[\d.]+)px, (-?[\d.]+)px\) rotate\((-?[\d.]+)deg\)$/.exec(f.crease) ?? []
+      )
+        .slice(1)
+        .map(Number);
+      expect(x).toBeCloseTo(fold.crease.point[0], 1);
+      expect(y).toBeCloseTo(fold.crease.point[1], 1);
+      const rad = ((deg as number) * Math.PI) / 180;
+      expect(Math.cos(rad)).toBeCloseTo(fold.crease.normal[0], 3);
+      expect(Math.sin(rad)).toBeCloseTo(fold.crease.normal[1], 3);
+      expect(f.shade).toBeGreaterThan(0);
+      expect(f.shade).toBeLessThanOrEqual(1);
+    }
   });
 });

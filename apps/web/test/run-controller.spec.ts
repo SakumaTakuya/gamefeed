@@ -14,6 +14,7 @@ import { createGuest, type Guest, type HostToGuest } from "@gamefeed/sdk";
 import { describe, expect, it } from "vitest";
 import type { RunPlan, RunReport, TurnBody, TurnReply } from "../src/run/api.ts";
 import { createRunController, type RunController } from "../src/run/controller.ts";
+import { FLIP_MS, type Paper, paperOf, turnsPage } from "../src/run/drill.ts";
 
 const ORIGIN = "https://games.example.workers.dev";
 const POSTS = [
@@ -55,6 +56,8 @@ interface Options {
   unloadable?: (postId: string) => boolean;
   /** Guest の振る舞いを足す */
   game?: (guest: Guest, postId: string) => void;
+  /** 画面の代わり。view が変わるたびに呼ぶ */
+  screen?: (ctl: RunController, at: number) => void;
 }
 
 function setup(opts: Options = {}) {
@@ -63,6 +66,8 @@ function setup(opts: Options = {}) {
   const timers: { at: number; cb: () => void }[] = [];
   const guests = new Map<number, Guest>();
   const sent = new Map<number, HostToGuest[]>();
+  /** Guest へ送ったメッセージを、送った時刻つきで */
+  const log: { at: number; iframe: number; type: string }[] = [];
   const server = {
     settled: 0,
     closed: false,
@@ -90,6 +95,7 @@ function setup(opts: Options = {}) {
         if (i >= 0) timers.splice(i, 1);
       },
       post: (iframe, m) => {
+        log.push({ at: clock.t, iframe, type: m.type });
         sent.set(iframe, [...(sent.get(iframe) ?? []), m]);
         guests.get(iframe)?.receive(m);
       },
@@ -120,7 +126,11 @@ function setup(opts: Options = {}) {
         return server.report;
       },
     },
-    onChange: () => changes++,
+    onChange: () => {
+      changes++;
+      // 最初の通知は、作っている途中（ctl がまだ無い）に来ることがある
+      queueMicrotask(() => opts.screen?.(ctl, clock.t));
+    },
   });
 
   /** ブラウザの代わり: 画面に出た iframe を読み込み、外れた iframe を捨てる */
@@ -184,6 +194,7 @@ function setup(opts: Options = {}) {
     plan,
     server,
     sent,
+    log,
     guests,
     timers,
     advance,
@@ -550,5 +561,59 @@ describe("dispose", () => {
     expect(changes()).toBe(before);
     expect(server.finishes).toBe(0);
     expect(timers).toEqual([]);
+  });
+});
+
+describe("R-hd.A7-2 めくりは進行を変えない（hd#A.7、H3）", () => {
+  /** ラン画面と同じ規則で「紙」を追い、めくった時刻を覚える */
+  function watcher() {
+    let paper: Paper | null = null;
+    const flips: { at: number; from: Paper; to: Paper }[] = [];
+    const screen = (ctl: RunController, at: number) => {
+      const { run, report } = ctl.view;
+      const next = paperOf({ phase: run.phase, ended: run.ended, report: report.kind === "ready" });
+      if (paper !== null && paper !== next && turnsPage(paper, next)) {
+        flips.push({ at, from: paper, to: next });
+      }
+      paper = next;
+    };
+    return { screen, flips };
+  }
+
+  /** 3 回のミスで終わるラン（成績表まで）を通す */
+  async function play(screen?: Options["screen"]) {
+    const s = setup({ plan: planOf([10, 10, 10]), score: () => 0, ...(screen ? { screen } : {}) });
+    await s.start();
+    await s.advance(3 * s.TURN_MS + 1000);
+    expect(s.ctl.view.report.kind).toBe("ready");
+    return s;
+  }
+
+  it("めくりを見ていても、いなくても、同じ時刻に同じメッセージを送る", async () => {
+    const plain = await play();
+    const w = watcher();
+    const watched = await play(w.screen);
+    expect(watched.log).toEqual(plain.log);
+    expect(watched.server.puts).toEqual(plain.server.puts);
+    expect(w.flips.length).toBeGreaterThan(0);
+  });
+
+  it("めくるのは「はじめる」・幕間の始め・成績表を出すときで、次の start はめくりが終わった後に来る", async () => {
+    const w = watcher();
+    const s = await play(w.screen);
+    expect(w.flips.map((f) => `${f.from} → ${f.to}`)).toEqual([
+      "cover → question",
+      "grading → question",
+      "grading → question",
+      "end → report",
+    ]);
+    const starts = s.log.filter((m) => m.type === "start").map((m) => m.at);
+    const turned = w.flips.filter((f) => f.to === "question").map((f) => f.at);
+    expect(starts).toHaveLength(3);
+    turned.forEach((at, i) => {
+      // 幕間の長さはめくりで変わらない（run#A.5 の 4、5）
+      expect(starts[i] as number).toBeCloseTo(at + INTERLUDE_MS, 6);
+      expect((starts[i] as number) - at).toBeGreaterThan(FLIP_MS);
+    });
   });
 });
