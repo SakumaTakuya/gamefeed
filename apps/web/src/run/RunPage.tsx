@@ -10,6 +10,8 @@ import { createRunController, type RunController, type RunView } from "./control
 import { Binding, Cover, EndStamp, Grading, Notice, QuestionPage, ReportPage } from "./Drill.tsx";
 import { deviceId } from "./device-id.ts";
 import { lostLife, reportView } from "./display.ts";
+import { type Paper, paperOf } from "./drill.ts";
+import { Pages } from "./Pages.tsx";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 
@@ -169,6 +171,11 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
 
   const view = ctl.view;
   const { run } = view;
+  const paper = paperOf({
+    phase: run.phase,
+    ended: run.ended,
+    report: view.report.kind === "ready",
+  });
   const playing = run.phase !== "idle" && run.phase !== "closing" && run.phase !== "finished";
   // 綴じ目に出す手番と周回。採点の間は終わった手番、幕間は次の手番（hd#A.3）
   const turn = run.outcomes.length + (run.phase === "flash" ? 0 : 1);
@@ -202,19 +209,39 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
           onLoad={() => ctl.frameLoaded(f.iframe)}
         />
       ))}
-      <Layer ctl={ctl} view={view} runId={plan.runId} onAgain={onAgain} />
+      <Pages
+        paper={paper}
+        // めくられる紙には、今見えているゲームの画面も入る（hd#A.7）
+        frames={() =>
+          view.frames.flatMap((f) => {
+            const el = f.visible ? els.current.get(f.iframe) : undefined;
+            return el ? [el] : [];
+          })
+        }
+      >
+        <Layer paper={paper} ctl={ctl} view={view} runId={plan.runId} onAgain={onAgain} />
+      </Pages>
     </Stage>
   );
 }
 
-/** Host の層（表紙・問題のページ・採点・おわり・成績表）。iframe より上に置く（se#A.3、run#A.5、hd#A.9） */
-function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgain: () => void }) {
-  const { ctl, view, runId, onAgain } = props;
+/**
+ * Host の層（表紙・問題のページ・採点・おわり・成績表）。iframe より上に置く（se#A.3、run#A.5、hd#A.9）。
+ * どの紙を描くかは `paper`（`paperOf`）で決める。めくりの判定と同じ値を使う
+ */
+function Layer(props: {
+  paper: Paper;
+  ctl: RunController;
+  view: RunView;
+  runId: string;
+  onAgain: () => void;
+}) {
+  const { paper, ctl, view, runId, onAgain } = props;
   const { run } = view;
 
-  if (run.phase === "running") return null;
+  if (paper === "game") return null;
 
-  if (run.phase === "idle") {
+  if (paper === "cover") {
     return (
       <Cover
         onStart={view.startable ? () => ctl.begin() : null}
@@ -223,7 +250,17 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
     );
   }
 
-  if (run.phase === "interlude") {
+  if (paper === "question") {
+    if (run.phase === "resuming") {
+      return (
+        <QuestionPage
+          turn={run.outcomes.length + 1}
+          meta={view.current}
+          lap={run.current?.turn.lap ?? 0}
+          resuming
+        />
+      );
+    }
     return (
       <QuestionPage
         turn={run.outcomes.length + 1}
@@ -233,21 +270,10 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
     );
   }
 
-  if (run.phase === "resuming") {
-    return (
-      <QuestionPage
-        turn={run.outcomes.length + 1}
-        meta={view.current}
-        lap={run.current?.turn.lap ?? 0}
-        resuming
-      />
-    );
-  }
-
-  if (run.phase === "flash") return <Grading flash={view.flash} lives={run.lives} />;
+  if (paper === "grading") return <Grading flash={view.flash} lives={run.lives} />;
 
   // ここからはランが終わった後（closing / finished）
-  if (run.ended === "error") {
+  if (paper === "notice") {
     // 読み込みの skip が 3 本。成績表は出さない（run#A.6）
     return (
       <Notice>
@@ -262,9 +288,7 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
     );
   }
 
-  if (view.report.kind === "ready") {
-    return <Report view={view} runId={runId} onAgain={onAgain} />;
-  }
+  if (paper === "report") return <Report view={view} runId={runId} onAgain={onAgain} />;
 
   return (
     <EndStamp word={run.ended === "abandoned" ? "中断" : "おわり"}>

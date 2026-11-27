@@ -6,6 +6,7 @@ import type { RunReport } from "../src/run/api.ts";
 import type { FlashView } from "../src/run/controller.ts";
 import { Binding, Cover, EndStamp, Grading, QuestionPage, ReportPage } from "../src/run/Drill.tsx";
 import { reportView } from "../src/run/display.ts";
+import { Pages } from "../src/run/Pages.tsx";
 
 const text = (html: string) =>
   html
@@ -275,5 +276,35 @@ describe("R-hd.A8-1 成績表（hd#A.8、H5）", () => {
     );
     expect(text(html)).toContain("通信できなかった 2 本は記録されていません");
     expect(text(html).endsWith("もう一回")).toBe(true);
+  });
+});
+
+describe("R-hd.A7-2 紙の重なり（Pages。hd#A.7）", () => {
+  it("Host の層を 1 枚の紙に包む。ゲームの間は何も置かない（入力を遮らない）", () => {
+    const page = renderToStaticMarkup(
+      <Pages paper="question" frames={() => []}>
+        <QuestionPage turn={1} meta={null} lap={0} />
+      </Pages>,
+    );
+    expect(count(page, 'class="dr-sheet"')).toBe(1);
+    expect(page).toContain("第 1 問");
+
+    const game = renderToStaticMarkup(
+      <Pages paper="game" frames={() => []}>
+        {null}
+      </Pages>,
+    );
+    expect(game).toBe("");
+  });
+
+  it("紙が替わっていない間は、めくられる紙も裏も影も置かない", () => {
+    const page = renderToStaticMarkup(
+      <Pages paper="grading" frames={() => []}>
+        <Grading flash={flash({})} />
+      </Pages>,
+    );
+    expect(page).not.toContain("dr-leaf");
+    expect(page).not.toContain("dr-flip-back");
+    expect(page).not.toContain("dr-flip-shadow");
   });
 });

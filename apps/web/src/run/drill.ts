@@ -127,3 +127,66 @@ export function pageFold(t: number, w: number, h: number): Fold {
     crease,
   };
 }
+
+/* ---------- どの紙が出ているか、いつめくるか（hd#A.7 の表） ---------- */
+
+/**
+ * 画面に出ている紙。`game` は Host の層が無い（ゲームが見えている）。
+ * `end` は「おわり」の判子、`notice` は通信エラーなどの知らせ
+ */
+export type Paper = "cover" | "question" | "game" | "grading" | "end" | "report" | "notice";
+
+/** ランの状態から、出ている紙を決める。進行は読むだけで、変えない（H3） */
+export function paperOf(v: { phase: string; ended: string | null; report: boolean }): Paper {
+  if (v.phase === "idle") return "cover";
+  if (v.phase === "interlude" || v.phase === "resuming") return "question";
+  if (v.phase === "running") return "game";
+  if (v.phase === "flash") return "grading";
+  // ここからはランが終わった後（closing / finished）。通信エラーは成績表を出さない（run#A.6）
+  if (v.ended === "error") return "notice";
+  return v.report ? "report" : "end";
+}
+
+/** 紙が `from` から `to` に替わるとき、めくるか（hd#A.7 の表の 4 行） */
+export function turnsPage(from: Paper, to: Paper): boolean {
+  if (to === "question") return from === "cover" || from === "grading" || from === "report";
+  return from === "end" && to === "report";
+}
+
+/* ---------- めくりの 1 コマ（CSS の値） ---------- */
+
+export interface FlipFrame {
+  /** めくられる紙（前のゲームの iframe と、その上の Host の層）に掛ける `clip-path` */
+  clip: string;
+  /** 紙の裏。折り返す前の形で切り抜き、折り目で鏡映しにする。裏が無ければ null */
+  back: { clip: string; transform: string } | null;
+  /** 折り目に沿う陰影の置き方。折り目の上の 1 点へ移し、x 軸を角の側（法線の向き）へ回す */
+  crease: string;
+  /** 陰影の濃さ（0〜1）。めくりの始めと終わりで 0 */
+  shade: number;
+}
+
+const px = (n: number): string => `${Math.round(n * 100) / 100}px`;
+const polygonCss = (pts: readonly Point[]): string =>
+  pts.length < 3
+    ? "polygon(0px 0px, 0px 0px, 0px 0px)"
+    : `polygon(${pts.map(([x, y]) => `${px(x)} ${px(y)}`).join(", ")})`;
+
+/** めくりの途中 `t`（0〜1）を、要素に書く値にする。形は `pageFold` のまま */
+export function flipFrame(t: number, w: number, h: number): FlipFrame {
+  const fold = pageFold(t, w, h);
+  const [nx, ny] = fold.crease.normal;
+  const deg = Math.round(((Math.atan2(ny, nx) * 180) / Math.PI) * 1000) / 1000;
+  return {
+    clip: polygonCss(fold.front),
+    back:
+      fold.back.length < 3
+        ? null
+        : {
+            clip: polygonCss(fold.back),
+            transform: `matrix(${fold.mirror.map((v) => Math.round(v * 1e5) / 1e5).join(", ")})`,
+          },
+    crease: `translate(${px(fold.crease.point[0])}, ${px(fold.crease.point[1])}) rotate(${deg}deg)`,
+    shade: Math.sin(Math.PI * flipEase(t)),
+  };
+}
