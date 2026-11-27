@@ -5,7 +5,7 @@
 
 ## 正とする文書
 - プロダクト定義: `docs/product.md`（節番号で参照する。例: `product#5.2`）。規則の理由と却下した案は規則の隣に書いてある。変更の経緯は `type:spec` の Issue と PR 本文に残す（決定の記録ファイルは持たない）
-- 仕様の各文書（2026-11-06 の分割、#43）: `docs/game-contract.md`・`protocol.md`・`run.md`・`scoring.md`・`security.md`・`moderation.md`・`data-model.md`・`mcp.md`。ファイル名と節番号で参照する（例: `protocol#3`）。まだ存在しない文書は順次追加する
+- 仕様の各文書（2026-11-06 の分割、#43）: `docs/game-contract.md`・`protocol.md`・`run.md`・`scoring.md`・`security.md`・`moderation.md`・`data-model.md`・`mcp.md`・`host-design.md`（Host の絵。2026-11-27 追加）。ファイル名と節番号で参照する（例: `protocol#3`）。まだ存在しない文書は順次追加する
 - 旧 `docs/spec.md` は削除済み。`spec#x.y` の参照が残っている Issue・PR・要件 ID は、その記述を正として実装してはいけない。対応する新文書は Issue #43 の対応表で引く
 - 計画書: `docs/plan.md`（WBS 番号で参照する。例: `plan#9`）
 - 要件→テスト対応表: `docs/requirements.md`
