@@ -1,7 +1,7 @@
 // 開発用の見本（`/dev/host`。`vite` の開発サーバでだけ出る）。サーバなしで、Host の層の各状態を並べて見る。
 // ドリルの絵（host-design.md）を直したら、ここをブラウザで開いて確かめる。
 import "../run/drill.css";
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect, useState } from "react";
 import type { RunReport } from "../run/api.ts";
 import type { FlashView } from "../run/controller.ts";
 import {
@@ -96,6 +96,28 @@ function Sample(props: { name: string; binding: ReactNode; children: ReactNode }
   );
 }
 
+/** ミスの流れを繰り返す見本: 遊んでいる（0.9 秒）→ 採点（0.5 秒）→ 次の問題のページ（1.0 秒） */
+function MissFlow() {
+  const [step, setStep] = useState(0);
+  useEffect(() => {
+    const ms = [900, 500, 1000][step % 3] as number;
+    const h = window.setTimeout(() => setStep((s) => s + 1), ms);
+    return () => window.clearTimeout(h);
+  }, [step]);
+  const phase = step % 3;
+  return (
+    <Sample
+      name="流れ: ミスで残機が減る（繰り返し）"
+      binding={
+        <Binding turn={phase === 2 ? 6 : 5} lap={0} lives={phase === 0 ? 3 : 2} lost={phase > 0} />
+      }
+    >
+      {phase === 1 && <Grading flash={flash({ score: 3, miss: true })} lives={2} />}
+      {phase === 2 && <QuestionPage turn={6} meta={{ verb: "よけろ！", input: "drag" }} lap={0} />}
+    </Sample>
+  );
+}
+
 export function HostSamples() {
   const outside = <Binding turn={null} lap={0} lives={null} />;
   const inRun = (turn: number, lap: number, lives: number) => (
@@ -139,9 +161,10 @@ export function HostSamples() {
       <Sample name="採点: 三角" binding={inRun(5, 0, 3)}>
         <Grading flash={flash({ score: 18, deviation: 44.0 })} />
       </Sample>
-      <Sample name="採点: ばつ（ミス）" binding={inRun(5, 0, 2)}>
-        <Grading flash={flash({ score: 3, miss: true, deviation: 31.2 })} />
+      <Sample name="採点: ばつ（ミス）" binding={<Binding turn={5} lap={0} lives={2} lost />}>
+        <Grading flash={flash({ score: 3, miss: true, deviation: 31.2 })} lives={2} />
       </Sample>
+      <MissFlow />
       <Sample name="採点: 応答がまだ" binding={inRun(5, 0, 3)}>
         <Grading flash={flash({ score: 128 })} />
       </Sample>

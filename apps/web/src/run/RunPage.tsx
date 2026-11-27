@@ -9,7 +9,7 @@ import { createRun, finishRun, putTurn, type RunPlan } from "./api.ts";
 import { createRunController, type RunController, type RunView } from "./controller.ts";
 import { Binding, Cover, EndStamp, Grading, Notice, QuestionPage, ReportPage } from "./Drill.tsx";
 import { deviceId } from "./device-id.ts";
-import { reportView } from "./display.ts";
+import { lostLife, reportView } from "./display.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 
@@ -175,7 +175,20 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
   const lap = run.phase === "interlude" ? (view.next?.lap ?? 0) : (run.current?.turn.lap ?? 0);
 
   return (
-    <Stage binding={playing ? <Binding turn={turn} lap={lap} lives={run.lives} /> : outside}>
+    <Stage
+      binding={
+        playing ? (
+          <Binding
+            turn={turn}
+            lap={lap}
+            lives={run.lives}
+            lost={lostLife(run.phase, run.outcomes)}
+          />
+        ) : (
+          outside
+        )
+      }
+    >
       {view.frames.map((f) => (
         <GameFrame
           key={f.iframe}
@@ -231,7 +244,7 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
     );
   }
 
-  if (run.phase === "flash") return <Grading flash={view.flash} />;
+  if (run.phase === "flash") return <Grading flash={view.flash} lives={run.lives} />;
 
   // ここからはランが終わった後（closing / finished）
   if (run.ended === "error") {

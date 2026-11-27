@@ -35,6 +35,14 @@ export function flashMark(f: FlashView): Mark | null {
   return markOf({ miss: f.miss, deviation: f.deviation });
 }
 
+/**
+ * 直前の手番でミスして、残機を失ったところか（hd#A.6）。採点の間と、その次の問題のページの間だけ true。
+ * 綴じ目の丸を点滅させるのに使う
+ */
+export function lostLife(phase: string, outcomes: readonly string[]): boolean {
+  return (phase === "flash" || phase === "interlude") && outcomes[outcomes.length - 1] === "miss";
+}
+
 /** 綴じ目と問題のページに出す手番（hd#A.1）。n は 1 始まり */
 export const turnLabel = (n: number): string => `第 ${n} 問`;
 

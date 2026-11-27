@@ -62,6 +62,10 @@
 .dr-life[data-on] {
   background: #ff6b5e;
 }
+/* いま失った 1 つ。採点から次の問題のページにかけて点滅する（hd#A.6） */
+.dr-life[data-lost] {
+  animation: dr-blink 0.5s steps(1) 3;
+}
 
 .dr-box {
   position: relative;
@@ -290,8 +294,50 @@
   padding: 0 2cqw;
 }
 .dr-miss {
-  font-size: 7cqw;
+  font-size: 9cqw;
   font-weight: 700;
+  line-height: 1.2;
+}
+/* ミスの採点は、ほかの採点と見分けが付くようにする（hd#A.6）: 赤みのある幕、紙の揺れ、残機の丸 */
+.dr-grading[data-miss] {
+  background-color: rgba(250, 226, 220, 0.9);
+  animation: dr-shake 0.28s steps(6) both;
+}
+.dr-lost {
+  display: flex;
+  gap: 3cqw;
+  margin-top: 1.4cqw;
+}
+.dr-lost i {
+  position: relative;
+  box-sizing: border-box;
+  width: 8.4cqw;
+  height: 8.4cqw;
+  border-radius: 50%;
+  border: 0.8cqw solid var(--red);
+  background: var(--paper);
+}
+.dr-lost i[data-on] {
+  background: var(--red);
+}
+.dr-lost i[data-lost] {
+  background: rgba(216, 53, 42, 0.28);
+}
+.dr-lost svg {
+  position: absolute;
+  left: -3.4cqw;
+  top: -3.4cqw;
+  width: calc(100% + 6.8cqw);
+  height: calc(100% + 6.8cqw);
+  fill: none;
+  stroke: var(--red);
+  stroke-width: 2.6;
+  stroke-linecap: round;
+}
+.dr-lost path {
+  stroke-dasharray: 1;
+  stroke-dashoffset: 1;
+  animation: dr-draw 0.16s ease-out 0.24s forwards;
 }
 
 /* 判子（hd#A.8） */
@@ -425,6 +471,34 @@
     stroke-dashoffset: 0;
   }
 }
+@keyframes dr-shake {
+  0%,
+  100% {
+    translate: 0 0;
+  }
+  20% {
+    translate: -2cqw 1cqw;
+  }
+  40% {
+    translate: 2cqw -1cqw;
+  }
+  60% {
+    translate: -1.4cqw -0.8cqw;
+  }
+  80% {
+    translate: 1.4cqw 0.8cqw;
+  }
+}
+@keyframes dr-blink {
+  0% {
+    background: #ff6b5e;
+    scale: 1.6;
+  }
+  50% {
+    background: transparent;
+    scale: 1;
+  }
+}
 @keyframes dr-stamp {
   from {
     transform: rotate(-10deg) scale(1.7);
@@ -441,7 +515,13 @@
     animation: none;
     stroke-dashoffset: 0;
   }
-  .dr-stamp-round {
+  .dr-stamp-round,
+  .dr-grading[data-miss],
+  .dr-life[data-lost] {
     animation: none;
+  }
+  .dr-lost path {
+    animation: none;
+    stroke-dashoffset: 0;
   }
 }
