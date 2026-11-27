@@ -140,7 +140,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `time_limit` | int | 内容の `meta.duration_frames` |
 | `miss_below` | int null | 計画に凍結した値（`scoring.md` A.6）。校正前・新作枠・デイリー・試遊は NULL |
 | `is_new` | bool | 新作枠の手番 |
-| `author` | bool | 投稿者本人のセッション（`actors.user_id = posts.user_id`）。分布に入れない |
+| `author` | bool | 投稿者本人のセッション（`actors.user_id = posts.user_id`）。記録として持つだけで、集計の条件には使わない（`scoring.md` B.5） |
 | `state` | `session_state` | ランの手番は常に `submitted`（結果の種類は `via` で表す。`skipped` は使わない） |
 | `via` | `session_via` null | `submitted` のとき非 NULL |
 | `score` | int null | 0 ≤ score ≤ 2³¹−1。`via = guest` のときだけ非 NULL |
@@ -242,7 +242,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | I13 | `(run_id, turn)` は一意。`ended_at` が非 NULL のランは `settled` / `reached` / `avg_deviation` / `symbols` が変わらず、手番も足されない。`deck` / `new_indexes` / `game_hashes` / `miss_below` / `seed` は挿入後に変わらない | unique、トリガー | `run.md` A.3、`scoring.md` A.9 |
 | I14 | `likes` / `reports` は 1 投稿につき 1 主体 1 回。主体が匿名なら通報の `weight = 0` | unique、受理時の検査（`actors.user_id` を見る） | `moderation.md`、`product.md` 3 |
 | I17 | `actors.device_id` は一意。1 ユーザーに複数の `actors` があってよいが、1 つの `actors` は 1 ユーザーにしか結びつかない（`user_id` は一度埋まったら変えない） | unique、トリガー | B.3 |
-| I15 | `post_stats` は `scoring.md` A.4 の条件を満たす結果だけを含む: `author = false`、`speed = 1.0`、verdict が `provisional` / `accepted`、`frames ≥ 0.9 × time_limit`、1 主体 5 件。verdict の変更と窓からの押し出しで外す | `post_stats` 更新の条件（受理と verdict 変更の両トランザクション）、日次の再計算との突き合わせ | `scoring.md` A.3, A.4 |
+| I15 | `post_stats` は `scoring.md` A.4 の条件を満たす結果だけを含む: ランの手番、`speed = 1.0`、verdict が `provisional` / `accepted`、`frames ≥ 0.9 × time_limit`、1 主体 5 件。verdict の変更と窓からの押し出しで外す | `post_stats` 更新の条件（受理と verdict 変更の両トランザクション）、日次の再計算との突き合わせ | `scoring.md` A.3, A.4 |
 | I16 | 同じ `actor_id`・お題・日付で `recorded = true` のランは 1 本 | 部分一意索引 | `run.md` A.2 |
 
 ## A.6 Redis と R2

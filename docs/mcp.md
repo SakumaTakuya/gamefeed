@@ -65,7 +65,7 @@
 | `post_id`, `title`, `status`, `url` | `status` は投稿状態（`restricted` を含む 6 値） |
 | `calibration` | `uncalibrated` / `calibrated` / `review` / `invalid` |
 | `plays`, `likes` | `post_stats.n` と、`likes` を `post_id` で数えた件数 |
-| `calibration_remaining` | 校正までの残りプレイ数（`uncalibrated` のとき。20 − `n`） |
+| `calibration_remaining` | 校正までの残りプレイ数（`uncalibrated` のとき。5 − `n`。0 未満にはしない） |
 | `restricted_reason` | `restricted` のときだけ。通報カテゴリの集計（`moderation.md` A.4）。`{category: count}`。`resolution = dismissed` の通報は数えない（B.9） |
 | `published_at`, `updated_at` | ISO 8601 |
 
