@@ -8,6 +8,7 @@ import {
   inputLabel,
   lapLabel,
   livesText,
+  lostLife,
   reportView,
   stampText,
   turnLabel,
@@ -223,5 +224,17 @@ describe("ドリルの絵の文字と印（hd#A.3、A.6、A.8）", () => {
     expect(stampText(54.9)).toBe("がんばりました");
     expect(stampText(45)).toBe("がんばりました");
     expect(stampText(44.9)).toBe("もうすこし");
+  });
+});
+
+describe("lostLife（綴じ目の丸を点滅させる間。hd#A.6）", () => {
+  it("直前の手番がミスで、採点か次の問題のページの間だけ", () => {
+    expect(lostLife("flash", ["ok", "miss"])).toBe(true);
+    expect(lostLife("interlude", ["ok", "miss"])).toBe(true);
+    expect(lostLife("running", ["ok", "miss"])).toBe(false);
+    expect(lostLife("closing", ["ok", "miss"])).toBe(false);
+    expect(lostLife("flash", ["miss", "ok"])).toBe(false);
+    expect(lostLife("interlude", ["miss", "skip"])).toBe(false);
+    expect(lostLife("flash", [])).toBe(false);
   });
 });

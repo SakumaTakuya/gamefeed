@@ -154,6 +154,51 @@ describe("R-hd.A6-1 採点（hd#A.6）", () => {
   });
 });
 
+describe("R-hd.A6-2 ミスの採点は、ほかの採点と見分けが付く（hd#A.6）", () => {
+  it("ミスの採点は印（data-miss）が付き、残機の丸を並べて、いま失った 1 つに斜線を引く", () => {
+    const html = renderToStaticMarkup(
+      <Grading flash={flash({ miss: true, deviation: 31 })} lives={2} />,
+    );
+    expect(html).toContain('data-miss=""');
+    const lost = /<p class="dr-lost"[^>]*>(.*?)<\/p>/.exec(html)?.[1] ?? "";
+    expect(html).toContain('aria-label="のこり 2"');
+    expect(count(lost, "<i ")).toBe(3);
+    expect(count(lost, 'data-on=""')).toBe(2);
+    expect(count(lost, 'data-lost=""')).toBe(1);
+    // 並びは、残っている 2 つ → 失った 1 つ
+    expect(lost.indexOf("data-lost")).toBeGreaterThan(lost.lastIndexOf("data-on"));
+    expect(count(lost, "<path ")).toBe(1);
+  });
+
+  it("最後の 1 つを失ったときは、残っている丸が無い", () => {
+    const html = renderToStaticMarkup(<Grading flash={flash({ miss: true })} lives={0} />);
+    const lost = /<p class="dr-lost"[^>]*>(.*?)<\/p>/.exec(html)?.[1] ?? "";
+    expect(html).toContain('aria-label="のこり 0"');
+    expect(count(lost, 'data-on=""')).toBe(0);
+    expect(count(lost, 'data-lost=""')).toBe(1);
+  });
+
+  it("ミスでない採点と、残機の無いラン（デイリー）には出さない", () => {
+    const ok = renderToStaticMarkup(<Grading flash={flash({ deviation: 55 })} lives={3} />);
+    expect(ok).not.toContain("data-miss");
+    expect(ok).not.toContain("dr-lost");
+    const daily = renderToStaticMarkup(<Grading flash={flash({ miss: true })} lives={null} />);
+    expect(daily).toContain('data-miss=""');
+    expect(daily).not.toContain("dr-lost");
+  });
+
+  it("綴じ目は、失った丸にだけ印（data-lost）を付ける。失っていなければ付けない", () => {
+    const lost = renderToStaticMarkup(<Binding turn={5} lap={0} lives={2} lost />);
+    const circles = [...lost.matchAll(/<i class="dr-life"([^>]*)>/g)].map((m) => m[1]);
+    expect(circles).toEqual([' data-on=""', ' data-on=""', ' data-lost=""']);
+    expect(renderToStaticMarkup(<Binding turn={5} lap={0} lives={2} />)).not.toContain("data-lost");
+    // 残機が満タンなら、失った丸は無い
+    expect(renderToStaticMarkup(<Binding turn={5} lap={0} lives={3} lost />)).not.toContain(
+      "data-lost",
+    );
+  });
+});
+
 describe("R-hd.A8-1 成績表（hd#A.8、H5）", () => {
   const A = "01M782MV00TMYMTHTGG5C6KS3A";
   const B = "01M782MV00TMYMTHTGG5C6KS3B";

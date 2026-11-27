@@ -122,8 +122,10 @@ export function Binding(props: {
   lap: number;
   /** 残機。デイリーとランの外は null */
   lives: number | null;
+  /** 直前の手番でミスして、残機を 1 つ失ったところ（採点から次の問題のページまで）。失った丸を点滅させる */
+  lost?: boolean;
 }) {
-  const { turn, lap, lives } = props;
+  const { turn, lap, lives, lost } = props;
   if (turn === null) {
     return (
       <header className="dr-binding">
@@ -143,7 +145,12 @@ export function Binding(props: {
       ) : (
         <span className="dr-lives" role="img" aria-label={`のこり ${left}`}>
           {Array.from({ length: ENDLESS_LIVES }, (_, i) => (
-            <i key={i} className="dr-life" data-on={i < left ? "" : undefined} />
+            <i
+              key={i}
+              className="dr-life"
+              data-on={i < left ? "" : undefined}
+              data-lost={lost && i === left ? "" : undefined}
+            />
           ))}
         </span>
       )}
@@ -206,14 +213,35 @@ export function QuestionPage(props: {
   );
 }
 
-/** 採点（結果フラッシュ。hd#A.6）。ゲームの最後の画面の上に、紙の色の幕と赤ペン */
-export function Grading({ flash }: { flash: FlashView | null }) {
+/** 残機の丸を大きく並べ、いま失った 1 つに赤ペンで斜線を引く（ミスの採点。hd#A.6） */
+function LostLife({ lives }: { lives: number }) {
+  const left = Math.max(0, Math.min(ENDLESS_LIVES, lives));
+  return (
+    <p className="dr-lost" role="img" aria-label={`のこり ${left}`}>
+      {Array.from({ length: ENDLESS_LIVES }, (_, i) => (
+        <i key={i} data-on={i < left ? "" : undefined} data-lost={i === left ? "" : undefined}>
+          {i === left && (
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <path pathLength={1} d="M3 21 L21 3" />
+            </svg>
+          )}
+        </i>
+      ))}
+    </p>
+  );
+}
+
+/**
+ * 採点（結果フラッシュ。hd#A.6）。ゲームの最後の画面の上に、紙の色の幕と赤ペン。
+ * `lives` はこの手番の後の残機（デイリーは null）。ミスのときに、失った 1 つを見せる
+ */
+export function Grading({ flash, lives }: { flash: FlashView | null; lives?: number | null }) {
   if (!flash) return <div className="dr-page dr-veil dr-grading" />;
   const text = flashText(flash);
   const mark = flashMark(flash);
   const points = flash.via === "guest" ? (flash.score ?? 0) : null;
   return (
-    <div className="dr-page dr-veil dr-grading">
+    <div className="dr-page dr-veil dr-grading" data-miss={text.miss ? "" : undefined}>
       {mark && <MarkSvg mark={mark} />}
       <p className="dr-points">
         {points === null ? "—" : points}
@@ -222,6 +250,7 @@ export function Grading({ flash }: { flash: FlashView | null }) {
       {/* 応答が届く前と後で高さが変わらないよう、行は常に置く */}
       <p className="dr-sub">{text.sub ?? ""}</p>
       {text.miss && <p className="dr-miss">ミス</p>}
+      {text.miss && lives != null && <LostLife lives={lives} />}
     </div>
   );
 }
