@@ -5,6 +5,8 @@
  * R-sc.A7-1、R-dm.A5-15（受理の部分）、R-mo.A2-3、R-mo.A3-2。
  * Postgres と Better Auth は本物。時計はテストが進める。誰が送れるかなど文書に無い点は #161 の C の案。
  */
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { gunzipSync } from "node:zlib";
 import { deviation, ENDLESS_TURN_LIMIT, missBelow, turnSeed } from "@gamefeed/domain";
 import { sql } from "drizzle-orm";
@@ -581,6 +583,34 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
         scores: [...DIST, 55].sort((a, b) => a - b),
         failures: 1,
       });
+    });
+
+    it("R-sc.A4-1 マイグレーション 0014 は post_stats を sessions から数え直す。受理のたびに足した値と同じになり、前に外していた作者の結果も入る（#246）", async () => {
+      const recount = readFileSync(
+        fileURLToPath(new URL("../../migrations/0014_recount_post_stats.sql", import.meta.url)),
+        "utf8",
+      );
+      const me = await h.login("maker@example.test");
+      await h.seedPost({ userId: me.id, calibration: "uncalibrated" });
+      // 作者が 7 回（窓は直近 5 件）、ほかの端末が遊んだ結果・満了・短縮・読み込みの skip
+      const o = { cookie: me.cookie };
+      for (const score of [1, 2, 3, 4, 5, 6]) await h.playOnce(guest({ score }), o);
+      await h.playOnce({ via: "timeout" }, o);
+      await h.playOnce(guest({ score: 40 }), { device: device(1) });
+      await h.playOnce({ via: "error" }, { device: device(2) });
+      await h.playOnce(guest({ score: 99, frames: 100, inputs: [] }), { device: device(3) });
+      await h.playOnce({ via: "noload" }, { device: device(4) });
+      const live = await h.stats();
+      expect(live).toEqual({ scores: [3, 4, 5, 6, 40], failures: 2 });
+
+      // 数え直しても変わらない
+      await h.db.execute(sql.raw(recount));
+      expect(await h.stats()).toEqual(live);
+
+      // #246 より前の状態（作者の結果が入っていない）から数え直すと、今の規則の値になる
+      await h.db.execute(sql`update post_stats set n = 1, scores = '{40}', failures = 1`);
+      await h.db.execute(sql.raw(recount));
+      expect(await h.stats()).toEqual(live);
     });
 
     it("R-sc.A4-1 短縮されたセッション（frames < 0.9 × time_limit）は入らず、9 割ちょうどは入る", async () => {
