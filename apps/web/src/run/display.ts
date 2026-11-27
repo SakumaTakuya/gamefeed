@@ -3,6 +3,7 @@
 import { ENDLESS_LIVES, type InputKind } from "@gamefeed/domain";
 import type { RunReport } from "./api.ts";
 import type { FlashView } from "./controller.ts";
+import { type Mark, markOf } from "./drill.ts";
 
 /** 幕間に出す入力の種類（run#A.5 の 4。アイコンの代わりの文字。絵は見た目を決めるときに入れる） */
 const INPUT_LABEL: Record<InputKind, string> = {
@@ -28,6 +29,26 @@ export function flashText(f: FlashView): { main: string; sub: string | null; mis
   return { main, sub: f.isNew ? "校正中" : null, miss: f.miss };
 }
 
+/** 採点の印（hd#A.6）。遊んだ結果にだけ付く。skip（満了・エラー）は印なし */
+export function flashMark(f: FlashView): Mark | null {
+  if (f.via !== "guest") return null;
+  return markOf({ miss: f.miss, deviation: f.deviation });
+}
+
+/** 綴じ目と問題のページに出す手番（hd#A.1）。n は 1 始まり */
+export const turnLabel = (n: number): string => `第 ${n} 問`;
+
+/** 周回（run#A.8）。lap は 0 始まりで、2 周目から出す */
+export const lapLabel = (lap: number): string | null => (lap > 0 ? `${lap + 1} 周目` : null);
+
+/** 成績表の判子（hd#A.8。境界は暫定）。総合偏差値が無ければ押さない */
+export function stampText(avg: number | null): string | null {
+  if (avg === null) return null;
+  if (avg >= 55) return "よくできました";
+  if (avg >= 45) return "がんばりました";
+  return "もうすこし";
+}
+
 /** 残機（エンドレス）。デイリーは残機が無いので空 */
 export function livesText(lives: number | null): string {
   if (lives === null) return "";
@@ -44,6 +65,8 @@ export interface ReportRow {
   value: string;
   note: string | null;
   miss: boolean;
+  /** 採点の印（hd#A.6・A.8）。校正中と skip は null（「—」） */
+  mark: Mark | null;
   /** 等速より速い手番の倍率 */
   speed: string | null;
 }
@@ -52,6 +75,8 @@ export interface ReportView {
   heading: string;
   status: string;
   overall: string;
+  /** 総合偏差値に応じた判子（hd#A.8） */
+  stamp: string | null;
   rows: ReportRow[];
   /** 記録に入らなかった手番の知らせ（run#A.7） */
   notice: string | null;
@@ -76,6 +101,7 @@ export function reportView(
       report.avg_deviation === null
         ? "総合偏差値 —"
         : `総合偏差値 ${report.avg_deviation.toFixed(1)}（参考）`,
+    stamp: stampText(report.avg_deviation),
     notice: opts.unsettled > 0 ? `通信できなかった ${opts.unsettled} 本は記録されていません` : null,
     rows: report.turns.map((t) => {
       const scored = t.kind !== "skip";
@@ -92,6 +118,7 @@ export function reportView(
               : "—",
         note: ratio ? "校正中" : null,
         miss: t.kind === "miss",
+        mark: scored ? markOf({ miss: t.kind === "miss", deviation: t.deviation }) : null,
         speed: t.speed > 1 ? `×${t.speed}` : null,
       };
     }),

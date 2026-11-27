@@ -152,12 +152,12 @@ ID は `R-<章>.<節>-<連番>`。章・節は旧 `spec.md` に合わせて振�
 
 | ID | 要件 | 層 | 検証方法 | テストの場所 | 状態 |
 | --- | --- | --- | --- | --- | --- |
-| R-hd.A6-1 | 採点の印は「ミスか」と「応答の偏差値」だけから決まる。ミスなら ✕（偏差値が何でも）、ミスでなければ 60 以上で花丸・50 以上で ○・それ未満で △、`miss_below: null`・skip・応答なしは印なし（hd#A.6, H1） | unit | 印を返す関数に、ミス × 偏差値（39 / 40 / 49 / 50 / 59 / 60 / null）の組を入れる | `apps/web/test/run-drill.spec.ts` | green（unit、#234。関数だけ。画面はまだ使っていない） |
+| R-hd.A6-1 | 採点の印は「ミスか」と「応答の偏差値」だけから決まる。ミスなら ✕（偏差値が何でも）、ミスでなければ 60 以上で花丸・50 以上で ○・それ未満で △、`miss_below: null`・skip・応答なしは印なし（hd#A.6, H1） | unit | 印を返す関数に、ミス × 偏差値（39 / 40 / 49 / 50 / 59 / 60 / null）の組を入れる | `apps/web/test/run-drill.spec.ts`、`apps/web/test/run-drill-layers.spec.tsx`、`apps/web/test/run-display.spec.ts` | green（unit、#234、#235） |
 | R-hd.A7-1 | めくりの形: 角 `(W, H)` を `(W − 0.5·H·sin θ, H·cos θ)` に運び、折り目はその垂直二等分線。`t = 0` で紙の全面が表、`0 < t < 1` で上の辺のどの点も裏の側に入らず、`t = 1` で表が残らない。裏は折り返す側の形を折り目で鏡映しにしたもの（hd#A.7, H2） | unit | 折り目と 2 つの多角形を返す関数を、`t` を 0〜1 に刻み、舞台の比を 9:16 と 9:19.5 にして検査する。鏡映しは 2 回で元に戻る | `apps/web/test/run-drill.spec.ts` | green（unit、#234。関数だけ。画面はまだ使っていない） |
 | R-hd.A7-2 | めくりは幕間の内側で行い、幕間の長さ・`start` を送る時点・先読みの判定を変えない。動きを減らす設定ではめくらず、進行の時点は同じ（hd#A.7, H3） | unit + manual | unit: ランの制御（`controller`）のテストが、めくりの有無で同じ時刻に同じメッセージを送る。manual: 設定をオン・オフして 1 ラン遊ぶ | 未作成 | todo |
-| R-hd.A3-1 | 綴じ目は手番（「第 n 問」）・周回（2 周目から）・残機（エンドレスだけ）を出し、めくりの間も動かない。Host の層は必ず紙（方眼の紙か紙の色の幕）を持つ（hd#A.3, A.9） | component + manual | component: 描画した DOM に手番・周回・残機がある。manual: 黒板と切り絵のゲームで Host の層が見分けられる | 未作成 | todo |
-| R-hd.A5-1 | 問題のページに出る文字は、手番の番号・動詞・入力・周回だけ。新作かどうかで見た目が変わらない（hd#A.5, H4, run#B.6） | component | `is_new` が true と false の手番で、描画した DOM が同じ | 未作成 | todo |
-| R-hd.A8-1 | 成績表は `finish` の凍結値だけを出し、run#A.11 の項目を足しも引きもしない。科目欄の印は R-hd.A6-1 と同じ 4 つで、校正中と skip は「—」（hd#A.8, H5） | component | 凍結値の fixture から描画し、値の出どころを確かめる | 未作成 | todo |
+| R-hd.A3-1 | 綴じ目は手番（「第 n 問」）・周回（2 周目から）・残機（エンドレスだけ）を出し、めくりの間も動かない。Host の層は必ず紙（方眼の紙か紙の色の幕）を持つ（hd#A.3, A.9） | component + manual | component: 描画した DOM に手番・周回・残機がある。manual: 黒板と切り絵のゲームで Host の層が見分けられる | `apps/web/test/run-drill-layers.spec.tsx` | green（component、#235。めくりの間も動かない、は #236）/ todo（manual。実機と本物のゲームでは見ていない） |
+| R-hd.A5-1 | 問題のページに出る文字は、手番の番号・動詞・入力・周回だけ。新作かどうかで見た目が変わらない（hd#A.5, H4, run#B.6） | component | `is_new` が true と false の手番で、描画した DOM が同じ | `apps/web/test/run-drill-layers.spec.tsx` | green（component、#235） |
+| R-hd.A8-1 | 成績表は `finish` の凍結値だけを出し、run#A.11 の項目を足しも引きもしない。科目欄の印は R-hd.A6-1 と同じ 4 つで、校正中と skip は「—」（hd#A.8, H5） | component | 凍結値の fixture から描画し、値の出どころを確かめる | `apps/web/test/run-drill-layers.spec.tsx`、`apps/web/test/run-display.spec.ts` | green（component、#235） |
 | R-hd.A7-3 | めくりを入れても、iframe 3 枚のランが実機で引っかからない（hd#A.7、未解決の「重さ」） | manual | iPhone と Android の実機で 1 ラン。めくりの間のコマ落ちを見る | 未作成 | todo |
 
 ## scoring A.2 / A.5 / A.6 / A.7 / A.9 結果の受理・偏差値・校正（新規）

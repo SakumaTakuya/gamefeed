@@ -1,12 +1,15 @@
 // ラン画面（run#A.4〜A.11、A.14、product#4.4）。エンドレスのスタート画面から成績表まで。
 // 進行は domain のラン Host、配線は `controller.ts`。ここは `view` を描き、iframe と操作をつなぐだけ。
-import { useEffect, useReducer, useRef, useState } from "react";
+// Host の層の見た目はドリルの絵（host-design.md）。部品は `Drill.tsx`、見た目は `drill.css`。
+import "./drill.css";
+import { type ReactNode, useEffect, useReducer, useRef, useState } from "react";
 import { GameFrame } from "../game-frame.tsx";
 import { HOST_STAGE } from "../host-stage.ts";
 import { createRun, finishRun, putTurn, type RunPlan } from "./api.ts";
 import { createRunController, type RunController, type RunView } from "./controller.ts";
+import { Binding, Cover, EndStamp, Grading, Notice, QuestionPage, ReportPage } from "./Drill.tsx";
 import { deviceId } from "./device-id.ts";
-import { flashText, inputLabel, livesText, reportView } from "./display.ts";
+import { reportView } from "./display.ts";
 
 const GAMES_ORIGIN: string | undefined = import.meta.env.VITE_GAMES_ORIGIN;
 
@@ -76,27 +79,27 @@ function Attempt(props: { fromRun: string | null; onAgain: () => void; onRetry: 
     return <Player plan={loaded.plan} gamesOrigin={GAMES_ORIGIN} onAgain={onAgain} />;
   }
   return (
-    <Stage header={null}>
-      <div style={styles.layer}>
-        {loaded.kind === "loading" && <p>読み込んでいます…</p>}
-        {loaded.kind === "no_games" && <p>遊べるゲームがまだありません。</p>}
+    <Stage binding={<Binding turn={null} lap={0} lives={null} />}>
+      <Notice>
+        {loaded.kind === "loading" && <p className="dr-onpaper">読み込んでいます…</p>}
+        {loaded.kind === "no_games" && <p className="dr-onpaper">遊べるゲームがまだありません。</p>}
         {loaded.kind === "run_not_found" && (
           <>
-            <p>このランは見つかりませんでした。</p>
-            <button type="button" style={styles.button} onClick={onAgain}>
+            <p className="dr-onpaper">このランは見つかりませんでした。</p>
+            <button type="button" className="dr-button" onClick={onAgain}>
               新しいランで遊ぶ
             </button>
           </>
         )}
         {loaded.kind === "failed" && (
           <>
-            <p style={styles.error}>{loaded.message}</p>
-            <button type="button" style={styles.button} onClick={onRetry}>
+            <p className="dr-onpaper dr-warn">{loaded.message}</p>
+            <button type="button" className="dr-button" onClick={onRetry}>
               もう一度
             </button>
           </>
         )}
-      </div>
+      </Notice>
     </Stage>
   );
 }
@@ -152,32 +155,27 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
     };
   }, [plan, gamesOrigin]);
 
+  const outside = <Binding turn={null} lap={0} lives={null} />;
   if (broken) {
     return (
-      <Stage header={null}>
-        <div style={styles.layer}>
-          <p style={styles.error}>{broken}</p>
-        </div>
+      <Stage binding={outside}>
+        <Notice>
+          <p className="dr-onpaper dr-warn">{broken}</p>
+        </Notice>
       </Stage>
     );
   }
-  if (!ctl) return <Stage header={null}>{null}</Stage>;
+  if (!ctl) return <Stage binding={outside}>{null}</Stage>;
 
   const view = ctl.view;
   const { run } = view;
   const playing = run.phase !== "idle" && run.phase !== "closing" && run.phase !== "finished";
+  // 綴じ目に出す手番と周回。採点の間は終わった手番、幕間は次の手番（hd#A.3）
+  const turn = run.outcomes.length + (run.phase === "flash" ? 0 : 1);
+  const lap = run.phase === "interlude" ? (view.next?.lap ?? 0) : (run.current?.turn.lap ?? 0);
 
   return (
-    <Stage
-      header={
-        playing ? (
-          <>
-            <span>{livesText(run.lives)}</span>
-            <span>{run.outcomes.length + (run.phase === "flash" ? 0 : 1)} 本目</span>
-          </>
-        ) : null
-      }
-    >
+    <Stage binding={playing ? <Binding turn={turn} lap={lap} lives={run.lives} /> : outside}>
       {view.frames.map((f) => (
         <GameFrame
           key={f.iframe}
@@ -196,7 +194,7 @@ function Player(props: { plan: RunPlan; gamesOrigin: string; onAgain: () => void
   );
 }
 
-/** Host の層（幕間・結果フラッシュ・スタート・成績表）。iframe より上に置く（se#A.3、run#A.5） */
+/** Host の層（表紙・問題のページ・採点・おわり・成績表）。iframe より上に置く（se#A.3、run#A.5、hd#A.9） */
 function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgain: () => void }) {
   const { ctl, view, runId, onAgain } = props;
   const { run } = view;
@@ -204,71 +202,50 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
   if (run.phase === "running") return null;
 
   if (run.phase === "idle") {
-    return view.startable ? (
-      <button type="button" style={styles.start} onClick={() => ctl.begin()}>
-        <span style={styles.big}>GameFeed</span>
-        <span>タップしてスタート</span>
-      </button>
-    ) : (
-      <div style={styles.layer}>
-        <p>{run.loadSkips > 0 ? "読み込みに時間がかかっています…" : "読み込んでいます…"}</p>
-      </div>
+    return (
+      <Cover
+        onStart={view.startable ? () => ctl.begin() : null}
+        waiting={run.loadSkips > 0 ? "読み込みに時間がかかっています…" : "読み込んでいます…"}
+      />
     );
   }
 
   if (run.phase === "interlude") {
-    const next = view.next;
     return (
-      <div style={styles.layer}>
-        {next?.meta ? (
-          <>
-            <p style={styles.big}>{next.meta.verb}</p>
-            <p>{inputLabel(next.meta.input)}</p>
-          </>
-        ) : (
-          <p style={styles.big}>…</p>
-        )}
-        {next && next.lap > 0 && <p style={styles.small}>{next.lap + 1} 周目</p>}
-      </div>
+      <QuestionPage
+        turn={run.outcomes.length + 1}
+        meta={view.next?.meta ?? null}
+        lap={view.next?.lap ?? 0}
+      />
     );
   }
 
   if (run.phase === "resuming") {
     return (
-      <div style={styles.layer}>
-        <p>続きから</p>
-        {view.current && <p style={styles.big}>{view.current.verb}</p>}
-      </div>
+      <QuestionPage
+        turn={run.outcomes.length + 1}
+        meta={view.current}
+        lap={run.current?.turn.lap ?? 0}
+        resuming
+      />
     );
   }
 
-  if (run.phase === "flash") {
-    const text = view.flash ? flashText(view.flash) : null;
-    return (
-      <div style={styles.layer}>
-        {text && (
-          <>
-            <p style={styles.big}>{text.main}</p>
-            {text.miss && <p style={styles.miss}>ミス</p>}
-            {/* 応答が届く前と後で高さが変わらないよう、行は常に置く */}
-            <p style={styles.sub}>{text.sub ?? "\u00a0"}</p>
-          </>
-        )}
-      </div>
-    );
-  }
+  if (run.phase === "flash") return <Grading flash={view.flash} />;
 
   // ここからはランが終わった後（closing / finished）
   if (run.ended === "error") {
     // 読み込みの skip が 3 本。成績表は出さない（run#A.6）
     return (
-      <div style={styles.layer}>
-        <p style={styles.big}>通信エラー</p>
-        <p>ゲームを読み込めませんでした。通信の状態を確かめて、もう一度試してください。</p>
-        <button type="button" style={styles.button} onClick={onAgain}>
+      <Notice>
+        <p className="dr-verb">通信エラー</p>
+        <p className="dr-onpaper">
+          ゲームを読み込めませんでした。通信の状態を確かめて、もう一度試してください。
+        </p>
+        <button type="button" className="dr-button" onClick={onAgain}>
           もう一回
         </button>
-      </div>
+      </Notice>
     );
   }
 
@@ -277,24 +254,23 @@ function Layer(props: { ctl: RunController; view: RunView; runId: string; onAgai
   }
 
   return (
-    <div style={styles.layer}>
-      <p style={styles.big}>{run.ended === "abandoned" ? "中断" : "終了"}</p>
+    <EndStamp word={run.ended === "abandoned" ? "中断" : "おわり"}>
       {view.report.kind === "failed" ? (
         <>
-          <p>成績表を受け取れませんでした。</p>
-          <button type="button" style={styles.button} onClick={() => ctl.retryFinish()}>
+          <p className="dr-onpaper">成績表を受け取れませんでした。</p>
+          <button type="button" className="dr-button" onClick={() => ctl.retryFinish()}>
             もう一度受け取る
           </button>
-          <button type="button" style={styles.button} onClick={onAgain}>
+          <button type="button" className="dr-button" onClick={onAgain}>
             もう一回
           </button>
         </>
       ) : (
-        <p style={styles.small}>
+        <p className="dr-onpaper dr-small">
           {run.phase === "closing" ? "記録を送っています…" : "成績表を読み込んでいます…"}
         </p>
       )}
-    </div>
+    </EndStamp>
   );
 }
 
@@ -316,52 +292,28 @@ function Report(props: { view: RunView; runId: string; onAgain: () => void }) {
   };
 
   return (
-    <div style={styles.report}>
-      <p style={styles.small}>{r.status}</p>
-      <p style={styles.big}>{r.heading}</p>
-      <p>{r.overall}</p>
-      {r.notice && <p style={styles.error}>{r.notice}</p>}
-      <ol style={styles.rows}>
-        {r.rows.map((row) => (
-          <li key={row.no} style={styles.row}>
-            <span style={styles.rowNo}>{row.no}</span>
-            <span style={styles.rowTitle}>
-              {row.title ?? "—"}
-              {row.speed && <span style={styles.small}> {row.speed}</span>}
-            </span>
-            <span>
-              {row.note && <span style={styles.small}>{row.note} </span>}
-              {row.value}
-              {row.miss && <span style={styles.miss}> ミス</span>}
-            </span>
-          </li>
-        ))}
-      </ol>
-      <button type="button" style={styles.button} onClick={onAgain}>
+    <ReportPage report={r}>
+      <button type="button" className="dr-button" onClick={onAgain}>
         もう一回
       </button>
-      <button type="button" style={styles.button} onClick={copy}>
+      <button type="button" className="dr-button" onClick={copy}>
         {copied ? "コピーしました" : "同じ山札のリンクをコピー"}
       </button>
-    </div>
+    </ReportPage>
   );
 }
 
-/** 画面の枠。上端に Host のヘッダー、その下に縦長 9:16 のゲームの領域（gc#A.2） */
-function Stage({ header, children }: { header: React.ReactNode; children: React.ReactNode }) {
+/** 画面の枠。上に綴じ目（Host のヘッダー）、その下に縦長 9:16 のゲームの領域（gc#A.2、hd#A.3） */
+export function Stage({ binding, children }: { binding: ReactNode; children: ReactNode }) {
   return (
     <main style={styles.stage}>
-      <div style={styles.column}>
-        <header style={styles.header}>{header}</header>
-        <div style={styles.frameBox}>{children}</div>
+      <div className="dr-col">
+        {binding}
+        <div className="dr-box">{children}</div>
       </div>
     </main>
   );
 }
-
-/** Host が描く層の見た目。ヘッダーと同じ色にして、ゲームが描く偽の UI と区別できるようにする（run#A.5） */
-const HOST_SKIN = { color: "#fff", background: "#16161d" } as const;
-const HEADER_HEIGHT = "2.5rem";
 
 const styles = {
   stage: {
@@ -371,89 +323,5 @@ const styles = {
     display: "grid",
     placeItems: "center",
     background: "#000",
-    fontFamily: "system-ui, sans-serif",
-  },
-  column: { display: "flex", flexDirection: "column" },
-  header: {
-    ...HOST_SKIN,
-    height: HEADER_HEIGHT,
-    boxSizing: "border-box",
-    display: "flex",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: "0 0.9rem",
-    fontSize: "0.95rem",
-  },
-  // 縦長 9:16 を基準に、ヘッダーを除いた画面に収まる最大の大きさ（gc#A.2）
-  frameBox: {
-    position: "relative",
-    height: `min(calc(100dvh - ${HEADER_HEIGHT}), calc(100vw * 16 / 9))`,
-    aspectRatio: "9 / 16",
-    background: "#111",
-    overflow: "hidden",
-  },
-  layer: {
-    ...HOST_SKIN,
-    position: "absolute",
-    inset: 0,
-    zIndex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "0.8rem",
-    padding: "1.5rem",
-    textAlign: "center",
-  },
-  start: {
-    all: "unset",
-    ...HOST_SKIN,
-    position: "absolute",
-    inset: 0,
-    zIndex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "1.2rem",
-    cursor: "pointer",
-  },
-  report: {
-    ...HOST_SKIN,
-    position: "absolute",
-    inset: 0,
-    zIndex: 1,
-    display: "flex",
-    flexDirection: "column",
-    alignItems: "center",
-    gap: "0.6rem",
-    padding: "1.5rem 1rem",
-    textAlign: "center",
-    overflowY: "auto",
-  },
-  rows: { listStyle: "none", margin: "0.5rem 0", padding: 0, width: "100%" },
-  row: {
-    display: "flex",
-    alignItems: "baseline",
-    gap: "0.6rem",
-    padding: "0.35rem 0.2rem",
-    borderBottom: "1px solid #333",
-    textAlign: "left",
-  },
-  rowNo: { width: "1.6rem", opacity: 0.6, textAlign: "right" },
-  rowTitle: { flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
-  big: { fontSize: "2.5rem", fontWeight: 700, margin: 0 },
-  sub: { margin: 0, fontSize: "1.1rem" },
-  small: { margin: 0, fontSize: "0.85rem", opacity: 0.75 },
-  miss: { margin: 0, color: "#ff6b6b", fontWeight: 700 },
-  error: { color: "#ff6b6b" },
-  button: {
-    font: "inherit",
-    padding: "0.7rem 1.4rem",
-    borderRadius: "0.6rem",
-    border: "1px solid #888",
-    background: "#fff",
-    color: "#111",
-    cursor: "pointer",
   },
 } satisfies Record<string, React.CSSProperties>;
