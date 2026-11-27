@@ -1,8 +1,13 @@
 // 偏差値と miss_below（sc#A.5、A.6）。I/O を持たない。
 // 参照実装は verification/scoring_check.py。値がずれたら test/deviation.spec.ts が落ちる。
 
-/** 校正に要るプレイ数（product#5.3、sc#A.7）。これ未満は偏差値を出さない */
-export const CALIBRATION_MIN_PLAYS = 20;
+/**
+ * 校正に要るプレイ数（product#5.3、sc#A.7。暫定）。これ未満は偏差値を出さない。
+ * 1 人が同じゲームで分布に入れられる件数（`DISTRIBUTION_WINDOW`）と同じで、遊ぶ人が 1 人でも届く（sc#B.12、#242）
+ */
+export const CALIBRATION_MIN_PLAYS = 5;
+/** `invalid` を決めるのに要る件数（sc#A.7。暫定）。終端なので、校正より多くの記録を待つ */
+export const INVALID_MIN_PLAYS = 20;
 /** エンドレスでミスになる偏差値の閾値（run#A.2。暫定） */
 export const MISS_DEVIATION = 40;
 /** 偏差値の下限と上限（sc#A.5 の 4） */

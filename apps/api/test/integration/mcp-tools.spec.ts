@@ -158,7 +158,7 @@ dbSuite("MCP ツール（mc#A.3 / A.10）", () => {
           calibration: "uncalibrated",
           plays: 0,
           likes: 0,
-          calibration_remaining: 20,
+          calibration_remaining: 5,
           published_at: "2026-11-11T03:00:00.000Z",
           updated_at: "2026-11-11T03:00:00.000Z",
         },

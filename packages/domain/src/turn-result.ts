@@ -4,7 +4,7 @@
 // 値を持つのは遊んだ結果だけ。遊んだ結果の述語は Host とサーバが同じ関数で確かめ、Host は満たさない
 // Guest の報告を値を直さずに捨てる。だから Host が送る結果は必ずサーバで受理される。
 
-import { CALIBRATION_MIN_PLAYS } from "./deviation.ts";
+import { CALIBRATION_MIN_PLAYS, INVALID_MIN_PLAYS } from "./deviation.ts";
 import {
   DISTRIBUTION_MIN_FRAMES_RATIO,
   REALTIME_FACTOR,
@@ -111,7 +111,7 @@ export function serverRealtimeOk(a: {
  * null: どちらにも入らない。1 主体 5 件の窓は、ほかの結果との関係なので呼び出し側が見る。
  */
 export function tallyOf(
-  r: { speed: number; author: boolean } & (
+  r: { speed: number } & (
     | {
         via: "guest";
         verdict: "provisional" | "accepted" | "rejected" | "flagged";
@@ -121,16 +121,18 @@ export function tallyOf(
     | { via: "timeout" | "error" | "noload" }
   ),
 ): "distribution" | "failure" | null {
-  if (r.via === "noload" || r.speed !== 1 || r.author) return null;
+  if (r.via === "noload" || r.speed !== 1) return null;
   if (r.via !== "guest") return "failure";
   const counted = r.verdict === "provisional" || r.verdict === "accepted";
   return counted && r.frames >= DISTRIBUTION_MIN_FRAMES_RATIO * r.timeLimit ? "distribution" : null;
 }
 
 /**
- * 未校正のゲームの行き先（sc#A.7）。scores は分布の点数（順序は問わない）、failures は失敗の数。
- * 検査は n + f が 20 以上になってから。失敗率が高ければ invalid。分布の形の検査（分散ゼロ、0 張り付き）と
- * calibrated への遷移は、分布が 20 件になってから。まだ決まらなければ null。
+ * 分布から決まる校正状態（sc#A.7）。scores は分布の点数（順序は問わない）、failures は失敗の数。
+ * - calibrated: 分布が 5 件以上で、失敗率・分散ゼロ・0 張り付きのどれにも当たらない
+ * - invalid: 失敗率は n + f が 20 以上、分散ゼロと 0 張り付きは n が 20 以上で当たった
+ * - null: まだ決まらない（今の状態のまま）
+ * 未校正のゲームにも校正済みのゲームにも使う（校正済みから invalid に進むことがある）。
  * 二峰・耐久型などの印と通知はここでは見ない。
  */
 export function calibrationVerdict(
@@ -139,11 +141,14 @@ export function calibrationVerdict(
 ): "calibrated" | "invalid" | null {
   const n = scores.length;
   const total = n + failures;
-  if (total < CALIBRATION_MIN_PLAYS) return null;
-  if (failures >= FAILURE_RATE_INVALID * total) return "invalid";
-  if (n < CALIBRATION_MIN_PLAYS) return null;
-  if (scores.every((s) => s === scores[0])) return "invalid";
+  const failing = total > 0 && failures >= FAILURE_RATE_INVALID * total;
   const zeros = scores.reduce((count, s) => (s === 0 ? count + 1 : count), 0);
-  if (zeros >= ZERO_STUCK_RATIO * n) return "invalid";
+  // 分散ゼロ、0 張り付き
+  const shapeless =
+    n > 0 && (scores.every((s) => s === scores[0]) || zeros >= ZERO_STUCK_RATIO * n);
+  if (failing && total >= INVALID_MIN_PLAYS) return "invalid";
+  if (shapeless && n >= INVALID_MIN_PLAYS) return "invalid";
+  // 20 件に満たない間は、検査に当たる分布を校正済みにしないで待つ（invalid は終端。sc#B.12）
+  if (n < CALIBRATION_MIN_PLAYS || failing || shapeless) return null;
   return "calibrated";
 }

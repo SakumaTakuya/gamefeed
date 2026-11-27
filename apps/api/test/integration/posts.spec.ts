@@ -305,8 +305,8 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
 
   // --- プレイ数・いいね数と「今の偏差値」（product#5.3、product#9 の 5。#211） ---
 
-  /** 昇順、20 件（校正に要る最小の件数） */
-  const DIST = Array.from({ length: CALIBRATION_MIN_PLAYS }, (_, i) => (i + 1) * 10);
+  /** 昇順、20 件 */
+  const DIST = Array.from({ length: 20 }, (_, i) => (i + 1) * 10);
   async function setStats(
     id: string,
     calibration: "uncalibrated" | "calibrated" | "review" | "invalid",
@@ -380,7 +380,7 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
     expect(after).toBeLessThan(before);
   });
 
-  it("R-run.A14-6 校正済みでない投稿と、分布が 20 件に満たない投稿は deviation が null（sc#A.5）", async () => {
+  it("R-run.A14-6 校正済みでない投稿と、分布が 5 件に満たない投稿は deviation が null（sc#A.5）", async () => {
     const fresh = await post(true);
     expect(await (await dev(fresh, "?score=10")).json()).toEqual({ deviation: null });
     for (const calibration of ["uncalibrated", "review", "invalid"] as const) {
@@ -389,8 +389,14 @@ dbSuite("GET /api/posts/{id}（mo#A.3、mc#A.9）", () => {
       expect(await (await dev(id, "?score=10")).json()).toEqual({ deviation: null });
     }
     const thin = await post(true);
-    await setStats(thin, "calibrated", DIST.slice(1));
+    await setStats(thin, "calibrated", DIST.slice(0, CALIBRATION_MIN_PLAYS - 1));
     expect(await (await dev(thin, "?score=10")).json()).toEqual({ deviation: null });
+    // ちょうど 5 件なら出る（#242）
+    const five = await post(true);
+    await setStats(five, "calibrated", DIST.slice(0, CALIBRATION_MIN_PLAYS));
+    expect(await (await dev(five, "?score=35")).json()).toEqual({
+      deviation: deviation(35, DIST.slice(0, 5)),
+    });
   });
 
   it("R-run.A14-6 score が 0 以上 2^31 − 1 以下の整数の 10 進表記でなければ invalid_request", async () => {
