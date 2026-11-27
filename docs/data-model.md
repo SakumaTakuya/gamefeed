@@ -82,7 +82,7 @@ Postgres を正とし、Redis は派生値のキャッシュ、R2 は不変フ�
 | `position` | int | 0〜9 |
 | `post_id` | text | fk posts |
 
-pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` のお題はちょうど 10 行（公開 API の検査）。日ごとの順序は `position` と日付から決める（`run.md` A.2）。
+pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` のお題はちょうど 10 行（公開 API の検査）。山札の順は `position` の順（`run.md` A.2。日付では並べ替えない、#223）。
 
 ### games（内容。不変）
 
