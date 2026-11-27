@@ -569,7 +569,7 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
       expect(await h.stats(deck[1])).toEqual({ scores: after, failures: 0 });
     });
 
-    it("R-sc.A4-1 作者本人の結果は保存するが、分布にも失敗の数にも入らない", async () => {
+    it("R-sc.A4-1 作者がランで遊んだ結果も、ほかの人と同じに分布と失敗の数に入る（#242）", async () => {
       const me = await h.login("maker@example.test");
       await h.seedPost({ userId: me.id });
       const o = { cookie: me.cookie };
@@ -577,7 +577,10 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
       expect(r.deviation).toBe(deviation(55, DIST));
       expect((await h.turnRows(r.runId))[0]).toMatchObject({ author: true, state: "submitted" });
       await h.playOnce({ via: "timeout" }, o);
-      expect(await h.stats()).toEqual({ scores: DIST, failures: 0 });
+      expect(await h.stats()).toEqual({
+        scores: [...DIST, 55].sort((a, b) => a - b),
+        failures: 1,
+      });
     });
 
     it("R-sc.A4-1 短縮されたセッション（frames < 0.9 × time_limit）は入らず、9 割ちょうどは入る", async () => {
@@ -650,63 +653,93 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
     const calibrationOf = async () => (await h.postOf())?.calibration;
     const timeouts = (n: number) => Array.from({ length: n }, () => ({ via: "timeout" }));
 
-    it("R-sc.A7-1 19 件目では uncalibrated のまま、20 件目で calibrated になる", async () => {
+    it("R-sc.A7-1 4 件目では uncalibrated のまま、5 件目で calibrated になる", async () => {
       await h.seedPost({ calibration: "uncalibrated" });
-      const first = await h.playAll(spread(19));
-      expect(first.map((r) => r.calibration)).toEqual(Array(19).fill("uncalibrated"));
+      const first = await h.playAll(spread(4));
+      expect(first.map((r) => r.calibration)).toEqual(Array(4).fill("uncalibrated"));
       expect(await calibrationOf()).toBe("uncalibrated");
 
-      const [twentieth] = await h.playAll([guest({ score: 20 })], 200);
+      const [fifth] = await h.playAll([guest({ score: 5 })], 200);
       // この手番は計画で新作扱いなので、校正済みになった結果でも偏差値ではなく比を出す
-      expect(twentieth).toEqual({
+      expect(fifth).toEqual({
         settled: 1,
         deviation: null,
         miss: false,
         calibration: "calibrated",
-        ratio: 1,
+        ratio: expect.any(Number),
       });
       expect(await calibrationOf()).toBe("calibrated");
-      expect((await h.stats())?.scores).toEqual(spread(20).map((b) => b.score));
+      expect((await h.stats())?.scores).toEqual(spread(5).map((b) => b.score));
     });
 
-    it("R-sc.A7-1 検査は n + f が 20 になってから。失敗率 50% 以上なら、分布が 20 件に満たなくても invalid", async () => {
+    it("R-sc.A7-1 作者 1 人が自分の端末で 5 回遊ぶだけで calibrated になり、次のランに miss_below が出る（#242）", async () => {
+      const me = await h.login("maker@example.test");
+      await h.seedPost({ userId: me.id, calibration: "uncalibrated" });
+      const o = { cookie: me.cookie };
+      const seen: string[] = [];
+      for (const score of [30, 10, 50, 20, 40]) {
+        seen.push((await h.playOnce(guest({ score }), o)).calibration);
+      }
+      expect(seen).toEqual([...Array(4).fill("uncalibrated"), "calibrated"]);
+      expect(await h.stats()).toEqual({ scores: [10, 20, 30, 40, 50], failures: 0 });
+      // ミスは「直近 5 回のどれよりも低い」（sc#A.6）
+      const next = await h.createRun(o);
+      expect(next.deck[0]).toMatchObject({ is_new: false, miss_below: 10 });
+    });
+
+    it("R-sc.A7-1 失敗率 50% 以上の間は 5 件を超えても校正済みにせず、n + f が 20 で invalid", async () => {
       await h.seedPost({ calibration: "uncalibrated" });
-      await h.playAll(spread(10));
-      const fails = await h.playAll(timeouts(9), 200);
-      expect(fails.map((r) => r.calibration)).toEqual(Array(9).fill("uncalibrated"));
-      expect(await h.stats()).toMatchObject({ failures: 9 });
+      await h.playAll(timeouts(10), 200);
+      const played = await h.playAll(spread(9));
+      // n = 9、f = 10
+      expect(played.map((r) => r.calibration)).toEqual(Array(9).fill("uncalibrated"));
+      expect(await h.stats()).toMatchObject({ failures: 10 });
       // 20 件目（失敗 10 / 20 = 50%）
-      const [last] = await h.playAll(timeouts(1), 300);
-      expect(last).toEqual({
-        settled: 1,
-        deviation: null,
-        miss: false,
-        calibration: "invalid",
-        ratio: null,
-      });
+      const [last] = await h.playAll([guest({ score: 10 })], 300);
+      expect(last?.calibration).toBe("invalid");
       expect(await calibrationOf()).toBe("invalid");
     });
 
-    it("R-sc.A7-1 失敗率が 50% 未満なら、分布が 20 件になるまで決まらない", async () => {
+    it("R-sc.A7-1 校正済みになった後でも、n + f が 20 で失敗率 50% 以上なら invalid", async () => {
       await h.seedPost({ calibration: "uncalibrated" });
-      await h.playAll(timeouts(9), 200);
-      await h.playAll(spread(19));
-      // n = 19、f = 9
+      await h.playAll(spread(10));
+      expect(await calibrationOf()).toBe("calibrated");
+      const fails = await h.playAll(timeouts(9), 200);
+      expect(fails.map((r) => r.calibration)).toEqual(Array(9).fill("calibrated"));
+      const [last] = await h.playAll(timeouts(1), 300);
+      expect(last).toMatchObject({ deviation: null, miss: false, calibration: "invalid" });
+      expect(await calibrationOf()).toBe("invalid");
+    });
+
+    it("R-sc.A7-1 失敗率が 50% 未満なら、分布が 5 件になったところで決まる", async () => {
+      await h.seedPost({ calibration: "uncalibrated" });
+      await h.playAll(timeouts(4), 200);
+      await h.playAll(spread(4));
+      // n = 4、f = 4
       expect(await calibrationOf()).toBe("uncalibrated");
-      await h.playAll([guest({ score: 20 })], 300);
+      await h.playAll([guest({ score: 5 })], 300);
       expect(await calibrationOf()).toBe("calibrated");
     });
 
     it("R-sc.A7-1 集計に入らない結果は校正の件数に数えない", async () => {
       await h.seedPost({ calibration: "uncalibrated" });
-      await h.playAll(spread(19));
+      await h.playAll(spread(4));
       await h.playAll([guest({ score: 9, frames: 100, inputs: [] }), { via: "noload" }], 300);
       expect(await calibrationOf()).toBe("uncalibrated");
+    });
+
+    it("R-sc.A7-1 5 件が全部同じ点・0 ばかりの間は uncalibrated のまま待ち、ばらつけば calibrated", async () => {
+      await h.seedPost({ calibration: "uncalibrated" });
+      const same = await h.playAll(Array.from({ length: 6 }, () => guest({ score: 1 })));
+      expect(same.map((r) => r.calibration)).toEqual(Array(6).fill("uncalibrated"));
+      const [moved] = await h.playAll([guest({ score: 0 })], 300);
+      expect(moved?.calibration).toBe("calibrated");
     });
 
     it("R-sc.A7-1 20 件目で全件同じ点（分散ゼロ）なら invalid", async () => {
       await h.seedPost({ calibration: "uncalibrated" });
       const all = await h.playAll(Array.from({ length: 20 }, () => guest({ score: 7 })));
+      expect(all[4]?.calibration).toBe("uncalibrated");
       expect(all[18]?.calibration).toBe("uncalibrated");
       expect(all[19]?.calibration).toBe("invalid");
       expect(await calibrationOf()).toBe("invalid");
@@ -738,19 +771,23 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
       expect((await h.stats())?.scores).toHaveLength(26);
     });
 
-    it("R-sc.A7-1 校正済みのゲームは、その後の結果で全件同じ点になっても calibrated のまま", async () => {
+    it("R-sc.A7-1 校正済みのゲームも、20 件以上で全件同じ点なら invalid。20 件に満たなければ calibrated のまま", async () => {
       await h.seedPost();
+      await h.setDist(Array(8).fill(7));
+      const few = await h.playOnce(guest({ score: 7 }), { device: device(1) });
+      expect(few.calibration).toBe("calibrated");
+
       await h.setDist(Array(20).fill(7));
-      const r = await h.playOnce(guest({ score: 7 }));
-      expect(r.calibration).toBe("calibrated");
-      expect(await calibrationOf()).toBe("calibrated");
+      const many = await h.playOnce(guest({ score: 7 }), { device: device(2) });
+      expect(many.calibration).toBe("invalid");
+      expect(await calibrationOf()).toBe("invalid");
     });
 
     it("R-mo.A2-3 limited の投稿は calibrated になる遷移で public に昇格する", async () => {
       await h.seedPost({ calibration: "uncalibrated", status: "limited" });
-      await h.playAll(spread(19));
+      await h.playAll(spread(4));
       expect((await h.postOf())?.baseStatus).toBe("limited");
-      await h.playAll([guest({ score: 20 })], 200);
+      await h.playAll([guest({ score: 5 })], 200);
       expect(await h.postOf()).toMatchObject({ calibration: "calibrated", baseStatus: "public" });
     });
 
@@ -760,8 +797,8 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
           sql`truncate table sessions, runs, reports, post_stats, tree_locks, moderation_actions, actors, posts cascade`,
         );
         await h.seedPost({ calibration: "uncalibrated", status: "limited" });
-        await h.playAll(spread(19));
-        // 20 件目のランを作ってから制限する（制限中の投稿は山札に入らない）
+        await h.playAll(spread(4));
+        // 5 件目のランを作ってから制限する（制限中の投稿は山札に入らない）
         const o = { device: device(200) };
         const run = await h.createRun(o);
         if (block === "indiv_restricted") {
@@ -784,7 +821,7 @@ dbSuite("PUT /api/runs/{id}/turns/{t}（run#A.3、sc#A.2）", () => {
             resolution: "upheld",
           });
         }
-        const r = await h.settle(run.run_id, 0, guest({ score: 20 }), o);
+        const r = await h.settle(run.run_id, 0, guest({ score: 5 }), o);
         expect(r.calibration, block).toBe("calibrated");
         expect(await h.postOf(), block).toMatchObject({
           calibration: "calibrated",

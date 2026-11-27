@@ -238,11 +238,10 @@ async function settleInTx(
         via: "guest",
         verdict: "provisional",
         speed,
-        author,
         frames: played.frames,
         timeLimit,
       })
-    : tallyOf({ via: body.via as "timeout" | "error" | "noload", speed, author });
+    : tallyOf({ via: body.via as "timeout" | "error" | "noload", speed });
 
   // 集計を書き換える結果は post_stats の行ロックで直列にする（同じゲームへの同時の受理で更新を失わない）
   if (tally) {
@@ -274,7 +273,7 @@ async function settleInTx(
     const [pushed] = await tx.execute<{ via: string; score: number | null }>(sql`
       select via, score from sessions
       where post_id = ${postId} and actor_id = ${input.actor.id} and state = 'submitted'
-        and speed = 1 and author = false
+        and speed = 1
         and (via in ('timeout', 'error')
           or (via = 'guest' and verdict in ('provisional', 'accepted')
             and frames >= ${DISTRIBUTION_MIN_FRAMES_RATIO}::numeric * time_limit))
@@ -294,8 +293,14 @@ async function settleInTx(
       .set({ n: scores.length, scores, failures, updatedAt: now })
       .where(eq(postStats.postId, postId));
 
-    // 校正（sc#A.7）。未校正からだけ進む。invalid は終端で、校正済みはここでは変えない
-    const decided = calibration === "uncalibrated" ? calibrationVerdict(scores, failures) : null;
+    // 校正（sc#A.7）。未校正からは calibrated か invalid へ、校正済みからは invalid へ進む（20 件以上で
+    // 検査に当たったとき。校正は 5 件なので、校正済みの後に当たることがある。sc#B.12）。
+    // invalid は終端。review はここでは変えない
+    const verdict =
+      calibration === "uncalibrated" || calibration === "calibrated"
+        ? calibrationVerdict(scores, failures)
+        : null;
+    const decided = verdict !== null && verdict !== calibration ? verdict : null;
     if (decided) {
       await tx.execute(
         sql`update posts set calibration = ${decided}::calibration where id = ${postId}`,

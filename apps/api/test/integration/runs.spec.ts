@@ -523,17 +523,17 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
   // ---- 計画の凍結（run#A.3、sc#A.6、dm#A.5 I13） ------------------------------------------
 
   describe("計画（miss_below・time_limit・game_hashes・seed）", () => {
-    it("R-sc.A6-1 miss_below は校正済み・新作扱いでない・分布 20 件以上の位置だけが持ち、作成時点の分布から求めた値", async () => {
-      // c0: 20 件（境界）、c1: 60 件、c2: 19 件（足りない）、c3: 分布の行なし、c4: 全部 0（閾値 0）
+    it("R-sc.A6-1 miss_below は校正済み・新作扱いでない・分布 5 件以上の位置だけが持ち、作成時点の分布から求めた値", async () => {
+      // c0: 5 件（境界）、c1: 60 件、c2: 4 件（足りない）、c3: 分布の行なし、c4: 全部 0（閾値 0）
       await seedPosts("c", 5);
-      const d0 = await seedStats("c0", spread(20));
+      const d0 = await seedStats("c0", [3, 10, 17, 24, 31]);
       const d1 = await seedStats("c1", spread(60, 13));
-      await seedStats("c2", spread(19));
+      await seedStats("c2", spread(4));
       await seedStats(
         "c4",
         Array.from({ length: 30 }, () => 0),
       );
-      // u0: 未校正（新作扱い）。分布が 20 件あっても閾値を持たない
+      // u0: 未校正（新作扱い）。分布が 5 件以上あっても閾値を持たない
       await seedPost("u0", { calibration: "uncalibrated" });
       await seedStats("u0", spread(25));
 
@@ -603,10 +603,10 @@ dbSuite("POST /api/runs（run#A.2、A.3）", () => {
       await seedPosts("c", 3);
       await seedPost("u0", { calibration: "uncalibrated" });
       const before = await seedStats("c0", spread(20));
-      await seedStats("c1", spread(19));
+      await seedStats("c1", spread(4));
       const original = await created(await postRuns({ mode: "endless" }, { device: DEVICE_A }));
 
-      // 元のランの後: c0 の分布が変わり、c1 は 20 件に届き、新作枠だった u0 は校正済みになった
+      // 元のランの後: c0 の分布が変わり、c1 は 5 件に届き、新作枠だった u0 は校正済みになった
       const after = await seedStats(
         "c0",
         Array.from({ length: 40 }, (_, i) => 1000 + i),

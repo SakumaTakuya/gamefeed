@@ -31,7 +31,7 @@ describe("inverseNormal（sc#A.5 の 3、Acklam）", () => {
 
 describe("deviation（R-sc.A5-1、sc#A.5）", () => {
   it("定数は文書の値", () => {
-    expect(CALIBRATION_MIN_PLAYS).toBe(20);
+    expect(CALIBRATION_MIN_PLAYS).toBe(5);
     expect(MISS_DEVIATION).toBe(40);
   });
 

@@ -126,7 +126,7 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
         calibration: "uncalibrated",
         plays: 0,
         likes: 0,
-        calibration_remaining: 20,
+        calibration_remaining: 5,
         published_at: liveAt.toISOString(),
         updated_at: liveAt.toISOString(),
       },
@@ -138,19 +138,19 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
         calibration: "uncalibrated",
         plays: 0,
         likes: 0,
-        calibration_remaining: 20,
+        calibration_remaining: 5,
         published_at: null,
         updated_at: draftAt.toISOString(),
       },
     ]);
   });
 
-  it("R-mc.A3-2 plays は post_stats.n、likes は件数。calibration_remaining は 20 − n（uncalibrated のときだけ、0 未満にしない）", async () => {
+  it("R-mc.A3-2 plays は post_stats.n、likes は件数。calibration_remaining は 5 − n（uncalibrated のときだけ、0 未満にしない）", async () => {
     const a = await pub({ html: gameHtml({ salt: "a" }), publish: true });
     const b = await pub({ html: gameHtml({ salt: "b" }), publish: true });
     const c = await pub({ html: gameHtml({ salt: "c" }), publish: true });
     await db.insert(s.postStats).values([
-      { postId: a.post_id, n: 7, scores: [1, 2, 3, 4, 5, 6, 7] },
+      { postId: a.post_id, n: 3, scores: [1, 2, 3] },
       { postId: b.post_id, n: 25, scores: Array.from({ length: 25 }, (_, i) => i) },
       { postId: c.post_id, n: 21, scores: Array.from({ length: 21 }, (_, i) => i) },
     ]);
@@ -164,7 +164,7 @@ dbSuite("list_my_games / unpublish_game（mc#A.3、mo#A.2）", () => {
     ]);
 
     const byId = new Map((await list()).map((g) => [g.post_id, g]));
-    expect(byId.get(a.post_id)).toMatchObject({ plays: 7, likes: 2, calibration_remaining: 13 });
+    expect(byId.get(a.post_id)).toMatchObject({ plays: 3, likes: 2, calibration_remaining: 2 });
     const gb = byId.get(b.post_id);
     expect(gb).toMatchObject({ plays: 25, likes: 1, calibration: "calibrated" });
     expect(gb).not.toHaveProperty("calibration_remaining");

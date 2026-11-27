@@ -1,9 +1,11 @@
 import { describe, expect, it } from "vitest";
 import {
+  CALIBRATION_MIN_PLAYS,
   calibrationVerdict,
   checkPlayed,
   FAILURE_RATE_INVALID,
   hostRealtimeOk,
+  INVALID_MIN_PLAYS,
   playedSeconds,
   readTurnResult,
   SCORE_MAX,
@@ -157,7 +159,8 @@ describe("実時間（sc#A.2 の 6 行目。R-sc.A2-1、R-sc.A2-2）", () => {
 });
 
 describe("tallyOf: 結果の行き先（sc#A.4。R-sc.A4-1）", () => {
-  const base = { verdict: "provisional" as const, speed: 1, author: false, timeLimit: 300 };
+  // 作者かどうかは受け取らない。作者がランで遊んだ結果も同じに数える（sc#B.5、#242）
+  const base = { verdict: "provisional" as const, speed: 1, timeLimit: 300 };
 
   it("遊んだ結果は分布へ", () => {
     expect(tallyOf({ ...base, via: "guest", frames: 300 })).toBe("distribution");
@@ -170,7 +173,6 @@ describe("tallyOf: 結果の行き先（sc#A.4。R-sc.A4-1）", () => {
   it("遊んだ結果でも、条件に外れればどこにも入らない", () => {
     expect(tallyOf({ ...base, via: "guest", frames: 269 })).toBeNull();
     expect(tallyOf({ ...base, via: "guest", frames: 300, speed: 1.125 })).toBeNull();
-    expect(tallyOf({ ...base, via: "guest", frames: 300, author: true })).toBeNull();
     expect(tallyOf({ ...base, via: "guest", frames: 300, verdict: "rejected" })).toBeNull();
     expect(tallyOf({ ...base, via: "guest", frames: 300, verdict: "flagged" })).toBeNull();
   });
@@ -182,7 +184,6 @@ describe("tallyOf: 結果の行き先（sc#A.4。R-sc.A4-1）", () => {
 
   it("満了と error も、等速でない・作者のものは数えない", () => {
     expect(tallyOf({ ...base, via: "timeout", speed: 1.5 })).toBeNull();
-    expect(tallyOf({ ...base, via: "error", author: true })).toBeNull();
   });
 
   it("読み込みの skip はどちらにも入らない", () => {
@@ -190,43 +191,57 @@ describe("tallyOf: 結果の行き先（sc#A.4。R-sc.A4-1）", () => {
   });
 });
 
-describe("calibrationVerdict: 校正の検査（sc#A.7。R-sc.A7-1）", () => {
+describe("calibrationVerdict: 校正の検査（sc#A.7、B.12。R-sc.A7-1）", () => {
   const spread = (n: number) => Array.from({ length: n }, (_, i) => i + 1);
 
-  it("n + f が 20 に満たなければ決まらない", () => {
-    expect(calibrationVerdict(spread(19), 0)).toBeNull();
-    expect(calibrationVerdict(spread(10), 9)).toBeNull();
-    expect(calibrationVerdict([], 19)).toBeNull();
-  });
-
-  it("n ≥ 20 で検査を通れば calibrated", () => {
-    expect(calibrationVerdict(spread(20), 0)).toBe("calibrated");
-    expect(calibrationVerdict(spread(20), 19)).toBe("calibrated");
-  });
-
-  it("失敗率 50% 以上で invalid。n が 20 に満たなくても", () => {
+  it("校正は 5 件、invalid は 20 件から（どちらも暫定）", () => {
+    expect(CALIBRATION_MIN_PLAYS).toBe(5);
+    expect(INVALID_MIN_PLAYS).toBe(20);
     expect(FAILURE_RATE_INVALID).toBe(0.5);
-    expect(calibrationVerdict(spread(10), 10)).toBe("invalid");
-    expect(calibrationVerdict([], 20)).toBe("invalid");
-    expect(calibrationVerdict(spread(20), 20)).toBe("invalid");
+  });
+
+  it("n が 5 に満たなければ決まらない", () => {
+    expect(calibrationVerdict([], 0)).toBeNull();
+    expect(calibrationVerdict(spread(4), 0)).toBeNull();
+    expect(calibrationVerdict(spread(4), 3)).toBeNull();
+  });
+
+  it("n ≥ 5 で検査に当たらなければ calibrated（1 人の 5 件で届く）", () => {
+    expect(calibrationVerdict(spread(5), 0)).toBe("calibrated");
+    expect(calibrationVerdict(spread(5), 4)).toBe("calibrated");
+    expect(calibrationVerdict(spread(19), 0)).toBe("calibrated");
+    expect(calibrationVerdict(spread(20), 19)).toBe("calibrated");
     expect(calibrationVerdict(spread(51), 49)).toBe("calibrated");
   });
 
-  it("失敗率が 50% 未満で n が 20 に満たなければ、まだ決まらない", () => {
-    expect(calibrationVerdict(spread(11), 9)).toBeNull();
-    expect(calibrationVerdict(spread(19), 18)).toBeNull();
-  });
-
-  it("分散ゼロと 0 張り付きは invalid（n ≥ 20 から）", () => {
-    expect(calibrationVerdict(Array(20).fill(7), 0)).toBe("invalid");
-    expect(calibrationVerdict([...Array(16).fill(0), 1, 2, 3, 4], 0)).toBe("invalid");
-    expect(calibrationVerdict([...Array(15).fill(0), 1, 2, 3, 4, 5], 0)).toBe("calibrated");
-    // 分布が 20 件に満たない間は、分布の形では決めない
+  it("20 件に満たない間は、検査に当たる分布を calibrated にも invalid にもしない", () => {
+    // 失敗率 50% 以上
+    expect(calibrationVerdict(spread(5), 5)).toBeNull();
+    expect(calibrationVerdict(spread(9), 10)).toBeNull();
+    expect(calibrationVerdict([], 19)).toBeNull();
+    // 分散ゼロ（0 と 1 のゲームを 5 回成功させただけ、を invalid にしない）
+    expect(calibrationVerdict(Array(5).fill(1), 0)).toBeNull();
+    expect(calibrationVerdict(Array(19).fill(7), 0)).toBeNull();
+    // 0 張り付き（80% 以上）
+    expect(calibrationVerdict([0, 0, 0, 0, 3], 0)).toBeNull();
+    expect(calibrationVerdict([0, 0, 0, 2, 3], 0)).toBe("calibrated");
+    // 分布が 20 件に満たない間は、失敗を足して 20 件でも分布の形では決めない
     expect(calibrationVerdict(Array(15).fill(7), 5)).toBeNull();
   });
 
+  it("失敗率 50% 以上は、n + f ≥ 20 で invalid。n が 20 に満たなくても", () => {
+    expect(calibrationVerdict(spread(10), 10)).toBe("invalid");
+    expect(calibrationVerdict([], 20)).toBe("invalid");
+    expect(calibrationVerdict(spread(20), 20)).toBe("invalid");
+  });
+
+  it("分散ゼロと 0 張り付きは、n ≥ 20 で invalid", () => {
+    expect(calibrationVerdict(Array(20).fill(7), 0)).toBe("invalid");
+    expect(calibrationVerdict([...Array(16).fill(0), 1, 2, 3, 4], 0)).toBe("invalid");
+    expect(calibrationVerdict([...Array(15).fill(0), 1, 2, 3, 4, 5], 0)).toBe("calibrated");
+  });
+
   it("失敗は 0 点として数えない（0 張り付きの検査に混ざらない）", () => {
-    // 遊んだ結果 20 件は散らばっていて、失敗が 19 件。#162 より前は 0 が 19 件ぶん混ざった
     expect(calibrationVerdict(spread(20), 19)).toBe("calibrated");
   });
 });

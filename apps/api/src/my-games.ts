@@ -4,6 +4,7 @@
  * KV に書けなかったら `storage_failed` を返し、呼び直しで KV だけ書き直す（DB は既に `unpublished`）。
  */
 
+import { CALIBRATION_MIN_PLAYS } from "@gamefeed/domain";
 import { and, desc, eq, inArray, ne, sql } from "drizzle-orm";
 import type { Db } from "./db/client.ts";
 import { likes, postStats, posts, reports } from "./db/schema.ts";
@@ -20,8 +21,6 @@ import {
 
 /** 一覧の上限（mc#A.3、暫定） */
 export const LIST_LIMIT = 50;
-/** 校正に要るプレイ数（sc#A.4。`calibration_remaining = 20 − n`） */
-export const CALIBRATION_N = 20;
 
 export interface MyGame {
   post_id: string;
@@ -109,7 +108,7 @@ export async function listMyGames(
         plays,
         likes: likeCount.get(r.id) ?? 0,
         ...(r.calibration === "uncalibrated"
-          ? { calibration_remaining: Math.max(0, CALIBRATION_N - plays) }
+          ? { calibration_remaining: Math.max(0, CALIBRATION_MIN_PLAYS - plays) }
           : {}),
         ...(st === "restricted" ? { restricted_reason: reasons.get(r.id) ?? {} } : {}),
         published_at: r.publishedAt ? r.publishedAt.toISOString() : null,
