@@ -198,6 +198,8 @@ KV（`security.md` A.5）は状態が変わらなかったときも書き直す�
 
 公開後の静止サムネは公開直後のジョブが決定論ハーネスを入力なしで 1 回実行して作り（`scoring.md`、`data-model.md` の `thumb_key`）、できるまでゲームページは「？」の枠を出す。`thumb_key` が入るまで新作枠に入らない（`post_eligibility`）。固まる・例外で止まる・`GF.timeLimit` を過ぎても終わらないゲームは、このジョブが `thumb_key` を入れずに `calibration = invalid` にして運営のキューに出す。`GF.end()` を呼ばず制限時間で終わるのは正常（`game-contract.md` A.4）。プレビュー動画は作者以外の最初の結果から作る（`product.md` 8、`posts.preview_key`）。`publish_game` の応答はジョブを待たない。
 
+ジョブは GitHub Actions の定期実行（10 分ごと、暫定）で、公開から新作枠に入るまで最大 10 分ほどかかる。実行チェックは公開の後に行い、公開そのものは拒否しない（`scoring.md` A.10。#248）。`invalid` になった投稿はランに出ないが、ゲームページでは遊べる。サムネの画像は `GET /api/posts/{id}/thumb` で配る（見える投稿だけ。`thumb_key` が NULL か目印 `manual` の間は `not_found` で、ゲームページは「？」の枠を出す）。
+
 ## A.10 エラー
 
 ツールの失敗は MCP の `isError: true` で、`structuredContent` に `{code, message, errors?, reason?}`。`message` は日本語で、AI がそのまま作者に見せられる文。
