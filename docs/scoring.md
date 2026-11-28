@@ -206,7 +206,7 @@ headless Chromium の中で `protocol.md` の Host を動かす。3 つの用途
 
 **ハーネスのページ**は `<app-origin>/harness/<post_id>`（`?speed=1.5` で速度）。本番と同じ Host（`packages/sdk` の `createHost`）と同じ iframe の属性でゲームを読み込み、`ready` が届いたら `init` → `start` を送り、入力は送らない。結果はページの要素（`data-harness`）に JSON で出す。誰でも開けるが、何も保存しない。アプリのオリジンに置くのは、配信側の `frame-ancestors` がアプリのオリジンだけを許すから（`security.md`）。
 
-**実行場所は GitHub Actions の定期実行**（10 分ごと、暫定。2026-11-28、オーナー、#248）。ジョブは DB から「公開中（`limited` / `public`）・`uncalibrated`・`thumb_key` が NULL」の投稿を拾い、headless Chromium でハーネスのページを開く。対象が 0 件ならブラウザを入れずに終わる。
+**実行場所は GitHub Actions の定期実行**（10 分ごと、暫定。2026-11-28、オーナー、#248）。ジョブは DB から「公開中（`limited` / `public`）・`uncalibrated`・`thumb_key` が NULL」の投稿を拾い、headless Chromium でハーネスのページを開く。R2 の鍵があるときは、`thumb_key` が目印 `manual` の投稿（`uncalibrated` と `calibrated`）も拾って画像を作る。対象が 0 件ならブラウザを入れずに終わる。
 
 | ハーネスの結果 | 扱い |
 | --- | --- |
