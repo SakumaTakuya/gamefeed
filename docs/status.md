@@ -3,6 +3,13 @@
 新しいセッションはまずこのファイルを読む。更新は PR をマージするたび、または週次レビューで行う。
 
 ## 現在地（2026-11-28）
+- **公開直後のジョブを作っている（#248 → `spec:` の PR #249 → 実装 #250）**。オーナーの決定（2026-11-28）: 実行場所は GitHub Actions、起動は 10 分ごとの定期実行、範囲は実行チェックと静止サムネまで。**#249 はオーナーのマージ待ち。実装はブランチ `feat/250-post-publish-job`（#249 の上に積んである。#249 がマージされたら `git rebase --onto origin/main spec/248-post-publish-job`）**
+  - できたもの: ハーネスのページ `/harness/<post_id>`（`apps/web/src/harness/`。`useSinglePlayer` と `GameFrame` をそのまま使い、INITED になったら自分で `start`。結果は `<main data-harness>` に JSON）、結果の反映（`apps/api/src/post-publish.ts` の `judge` / `pendingPosts` / `applyCheck`）、ブラウザで開く部分（`apps/api/scripts/harness-browser.ts`。Playwright 1.63.0）、ジョブ（`scripts/post-publish.ts`。`count` で件数だけ）、ワークフロー `post-publish.yml`（対象が 0 件ならブラウザを入れない）、R2 の `putThumb`
+  - **まだのもの**: `GET /api/posts/{id}/thumb`（R2 から読んで配る。`r2.ts` に GET が無い）と、ゲームページでのサムネの表示。ここまでやって #250 を閉じる。`set-thumb-key` のワークフローは、ジョブが本番で動くのを見てから消す
+  - **固まったゲームはページごと止める**。この環境の headless Chromium では、アプリと配信を別のサイト（127.0.0.1 と localhost）にしても、`for(;;)` のゲームが Host のページを止め、監視タイマーも `data-harness` の読み取りも止まった。ジョブは 30 秒で外から打ち切り、ゲームの HTML が 200 で届いていたら broken（`invalid`）にする。届いていなければ retry（公開直後は KV の反映待ちで 404）
+  - **`gameUrl` は https 以外を localhost にしか許さない**。手元の e2e はアプリを 127.0.0.1:5300、配信を localhost:5301 にする（逆にするとページが例外で描かれない）
+  - 手元の e2e: `VITE_GAMES_ORIGIN=http://localhost:5301 pnpm --filter @gamefeed/web build` → `PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers pnpm --filter @gamefeed/api harness:e2e`。配信は `apps/games` の Worker のハンドラを Node の HTTP で包む（R2 と KV だけ代わり。CSP と SDK の差し込みは本番のコード）
+  - **オーナーの作業（#250 のマージ後）**: Actions の Variables に `APP_ORIGIN`（`https://gamefeed-seven.vercel.app`）。サムネを保存するには Secrets に `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET`（Vercel と同じ値）。無い間は実行チェックだけして目印 `manual` を入れる（ランには出る）
 - **ページをめくるようになった（#236、hd#A.7）**。表紙 →「はじめる」、採点 → 次の問題のページ、「おわり」→ 成績表の 3 つ。**残りはオーナーの実機確認**（`docs/manual-tests/run-tempo.md` の RT-14。重さと、「視差効果を減らす」をオンにしたときの入れ替え）
   - `apps/web/src/run/Pages.tsx` の `Pages` が Host の層を 1 枚の紙（`.dr-sheet`）に包み、紙（`paperOf(view)`）が替わった描画で前の紙を「めくられる紙」（`.dr-leaf`）として残す。同じ key で残すので要素は作り直されない（印のアニメーションがやり直しにならない）。めくりの間、今見えている iframe と `.dr-leaf` に同じ `clip-path` を `requestAnimationFrame` ごとに直接書き（React は通さない）、裏（`.dr-flip-back`。折り返す前の形で切り抜いて鏡映し）と影（`.dr-flip-shadow`）を別の要素で描く。iframe は動かさず、`z-index` を上げるだけ。終わりはタイマーで決め（隠れたタブでは描画のコールバックが来ない）、書いたスタイルを消す
   - どの紙か（`paperOf`）・めくるか（`turnsPage`）・1 コマの CSS の値（`flipFrame`）は `drill.ts`（DOM に触らない）。`RunPage.tsx` の `Layer` も `paperOf` の値で描き分ける（めくりの判定と同じ値）

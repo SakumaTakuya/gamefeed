@@ -1,0 +1,53 @@
+name: post-publish
+# 公開直後のジョブ（docs/mcp.md A.9、docs/scoring.md A.10。#250）。
+# 公開されて実行チェックがまだの投稿を headless Chromium でハーネスのページに通し、
+# 終われば thumb_key（とサムネ）を入れてランに出す。固まるゲームは calibration = invalid にする。
+# 対象が 0 件ならブラウザを入れずに終わる。
+#
+# Secrets: `SUPABASE_DIRECT_URL`（db-migrate と同じ）。
+#   サムネを保存するには `R2_ACCESS_KEY_ID` / `R2_SECRET_ACCESS_KEY` / `R2_ENDPOINT` / `R2_BUCKET`（Vercel と同じ値）。
+#   無ければ実行チェックだけして、thumb_key に目印を入れる（ランには出る）。
+# Variables: `APP_ORIGIN`（例 https://gamefeed-seven.vercel.app）。
+on:
+  schedule:
+    # 10 分ごと（暫定）。GitHub の定期実行は遅れることがある
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+    inputs:
+      post_id:
+        description: 1 件だけ見るときの投稿 ID（空なら対象をすべて）
+        required: false
+        type: string
+concurrency:
+  group: post-publish
+  cancel-in-progress: false
+permissions:
+  contents: read
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    env:
+      DATABASE_URL: ${{ secrets.SUPABASE_DIRECT_URL }}
+      APP_ORIGIN: ${{ vars.APP_ORIGIN }}
+      # 入力は環境変数で渡す（コマンドの文字列に埋め込まない）
+      POST_ID: ${{ inputs.post_id }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - id: pending
+        run: pnpm --filter @gamefeed/api post-publish count
+      - if: steps.pending.outputs.count != '0'
+        run: pnpm --filter @gamefeed/api exec playwright install --with-deps chromium
+      - if: steps.pending.outputs.count != '0'
+        run: pnpm --filter @gamefeed/api post-publish
+        env:
+          R2_ACCESS_KEY_ID: ${{ secrets.R2_ACCESS_KEY_ID }}
+          R2_SECRET_ACCESS_KEY: ${{ secrets.R2_SECRET_ACCESS_KEY }}
+          R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
+          R2_BUCKET: ${{ secrets.R2_BUCKET }}

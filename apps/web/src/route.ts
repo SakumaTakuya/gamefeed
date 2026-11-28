@@ -7,6 +7,8 @@ export type Route =
   | { page: "game"; postId: string }
   /** 運営の最小ページ。投稿の制限を解く（mo#A.7 の restore） */
   | { page: "restore"; postId: string }
+  /** ハーネスのページ。公開直後のジョブが開く（sc#A.10） */
+  | { page: "harness"; postId: string }
   /** エンドレスのスタート画面。fromRun があれば、そのランの山札で新しいランを作る（run#A.14） */
   | { page: "run"; fromRun: string | null };
 
@@ -17,6 +19,8 @@ const GAME = /^\/g\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 /** 運営の復帰ページは `<app-origin>/mod/restore/<post_id>`（mo#A.7）。 */
 const RESTORE = /^\/mod\/restore\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 /** ランの共有リンクは `<app-origin>/r/<run_id>`（run#A.14）。 */
+/** ハーネスのページは `<app-origin>/harness/<post_id>`（sc#A.10）。 */
+const HARNESS = /^\/harness\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 const SHARED_RUN = /^\/r\/([0-9A-HJKMNP-TV-Z]{26})\/?$/;
 
 export function routeOf(pathname: string): Route {
@@ -26,6 +30,8 @@ export function routeOf(pathname: string): Route {
   if (game?.[1]) return { page: "game", postId: game[1] };
   const restore = RESTORE.exec(pathname);
   if (restore?.[1]) return { page: "restore", postId: restore[1] };
+  const harness = HARNESS.exec(pathname);
+  if (harness?.[1]) return { page: "harness", postId: harness[1] };
   if (pathname === "/") return { page: "run", fromRun: null };
   const shared = SHARED_RUN.exec(pathname);
   if (shared?.[1]) return { page: "run", fromRun: shared[1] };

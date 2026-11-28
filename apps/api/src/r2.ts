@@ -5,6 +5,7 @@
  */
 
 import { createHash, createHmac } from "node:crypto";
+import type { ThumbStorage } from "./post-publish.ts";
 import type { GameStorage } from "./publish.ts";
 import type { ReplayStorage } from "./turns.ts";
 
@@ -89,7 +90,7 @@ const amzDateOf = (d: Date): string => d.toISOString().replace(/[-:]|\.\d{3}/g, 
 export function createR2Storage(
   cfg: R2Config,
   opts: { fetch?: FetchLike; now?: () => Date } = {},
-): GameStorage & ReplayStorage {
+): GameStorage & ReplayStorage & ThumbStorage {
   const doFetch: FetchLike = opts.fetch ?? ((url, init) => fetch(url, init));
   const now = opts.now ?? (() => new Date());
   const base = cfg.endpoint.replace(/\/+$/, "");
@@ -130,5 +131,7 @@ export function createR2Storage(
     put: (key, html) => putObject(key, html, "text/html; charset=utf-8"),
     // 入力ログ（dm#A.6 `replays/{session_id}.json.gz`）。gzip 済みのバイト列をそのまま置く
     putReplay: (key, gz) => putObject(key, gz, "application/gzip"),
+    // 静止サムネ（dm#A.6 `thumbs/{post_id}.webp`。公開直後のジョブ。sc#A.10）
+    putThumb: (key, webp) => putObject(key, webp, "image/webp"),
   };
 }
