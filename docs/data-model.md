@@ -113,7 +113,7 @@ pk `(theme_id, position)`、unique `(theme_id, post_id)`。`status = open` の�
 | `indiv_restricted` | bool | default false |
 | `calibration` | `calibration` | default `uncalibrated` |
 | `calibration_flags` | jsonb | `{binary, endurance, target_off}`（`scoring.md` A.7 の「印」） |
-| `thumb_key` | text null | `thumbs/{post_id}.webp`。公開直後のジョブが決定論ハーネスを 1 回実行して作る（`mcp.md` A.9）。できるまで NULL で、新作枠に入らない（`post_eligibility`） |
+| `thumb_key` | text null | `thumbs/{post_id}.webp`。公開直後のジョブが実行チェックを通した後に作る（`mcp.md` A.9、`scoring.md` A.10）。できるまで NULL で、新作枠に入らない（`post_eligibility`）。目印 `manual` は「実行チェックは済み、画像はまだ」（手動の #185、または R2 の鍵が無い間のジョブ） |
 | `preview_key` | text null | `previews/{post_id}.mp4`。作者以外の最初の結果の後 |
 | `published_at` | timestamptz null | `draft` から出た時刻（I4） |
 | `updated_at` | timestamptz | 下書きの自動削除の基準（I11） |
