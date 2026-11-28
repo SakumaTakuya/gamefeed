@@ -3,6 +3,7 @@
 import { lazy, Suspense } from "react";
 import { DraftPage } from "./draft/DraftPage.tsx";
 import { GamePage } from "./game/GamePage.tsx";
+import { HarnessPage } from "./harness/HarnessPage.tsx";
 import { RestorePage } from "./mod/RestorePage.tsx";
 import { routeOf } from "./route.ts";
 import { RunPage } from "./run/RunPage.tsx";
@@ -24,6 +25,7 @@ export function App() {
   if (route.page === "draft") return <DraftPage postId={route.postId} />;
   if (route.page === "game") return <GamePage postId={route.postId} />;
   if (route.page === "restore") return <RestorePage postId={route.postId} />;
+  if (route.page === "harness") return <HarnessPage postId={route.postId} />;
   if (route.page === "run") return <RunPage fromRun={route.fromRun} />;
   return <main>GameFeed</main>;
 }

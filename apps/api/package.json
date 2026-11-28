@@ -15,6 +15,8 @@
     "db:generate:custom": "drizzle-kit generate --custom",
     "db:migrate": "tsx scripts/migrate.ts",
     "thumb:set": "tsx scripts/set-thumb-key.ts",
+    "post-publish": "tsx scripts/post-publish.ts",
+    "harness:e2e": "tsx test/e2e/harness.e2e.ts",
     "gen:guide": "tsx scripts/gen-guide.ts"
   },
   "dependencies": {
@@ -34,6 +36,7 @@
     "@types/node": "22.20.5",
     "drizzle-kit": "0.31.11",
     "esbuild": "0.28.2",
+    "playwright": "1.63.0",
     "tsx": "4.23.15"
   }
 }
